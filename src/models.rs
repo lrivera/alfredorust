@@ -1,11 +1,32 @@
 // models.rs
-// Domain models with serde derive for JSON (users.json).
+// Domain models for both seed data (users.json) and MongoDB collections.
 
+use mongodb::bson::oid::ObjectId;
 use serde::{Deserialize, Serialize};
 
+/// User definition as stored in users.json (company is referenced by name).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeedUser {
+    pub email: String,
+    pub secret: String,
+    pub company: String,
+}
+
+/// Company document stored in MongoDB.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Company {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub name: String,
+}
+
+/// User document stored in MongoDB referencing the company by ObjectId.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
-    pub email: String,     // Base identity (account name in TOTP)
-    pub secret: String,    // Base32 (RFC 4648) TOTP shared secret (NOPAD recommended)
-    pub company: String,   // Issuer shown in authenticator apps
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub email: String,
+    pub secret: String,
+    #[serde(rename = "company")]
+    pub company_id: ObjectId,
 }

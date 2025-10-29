@@ -4,6 +4,7 @@
 use axum::{
     body::Body,
     extract::{Query, State},
+    http::StatusCode,
     response::{IntoResponse, Response},
 };
 use image::{ImageFormat, Luma};
@@ -12,7 +13,7 @@ use serde::Deserialize;
 use std::io::Cursor;
 use std::sync::Arc;
 
-use crate::state::{AppState, find_user};
+use crate::state::{find_user, AppState};
 use crate::totp::build_totp;
 
 #[derive(Deserialize)]
@@ -22,8 +23,8 @@ pub struct EmailQuery {
 
 /// Builds and returns a PNG QR code so clients can scan and enroll.
 pub async fn qrcode(State(st): State<Arc<AppState>>, Query(q): Query<EmailQuery>) -> Response {
-    if let Some(user) = find_user(&st, &q.email) {
-        match build_totp(&user.company, &user.email, &user.secret) {
+    match find_user(&st, &q.email).await {
+        Ok(Some(user)) => match build_totp(&user.company_name, &user.email, &user.secret) {
             Ok(totp) => {
                 let url = totp.get_url();
                 if let Ok(code) = QrCode::new(url.as_bytes()) {
@@ -43,18 +44,22 @@ pub async fn qrcode(State(st): State<Arc<AppState>>, Query(q): Query<EmailQuery>
                     }
                 }
                 (
-                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    StatusCode::INTERNAL_SERVER_ERROR,
                     "failed to build qr",
                 )
                     .into_response()
             }
             Err(_) => (
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                StatusCode::INTERNAL_SERVER_ERROR,
                 "invalid secret",
             )
                 .into_response(),
-        }
-    } else {
-        (axum::http::StatusCode::NOT_FOUND, "user not found").into_response()
+        },
+        Ok(None) => (StatusCode::NOT_FOUND, "user not found").into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("db error: {e}"),
+        )
+            .into_response(),
     }
 }

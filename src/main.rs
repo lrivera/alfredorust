@@ -2,10 +2,11 @@
 // Axum server wiring: loads users from users.json, builds router, and serves on :8080.
 //
 // Endpoints:
-// - GET  /setup?email=...     -> returns otpauth URL with issuer = user's company
-// - GET  /qrcode?email=...    -> returns PNG QR code for that otpauth URL
-// - POST /login               -> validates {"email","code"} against current TOTP
-// - GET  /secret?bytes=20     -> generates a new Base32 secret (no persistence)
+// - GET  /                     -> minimal HTML form to POST /login
+// - GET  /setup?email=...      -> returns otpauth URL with issuer = user's company
+// - GET  /qrcode?email=...     -> returns PNG QR code for that otpauth URL
+// - POST /login                -> validates {"email","code"} against current TOTP
+// - GET  /secret?bytes=20      -> generates a new Base32 secret (no persistence)
 
 use axum::{routing::{get, post}, Router};
 use dotenvy::dotenv;
@@ -17,14 +18,15 @@ mod state;
 mod totp;
 mod routes;
 
-use state::{AppState, load_users_from_env};
-
 #[tokio::main]
 async fn main() {
     dotenv().ok();
 
-    let users = load_users_from_env();
-    let state = Arc::new(AppState { users });
+    let state = Arc::new(
+        state::init_state()
+            .await
+            .expect("failed to initialize MongoDB state"),
+    );
 
     let app = Router::new()
         .route("/", get(routes::home))
