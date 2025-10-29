@@ -20,17 +20,12 @@ pub struct EmailQuery {
 }
 
 /// Builds and returns a PNG QR code so clients can scan and enroll.
-pub async fn qrcode(
-    SessionUser { user: current, .. }: SessionUser,
-    Query(q): Query<EmailQuery>,
-) -> Response {
-    if current.email != q.email {
-        return (
-            StatusCode::FORBIDDEN,
-            "mismatched session email",
-        )
-            .into_response();
+pub async fn qrcode(session: SessionUser, Query(q): Query<EmailQuery>) -> Response {
+    if let Err(resp) = session.ensure_email(&q.email) {
+        return resp;
     }
+
+    let current = session.user();
 
     match build_totp(&current.company_name, &current.email, &current.secret) {
         Ok(totp) => {

@@ -1,11 +1,12 @@
 // session.rs
-// Session cookie helper and extractor to enforce authenticated routes.
+// Session middleware to protect routes and extractor to access session data.
 
 use std::sync::Arc;
 
 use axum::{
-    extract::{FromRef, FromRequestParts},
-    http::{header::COOKIE, request::Parts, StatusCode},
+    extract::{FromRequestParts, Request, State},
+    http::{header::COOKIE, request::Parts, HeaderMap, StatusCode},
+    middleware::Next,
     response::{IntoResponse, Response},
 };
 use futures::future::BoxFuture;
@@ -14,48 +15,86 @@ use crate::state::{find_user_by_session, AppState, UserWithCompany};
 
 pub const SESSION_COOKIE_NAME: &str = "session";
 
-pub struct SessionUser {
+#[derive(Clone)]
+pub struct SessionData {
     pub user: UserWithCompany,
     pub token: String,
 }
 
-fn unauthorized_response() -> Response {
-    (StatusCode::UNAUTHORIZED, "unauthorized").into_response()
+pub async fn require_session(
+    State(state): State<Arc<AppState>>,
+    mut request: Request,
+    next: Next,
+) -> Result<Response, Response> {
+    let token = match extract_cookie(request.headers(), SESSION_COOKIE_NAME) {
+        Some(value) => value.to_string(),
+        None => return Err(unauthorized_response()),
+    };
+
+    match find_user_by_session(&state, &token).await {
+        Ok(Some(user)) => {
+            request
+                .extensions_mut()
+                .insert(SessionData { user, token });
+            Ok(next.run(request).await)
+        }
+        Ok(None) => Err(unauthorized_response()),
+        Err(_) => Err((StatusCode::INTERNAL_SERVER_ERROR, "session lookup failed").into_response()),
+    }
+}
+
+pub struct SessionUser(pub SessionData);
+
+impl SessionUser {
+    pub fn user(&self) -> &UserWithCompany {
+        &self.0.user
+    }
+
+    pub fn token(&self) -> &str {
+        &self.0.token
+    }
+
+    pub fn ensure_email(&self, expected: &str) -> Result<(), Response> {
+        if self.user().email != expected {
+            Err((StatusCode::FORBIDDEN, "mismatched session").into_response())
+        } else {
+            Ok(())
+        }
+    }
 }
 
 #[allow(refining_impl_trait)]
 impl<S> FromRequestParts<S> for SessionUser
 where
-    Arc<AppState>: axum::extract::FromRef<S>,
     S: Send + Sync,
 {
     type Rejection = Response;
 
     fn from_request_parts(
         parts: &mut Parts,
-        state: &S,
+        _state: &S,
     ) -> BoxFuture<'static, Result<Self, Self::Rejection>> {
-        let token = extract_cookie(parts, SESSION_COOKIE_NAME).map(|value| value.to_string());
-        let app_state = Arc::<AppState>::from_ref(state);
+        let data = parts
+            .extensions
+            .get::<SessionData>()
+            .cloned()
+            .ok_or_else(unauthorized_response);
 
         Box::pin(async move {
-            let token = match token {
-                Some(t) => t,
-                None => return Err(unauthorized_response()),
-            };
-
-            match find_user_by_session(&app_state, &token).await {
-                Ok(Some(user)) => Ok(SessionUser { user, token }),
-                Ok(None) => Err(unauthorized_response()),
-                Err(_) => Err((StatusCode::INTERNAL_SERVER_ERROR, "session lookup failed").into_response()),
+            match data {
+                Ok(session) => Ok(SessionUser(session)),
+                Err(resp) => Err(resp),
             }
         })
     }
 }
 
-fn extract_cookie(parts: &Parts, name: &str) -> Option<String> {
-    parts
-        .headers
+fn unauthorized_response() -> Response {
+    (StatusCode::UNAUTHORIZED, "unauthorized").into_response()
+}
+
+fn extract_cookie(headers: &HeaderMap, name: &str) -> Option<String> {
+    headers
         .get_all(COOKIE)
         .into_iter()
         .filter_map(|value| value.to_str().ok())

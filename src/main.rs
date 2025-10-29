@@ -8,7 +8,7 @@
 // - POST /login                -> validates {"email","code"} against current TOTP
 // - GET  /secret?bytes=20      -> generates a new Base32 secret (no persistence)
 
-use axum::{routing::{get, post}, Router};
+use axum::{middleware, routing::{get, post}, Router};
 use dotenvy::dotenv;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::net::TcpListener;
@@ -33,7 +33,11 @@ async fn main() {
         .route("/setup", get(routes::setup))
         .route("/qrcode", get(routes::qrcode))
         .route("/secret", get(routes::secret_generate))
-        .route("/logout", post(routes::logout));
+        .route("/logout", post(routes::logout))
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            session::require_session,
+        ));
 
     let app = Router::new()
         .route("/", get(routes::home))

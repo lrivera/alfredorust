@@ -4,7 +4,7 @@
 use axum::{
     extract::Query,
     http::StatusCode,
-    response::IntoResponse,
+    response::{IntoResponse, Response},
     Json,
 };
 use serde::Deserialize;
@@ -18,13 +18,12 @@ pub struct EmailQuery {
 }
 
 /// Returns a JSON with { email, company, otpauth_url } to enroll in authenticator apps.
-pub async fn setup(SessionUser { user: current, .. }: SessionUser, Query(q): Query<EmailQuery>) -> impl IntoResponse {
-    if current.email != q.email {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({ "error": "mismatched session" })),
-        );
+pub async fn setup(session: SessionUser, Query(q): Query<EmailQuery>) -> Response {
+    if let Err(resp) = session.ensure_email(&q.email) {
+        return resp;
     }
+
+    let current = session.user();
 
     match build_totp(&current.company_name, &current.email, &current.secret) {
         Ok(totp) => {
@@ -37,10 +36,12 @@ pub async fn setup(SessionUser { user: current, .. }: SessionUser, Query(q): Que
                     "otpauth_url": url
                 })),
             )
+                .into_response()
         }
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({ "error": e.to_string() })),
-        ),
+        )
+            .into_response(),
     }
 }

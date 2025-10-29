@@ -25,6 +25,7 @@ pub struct AppState {
     pub sessions: Collection<Session>,
 }
 
+#[derive(Clone)]
 pub struct UserWithCompany {
     pub email: String,
     pub secret: String,

@@ -14,9 +14,9 @@ use crate::state::{delete_session, AppState};
 
 pub async fn logout(
     State(st): State<Arc<AppState>>,
-    SessionUser { token, .. }: SessionUser,
+    session: SessionUser,
 ) -> Response {
-    let delete_result = delete_session(&st, &token).await;
+    let delete_result = delete_session(&st, session.token()).await;
 
     let cookie = format!(
         "{}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0",
