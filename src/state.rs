@@ -2,18 +2,27 @@
 // AppState encapsulating Mongo collections plus initialization and helpers.
 
 use anyhow::{Context, Result};
+use data_encoding::BASE32_NOPAD;
 use mongodb::{
-    bson::{doc, oid::ObjectId},
+    bson::{doc, oid::ObjectId, DateTime},
     Client, Collection, Database,
 };
-use std::{collections::{HashMap, HashSet}, env, fs};
+use rand::RngCore;
+use std::{
+    collections::{HashMap, HashSet},
+    env, fs,
+    time::{Duration, SystemTime},
+};
 
-use crate::models::{Company, SeedUser, User};
+use crate::models::{Company, SeedUser, Session, User};
+
+pub const SESSION_TTL_SECONDS: u64 = 60 * 30; // 30 minutes
 
 #[derive(Clone)]
 pub struct AppState {
     pub users: Collection<User>,
     pub companies: Collection<Company>,
+    pub sessions: Collection<Session>,
 }
 
 pub struct UserWithCompany {
@@ -39,6 +48,7 @@ pub async fn init_state() -> Result<AppState> {
     Ok(AppState {
         users: db.collection::<User>("users"),
         companies: db.collection::<Company>("company"),
+        sessions: db.collection::<Session>("sessions"),
     })
 }
 
@@ -68,10 +78,16 @@ async fn ensure_collections(db: &Database) -> Result<()> {
     if !existing.iter().any(|name| name == "company") {
         db.create_collection("company").await?;
     }
+    if !existing.iter().any(|name| name == "sessions") {
+        db.create_collection("sessions").await?;
+    }
     Ok(())
 }
 
-async fn seed_default_companies(db: &Database, names: &[String]) -> Result<HashMap<String, ObjectId>> {
+async fn seed_default_companies(
+    db: &Database,
+    names: &[String],
+) -> Result<HashMap<String, ObjectId>> {
     let coll = db.collection::<Company>("company");
     let mut map = HashMap::new();
 
@@ -144,4 +160,64 @@ pub async fn find_user(state: &AppState, email: &str) -> Result<Option<UserWithC
     } else {
         Ok(None)
     }
+}
+
+pub async fn create_session(state: &AppState, email: &str) -> Result<String> {
+    // Optionally drop previous sessions for this user (best-effort)
+    let _ = state
+        .sessions
+        .delete_many(doc! { "user_email": email.to_string() })
+        .await;
+
+    let mut token_bytes = [0u8; 32];
+    rand::rng().fill_bytes(&mut token_bytes);
+    let token = BASE32_NOPAD.encode(&token_bytes);
+
+    let expires_at = DateTime::from_system_time(
+        SystemTime::now() + Duration::from_secs(SESSION_TTL_SECONDS),
+    );
+
+    state
+        .sessions
+        .insert_one(Session {
+            id: None,
+            token: token.clone(),
+            user_email: email.to_string(),
+            expires_at,
+        })
+        .await?;
+
+    Ok(token)
+}
+
+pub async fn find_user_by_session(
+    state: &AppState,
+    token: &str,
+) -> Result<Option<UserWithCompany>> {
+    if let Some(session) = state.sessions.find_one(doc! { "token": token }).await? {
+        let expires_at = session.expires_at.to_system_time();
+        if expires_at <= SystemTime::now() {
+            // Remove expired session, ignore result
+            if let Some(id) = session.id {
+                let _ = state
+                    .sessions
+                    .delete_one(doc! { "_id": id })
+                    .await;
+            } else {
+                let _ = state
+                    .sessions
+                    .delete_one(doc! { "token": &session.token })
+                    .await;
+            }
+            return Ok(None);
+        }
+        find_user(state, &session.user_email).await
+    } else {
+        Ok(None)
+    }
+}
+
+pub async fn delete_session(state: &AppState, token: &str) -> Result<()> {
+    let _ = state.sessions.delete_one(doc! { "token": token }).await?;
+    Ok(())
 }

@@ -3,7 +3,7 @@
 
 use axum::{
     body::Body,
-    extract::{Query, State},
+    extract::Query,
     http::StatusCode,
     response::{IntoResponse, Response},
 };
@@ -11,9 +11,7 @@ use image::{ImageFormat, Luma};
 use qrcode::QrCode;
 use serde::Deserialize;
 use std::io::Cursor;
-use std::sync::Arc;
-
-use crate::state::{find_user, AppState};
+use crate::session::SessionUser;
 use crate::totp::build_totp;
 
 #[derive(Deserialize)]
@@ -22,43 +20,46 @@ pub struct EmailQuery {
 }
 
 /// Builds and returns a PNG QR code so clients can scan and enroll.
-pub async fn qrcode(State(st): State<Arc<AppState>>, Query(q): Query<EmailQuery>) -> Response {
-    match find_user(&st, &q.email).await {
-        Ok(Some(user)) => match build_totp(&user.company_name, &user.email, &user.secret) {
-            Ok(totp) => {
-                let url = totp.get_url();
-                if let Ok(code) = QrCode::new(url.as_bytes()) {
-                    let img = code.render::<Luma<u8>>().min_dimensions(200, 200).build();
+pub async fn qrcode(
+    SessionUser { user: current, .. }: SessionUser,
+    Query(q): Query<EmailQuery>,
+) -> Response {
+    if current.email != q.email {
+        return (
+            StatusCode::FORBIDDEN,
+            "mismatched session email",
+        )
+            .into_response();
+    }
 
-                    // image 0.25: write_to requires Write + Seek -> Cursor<Vec<u8>>
-                    let mut cursor = Cursor::new(Vec::<u8>::new());
-                    if image::DynamicImage::ImageLuma8(img)
-                        .write_to(&mut cursor, ImageFormat::Png)
-                        .is_ok()
-                    {
-                        let png = cursor.into_inner();
-                        return Response::builder()
-                            .header("Content-Type", "image/png")
-                            .body(Body::from(png))
-                            .unwrap();
-                    }
+    match build_totp(&current.company_name, &current.email, &current.secret) {
+        Ok(totp) => {
+            let url = totp.get_url();
+            if let Ok(code) = QrCode::new(url.as_bytes()) {
+                let img = code.render::<Luma<u8>>().min_dimensions(200, 200).build();
+
+                // image 0.25: write_to requires Write + Seek -> Cursor<Vec<u8>>
+                let mut cursor = Cursor::new(Vec::<u8>::new());
+                if image::DynamicImage::ImageLuma8(img)
+                    .write_to(&mut cursor, ImageFormat::Png)
+                    .is_ok()
+                {
+                    let png = cursor.into_inner();
+                    return Response::builder()
+                        .header("Content-Type", "image/png")
+                        .body(Body::from(png))
+                        .unwrap();
                 }
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "failed to build qr",
-                )
-                    .into_response()
             }
-            Err(_) => (
+            (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "invalid secret",
+                "failed to build qr",
             )
-                .into_response(),
-        },
-        Ok(None) => (StatusCode::NOT_FOUND, "user not found").into_response(),
-        Err(e) => (
+                .into_response()
+        }
+        Err(_) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            format!("db error: {e}"),
+            "invalid secret",
         )
             .into_response(),
     }

@@ -5,6 +5,7 @@ use axum::{extract::Query, response::IntoResponse, Json};
 use serde::Deserialize;
 
 use crate::totp::{generate_base32_secret_n, DEFAULT_SECRET_BYTES, MIN_SECRET_BYTES};
+use crate::session::SessionUser;
 
 #[derive(Deserialize)]
 pub struct SecretQuery {
@@ -14,7 +15,10 @@ pub struct SecretQuery {
 }
 
 /// Only generates and returns a Base32 secret (NOPAD). No I/O or persistence.
-pub async fn secret_generate(Query(q): Query<SecretQuery>) -> impl IntoResponse {
+pub async fn secret_generate(
+    SessionUser { .. }: SessionUser,
+    Query(q): Query<SecretQuery>,
+) -> impl IntoResponse {
     let mut n = q.bytes.or(q.s).unwrap_or(DEFAULT_SECRET_BYTES);
     if n < MIN_SECRET_BYTES {
         n = MIN_SECRET_BYTES;

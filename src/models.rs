@@ -1,7 +1,7 @@
 // models.rs
 // Domain models for both seed data (users.json) and MongoDB collections.
 
-use mongodb::bson::oid::ObjectId;
+use mongodb::bson::{oid::ObjectId, DateTime};
 use serde::{Deserialize, Serialize};
 
 /// User definition as stored in users.json (company is referenced by name).
@@ -29,4 +29,14 @@ pub struct User {
     pub secret: String,
     #[serde(rename = "company")]
     pub company_id: ObjectId,
+}
+
+/// Session document stored in MongoDB linking a token to a user and expiry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Session {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub token: String,
+    pub user_email: String,
+    pub expires_at: DateTime,
 }
