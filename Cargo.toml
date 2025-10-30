@@ -17,3 +17,4 @@ totp-rs = { version = "^5", features = ["otpauth"] }
 anyhow = "1.0.100"
 mongodb = "3.3.0"
 futures = "0.3"
+askama = { version = "0.12", features = ["config"] }

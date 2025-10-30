@@ -1,0 +1,90 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}{% if is_edit %}Editar usuario{% else %}Nuevo usuario{% endif %}{% endblock %}
+
+{% block content %}
+  <div class="max-w-xl space-y-6">
+    <div>
+      <h1 class="text-2xl font-semibold text-slate-800">{% if is_edit %}Editar usuario{% else %}Crear nuevo usuario{% endif %}</h1>
+      <p class="mt-1 text-sm text-slate-500">Completa los campos para {% if is_edit %}actualizar{% else %}registrar{% endif %} el acceso.</p>
+    </div>
+
+    {% if errors.is_some() %}
+    <div class="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+      {{ errors.as_ref().unwrap() }}
+    </div>
+    {% endif %}
+
+    <form method="post" action="{{ action }}" class="space-y-5 rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+      <div class="space-y-2">
+        <label for="email" class="block text-sm font-medium text-slate-600">Email</label>
+        <input id="email" name="email" type="email" value="{{ form.email }}" required autocomplete="email"
+          class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40" />
+      </div>
+
+      <div class="grid gap-4 md:grid-cols-2">
+        <div class="space-y-2">
+          <label for="role" class="block text-sm font-medium text-slate-600">Rol</label>
+          {% if can_edit_role %}
+          <select id="role" name="role"
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40">
+            {% for option in roles %}
+            <option value="{{ option.value }}"{% if option.selected %} selected{% endif %}>{{ option.label }}</option>
+            {% endfor %}
+          </select>
+          {% else %}
+          <select id="role" name="role" disabled
+            class="block w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500 shadow-sm">
+            {% for option in roles %}
+            <option value="{{ option.value }}"{% if option.selected %} selected{% endif %}>{{ option.label }}</option>
+            {% endfor %}
+          </select>
+          <input type="hidden" name="role" value="{{ form.role }}" />
+          {% endif %}
+        </div>
+        <div class="space-y-2">
+          <label for="company_id" class="block text-sm font-medium text-slate-600">Compañía</label>
+          <select id="company_id" name="company_id" required
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40">
+            {% for company in companies %}
+            <option value="{{ company.id }}"{% if company.selected %} selected{% endif %}>{{ company.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="space-y-2">
+        <label for="secret" class="block text-sm font-medium text-slate-600">Secreto TOTP</label>
+        <input id="secret" name="secret" value="{{ form.secret }}" required
+          class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 font-mono text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40" />
+        <p class="text-xs text-slate-500">Comparte este valor con el usuario para configurar su autenticador.</p>
+      </div>
+
+      <div class="flex items-center justify-end gap-3">
+        <a href="/admin/users" class="text-sm font-medium text-slate-500 hover:text-slate-700">Cancelar</a>
+        <button type="submit"
+          class="inline-flex items-center rounded-md bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2">
+          {% if is_edit %}Guardar cambios{% else %}Crear usuario{% endif %}
+        </button>
+      </div>
+    </form>
+
+    {% if is_edit %}
+      {% if let Some(id) = user_id %}
+        <section class="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+          <header class="mb-4 flex items-center justify-between">
+            <div>
+              <h2 class="text-lg font-semibold text-slate-800">Código QR</h2>
+              <p class="text-sm text-slate-500">Escanéalo con una aplicación TOTP para enrolar el dispositivo.</p>
+            </div>
+            <a href="/admin/users/{{ id }}/qrcode" target="_blank"
+               class="text-sm font-medium text-sky-600 hover:text-sky-700">Abrir en nueva pestaña</a>
+          </header>
+          <div class="flex justify-center">
+            <img src="/admin/users/{{ id }}/qrcode" alt="QR TOTP" class="h-64 w-64 rounded-lg border border-slate-200 shadow-inner" />
+          </div>
+        </section>
+      {% endif %}
+    {% endif %}
+  </div>
+{% endblock %}

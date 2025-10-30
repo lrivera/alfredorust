@@ -8,16 +8,20 @@
 // - POST /login                -> validates {"email","code"} against current TOTP
 // - GET  /secret?bytes=20      -> generates a new Base32 secret (no persistence)
 
-use axum::{middleware, routing::{get, post}, Router};
+use axum::{
+    Router, middleware,
+    routing::{get, post},
+};
 use dotenvy::dotenv;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::net::TcpListener;
 
+pub mod filters;
 mod models;
-mod state;
-mod totp;
 mod routes;
 mod session;
+mod state;
+mod totp;
 
 #[tokio::main]
 async fn main() {
@@ -34,6 +38,35 @@ async fn main() {
         .route("/qrcode", get(routes::qrcode))
         .route("/secret", get(routes::secret_generate))
         .route("/logout", post(routes::logout))
+        .route(
+            "/account",
+            get(routes::account_edit).post(routes::account_update),
+        )
+        .route(
+            "/admin/users",
+            get(routes::users_index).post(routes::users_create),
+        )
+        .route("/admin/users/new", get(routes::users_new))
+        .route("/admin/users/{id}/edit", get(routes::users_edit))
+        .route("/admin/users/{id}/update", post(routes::users_update))
+        .route("/admin/users/{id}/delete", post(routes::users_delete))
+        .route("/admin/users/{id}/qrcode", get(routes::users_qrcode))
+        .route("/pdf", get(routes::pdf_editor))
+        .route("/pdf/preview", post(routes::pdf_preview))
+        .route(
+            "/admin/companies",
+            get(routes::companies_index).post(routes::companies_create),
+        )
+        .route("/admin/companies/new", get(routes::companies_new))
+        .route("/admin/companies/{id}/edit", get(routes::companies_edit))
+        .route(
+            "/admin/companies/{id}/update",
+            post(routes::companies_update),
+        )
+        .route(
+            "/admin/companies/{id}/delete",
+            post(routes::companies_delete),
+        )
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             session::require_session,

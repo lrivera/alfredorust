@@ -1,28 +1,17 @@
 // routes/setup.rs
-// GET /setup?email=... -> returns the otpauth:// URL for enrollment.
+// GET /setup -> returns the otpauth:// URL for the logged-in user.
 
 use axum::{
-    extract::Query,
+    Json,
     http::StatusCode,
     response::{IntoResponse, Response},
-    Json,
 };
-use serde::Deserialize;
 
 use crate::session::SessionUser;
 use crate::totp::build_totp;
 
-#[derive(Deserialize)]
-pub struct EmailQuery {
-    pub email: String,
-}
-
 /// Returns a JSON with { email, company, otpauth_url } to enroll in authenticator apps.
-pub async fn setup(session: SessionUser, Query(q): Query<EmailQuery>) -> Response {
-    if let Err(resp) = session.ensure_email(&q.email) {
-        return resp;
-    }
-
+pub async fn setup(session: SessionUser) -> Response {
     let current = session.user();
 
     match build_totp(&current.company_name, &current.email, &current.secret) {

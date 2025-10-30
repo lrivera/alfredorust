@@ -1,0 +1,142 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}Editor PDF Typst{% endblock %}
+
+{% block content %}
+  <div class="space-y-6">
+    <header class="flex flex-col gap-2">
+      <h1 class="text-2xl font-semibold text-slate-800">Generador PDF con Typst</h1>
+      <p class="text-sm text-slate-500">Escribe tu documento en Typst y visualiza el PDF al instante. Se requiere tener el binario <code class="font-mono">typst</code> instalado en el servidor.</p>
+    </header>
+
+    <div class="grid gap-6 lg:grid-cols-2">
+      <section class="flex h-[70vh] flex-col">
+        <label for="source" class="mb-2 text-sm font-medium text-slate-600">Markup Typst</label>
+        <textarea id="source" name="source" class="h-full w-full flex-1 resize-none rounded-md border border-slate-300 bg-white px-4 py-3 font-mono text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40" placeholder="Escribe tu documento aquí...">
+#set page(width: 210mm, height: 297mm)
+#set text(leading: 120%)
+
+= Manual de ejemplo
+
+Hola *{{ session_email }}*.
+
+Este es un documento generado desde Typst.
+
+== Lista
+
+- Elemento uno
+- Elemento dos
+- Elemento tres
+
+== Tabla
+
+#table(
+  columns: 2,
+  [Nombre], [Valor],
+  [A], [10],
+  [B], [20],
+)
+        </textarea>
+      </section>
+
+      <section class="flex h-[70vh] flex-col">
+        <div class="mb-2 flex items-center justify-between">
+          <div>
+            <p class="text-sm font-medium text-slate-600">Vista previa</p>
+            <p id="error-box" class="text-xs text-rose-500"></p>
+          </div>
+          <button id="download-btn" type="button" disabled class="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-500 transition disabled:cursor-not-allowed disabled:opacity-60 hover:border-sky-400 hover:text-sky-600">Descargar</button>
+        </div>
+        <iframe id="pdf-frame" title="PDF preview" class="h-full w-full flex-1 rounded-md border border-slate-200 bg-white shadow-inner"></iframe>
+      </section>
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    const textarea = document.getElementById('source');
+    const frame = document.getElementById('pdf-frame');
+    const errorBox = document.getElementById('error-box');
+    const downloadBtn = document.getElementById('download-btn');
+
+    let debounceHandle = null;
+    let currentBlobUrl = null;
+    let requestCounter = 0;
+
+    function setError(message) {
+      errorBox.textContent = message || '';
+    }
+
+    function revokeBlob() {
+      if (currentBlobUrl) {
+        URL.revokeObjectURL(currentBlobUrl);
+        currentBlobUrl = null;
+      }
+    }
+
+    function updatePdfFromBase64(base64) {
+      const binary = atob(base64);
+      const len = binary.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      revokeBlob();
+      const blob = new Blob([bytes], { type: 'application/pdf' });
+      currentBlobUrl = URL.createObjectURL(blob);
+      frame.src = currentBlobUrl;
+      downloadBtn.disabled = false;
+      downloadBtn.onclick = () => {
+        const link = document.createElement('a');
+        link.href = currentBlobUrl;
+        link.download = 'preview.pdf';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      };
+    }
+
+    async function sendPreview(content) {
+      requestCounter += 1;
+      const currentRequest = requestCounter;
+      try {
+        const response = await fetch('/pdf/preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ source: content })
+        });
+        const data = await response.json();
+        if (currentRequest !== requestCounter) {
+          return;
+        }
+        if (data.ok) {
+          setError('');
+          updatePdfFromBase64(data.pdf_base64);
+        } else {
+          revokeBlob();
+          frame.removeAttribute('src');
+          downloadBtn.disabled = true;
+          setError(data.error || 'No se pudo generar el PDF');
+        }
+      } catch (err) {
+        revokeBlob();
+        frame.removeAttribute('src');
+        downloadBtn.disabled = true;
+        setError('Error de red generando el PDF');
+      }
+    }
+
+    function schedulePreview() {
+      clearTimeout(debounceHandle);
+      debounceHandle = setTimeout(() => {
+        sendPreview(textarea.value);
+      }, 400);
+    }
+
+    textarea.addEventListener('input', schedulePreview);
+    window.addEventListener('DOMContentLoaded', () => {
+      schedulePreview();
+    });
+  </script>
+{% endblock %}

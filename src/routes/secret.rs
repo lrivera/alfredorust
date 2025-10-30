@@ -1,11 +1,11 @@
 // routes/secret.rs
 // GET /secret?bytes=20[&email=...] -> returns a fresh Base32 secret; DOES NOT persist.
 
-use axum::{extract::Query, response::IntoResponse, Json};
+use axum::{Json, extract::Query, response::IntoResponse};
 use serde::Deserialize;
 
-use crate::totp::{generate_base32_secret_n, DEFAULT_SECRET_BYTES, MIN_SECRET_BYTES};
 use crate::session::SessionUser;
+use crate::totp::{DEFAULT_SECRET_BYTES, MIN_SECRET_BYTES, generate_base32_secret_n};
 
 #[derive(Deserialize)]
 pub struct SecretQuery {
@@ -27,9 +27,15 @@ pub async fn secret_generate(
 
     let mut body = serde_json::Map::new();
     body.insert("secret".to_string(), serde_json::Value::String(secret));
-    body.insert("bytes".to_string(), serde_json::Value::Number((n as u64).into()));
+    body.insert(
+        "bytes".to_string(),
+        serde_json::Value::Number((n as u64).into()),
+    );
     if let Some(email) = q.email {
         body.insert("email".to_string(), serde_json::Value::String(email));
     }
-    (axum::http::StatusCode::OK, Json(serde_json::Value::Object(body)))
+    (
+        axum::http::StatusCode::OK,
+        Json(serde_json::Value::Object(body)),
+    )
 }

@@ -6,8 +6,8 @@ use data_encoding::BASE32_NOPAD;
 use rand::RngCore;
 use totp_rs::{Algorithm, Secret, TOTP};
 
-pub const MIN_SECRET_BYTES: usize = 16;      // 128 bits (mandatory minimum)
-pub const DEFAULT_SECRET_BYTES: usize = 20;  // 160 bits (recommended)
+pub const MIN_SECRET_BYTES: usize = 16; // 128 bits (mandatory minimum)
+pub const DEFAULT_SECRET_BYTES: usize = 20; // 160 bits (recommended)
 
 /// Build a TOTP instance using user's issuer (company), account name (email), and Base32 secret.
 /// Validates minimum secret length after Base32 decoding.

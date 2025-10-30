@@ -2,20 +2,17 @@
 // POST /logout -> clears session cookie and removes the session entry.
 
 use axum::{
-    extract::{State},
-    http::{header::SET_COOKIE, HeaderValue, StatusCode},
-    response::{IntoResponse, Response},
     Json,
+    extract::State,
+    http::{HeaderValue, StatusCode, header::SET_COOKIE},
+    response::{IntoResponse, Response},
 };
 use std::sync::Arc;
 
 use crate::session::SessionUser;
-use crate::state::{delete_session, AppState};
+use crate::state::{AppState, delete_session};
 
-pub async fn logout(
-    State(st): State<Arc<AppState>>,
-    session: SessionUser,
-) -> Response {
+pub async fn logout(State(st): State<Arc<AppState>>, session: SessionUser) -> Response {
     let delete_result = delete_session(&st, session.token()).await;
 
     let cookie = format!(

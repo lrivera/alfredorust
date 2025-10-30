@@ -5,13 +5,15 @@ use std::sync::Arc;
 
 use axum::{
     extract::{FromRequestParts, Request, State},
-    http::{header::COOKIE, request::Parts, HeaderMap, StatusCode},
+    http::{HeaderMap, StatusCode, header::COOKIE, request::Parts},
     middleware::Next,
     response::{IntoResponse, Response},
 };
 use futures::future::BoxFuture;
 
-use crate::state::{find_user_by_session, AppState, UserWithCompany};
+use mongodb::bson::oid::ObjectId;
+
+use crate::state::{AppState, UserWithCompany, find_user_by_session};
 
 pub const SESSION_COOKIE_NAME: &str = "session";
 
@@ -33,9 +35,7 @@ pub async fn require_session(
 
     match find_user_by_session(&state, &token).await {
         Ok(Some(user)) => {
-            request
-                .extensions_mut()
-                .insert(SessionData { user, token });
+            request.extensions_mut().insert(SessionData { user, token });
             Ok(next.run(request).await)
         }
         Ok(None) => Err(unauthorized_response()),
@@ -54,12 +54,16 @@ impl SessionUser {
         &self.0.token
     }
 
-    pub fn ensure_email(&self, expected: &str) -> Result<(), Response> {
-        if self.user().email != expected {
-            Err((StatusCode::FORBIDDEN, "mismatched session").into_response())
-        } else {
-            Ok(())
-        }
+    pub fn user_id(&self) -> &ObjectId {
+        &self.0.user.id
+    }
+
+    pub fn is_admin(&self) -> bool {
+        self.0.user.role.is_admin()
+    }
+
+    pub fn can_edit_user(&self, target: &ObjectId) -> bool {
+        self.is_admin() || self.user_id() == target
     }
 }
 
