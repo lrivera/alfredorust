@@ -13,29 +13,177 @@
       <section class="flex h-[70vh] flex-col">
         <label for="source" class="mb-2 text-sm font-medium text-slate-600">Markup Typst</label>
         <textarea id="source" name="source" class="h-full w-full flex-1 resize-none rounded-md border border-slate-300 bg-white px-4 py-3 font-mono text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40" placeholder="Escribe tu documento aquí...">
-#set page(width: 210mm, height: 297mm)
-#set text(leading: 120%)
+#show: page.with(
+  margin: 20pt,
+  footer: context [
+    #set align(right)
+    #set text(8pt)
+    #counter(page).display(
+      "Thank you for your business · 1 of I",
+      both: true,
+    )
+  ]
+)
 
-= Manual de ejemplo
+#let title_left = "Research Warrant"
+#let title_right = "INVOICE"
 
-Hola *{{ session_email }}*.
+#let sender_name = "Luis Alfredo Rivera Acuna"
+#let sender_addr1 = "Villa Libanes #15, col. villas del mediterraneo"
+#let sender_addr2 = "Hermosillo, Sonora, Mexico"
+#let sender_email = "1alfredorivera@gmail.com"
+#let sender_phone = "526623271123"
+#let sender_rfc = "RIAL8909172J3"
 
-Este es un documento generado desde Typst.
+#let meta_date_label = "DATE"
+#let meta_date_value = "10/27/2025"
+#let meta_inv_label = "INVOICE NO."
+#let meta_inv_value = "RW0030"
 
-== Lista
+#let bill_to_1 = "Research Warrant LLC"
+#let bill_to_2 = "110 SE 6TH ST Suite 1700"
+#let bill_to_3 = "Fort Lauderdale, Condado de Broward 33301"
+#let bill_to_4 = "United States"
 
-- Elemento uno
-- Elemento dos
-- Elemento tres
-
-== Tabla
+#let pay_to_1 = "Research Warrant LLC"
+#let pay_to_2 = "WISE EUR BALANCE:"
+#let pay_to_3 = "87-1610351"
+#let pay_to_4 = "1alfredorivera@gmail.com"
 
 #table(
-  columns: 2,
-  [Nombre], [Valor],
-  [A], [10],
-  [B], [20],
+  columns: (1fr, auto),
+  align: (left, right),
+  stroke: 0pt,
+  [#text(1.3em, strong[#title_left])],
+  [#text(1.3em, strong[#title_right])],
 )
+
+#v(8pt)
+
+#table(
+  columns: (1fr, 1fr),
+  align: (left, right),
+  stroke: 0pt,
+  [
+    #strong[#sender_name]
+    #linebreak()
+    #sender_addr1
+    #linebreak()
+    #sender_addr2
+    #linebreak()
+    #link("mailto:" + sender_email)[#sender_email]
+  ],
+  [
+    #table(
+      columns: (auto, auto),
+      align: (left, right),
+      stroke: 0pt,
+      [#meta_date_label],[#strong[#meta_date_value]],
+      [#meta_inv_label],[#strong[#meta_inv_value]],
+    )
+  ],
+)
+
+#v(10pt)
+#line()
+#v(10pt)
+
+#table(
+  columns: (1fr, 1fr),
+  align: (left, left),
+  stroke: 0pt,
+  [
+    #strong[BILL TO]
+    #linebreak()
+    #bill_to_1
+    #linebreak()
+    #bill_to_2
+    #linebreak()
+    #bill_to_3
+    #linebreak()
+    #bill_to_4
+  ],
+  [
+    #strong[PAY TO]
+    #linebreak()
+    #pay_to_1
+    #linebreak()
+    #pay_to_2
+    #linebreak()
+    #pay_to_3
+    #linebreak()
+    #pay_to_4
+  ],
+)
+
+#v(14pt)
+
+#table(
+  columns: (2fr, auto, auto, auto),
+  align: (left, right, right, right),
+  inset: 6pt,
+  stroke: 0.35pt,
+
+  table.header[
+    #strong[DESCRIPTION]
+  ][
+    #strong[HOURS]
+  ][
+    #strong[UNIT PRICE]
+  ][
+    #strong[TOTAL]
+  ],
+
+  [Senior Software Engineering Services - 10/13/2025 - 10/26/2025],
+  [81],
+  [€48.50],
+  [€3,928.50],
+
+  [],[],[€0.00],[€0.00],
+  [],[],[€0.00],[€0.00],
+  [],[],[€0.00],[€0.00],
+  [],[],[€0.00],[€0.00],
+)
+
+#v(12pt)
+
+#table(
+  columns: (1fr, auto),
+  align: (left, right),
+  stroke: 0pt,
+
+  [
+    #strong[Remarks / Payment Instructions:]
+    #linebreak()
+    Please send payment via Wise to the following EUR balance:
+    #linebreak()
+    Account name: Research Warrant LLC
+    #linebreak()
+    Balance: Wise EUR
+    #linebreak()
+    Account number: 87-1610351
+    #linebreak()
+    Recipient email: #link("mailto:" + pay_to_4)[#pay_to_4]
+  ],
+
+  [
+    #table(
+      columns: (auto, auto),
+      align: (left, right),
+      stroke: 0pt,
+      [SUBTOTAL],[#strong[€3,928.50]],
+      [TAX RATE],[€0.00],
+      [TOTAL TAX],[€0.00],
+      [Balance Due],[#strong[€3,928.50]],
+    )
+  ],
+)
+
+#v(10pt)
+#line()
+#v(6pt)
+
+        
         </textarea>
       </section>
 

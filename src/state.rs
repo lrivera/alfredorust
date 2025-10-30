@@ -17,7 +17,7 @@ use std::{
 
 use crate::models::{Company, SeedUser, Session, User, UserRole};
 
-pub const SESSION_TTL_SECONDS: u64 = 60 * 30; // 30 minutes
+pub const SESSION_TTL_SECONDS: u64 = 60 * 60 * 24; // 1 day
 
 #[derive(Clone)]
 pub struct AppState {
