@@ -22,6 +22,24 @@
           class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40" />
       </div>
 
+      <div class="space-y-2">
+        <label for="default_currency" class="block text-sm font-medium text-slate-600">Moneda por defecto</label>
+        <input id="default_currency" name="default_currency" value="{{ default_currency }}" placeholder="Ej. MXN"
+          class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40" />
+      </div>
+
+      <div class="space-y-2">
+        <label for="notes" class="block text-sm font-medium text-slate-600">Notas</label>
+        <textarea id="notes" name="notes" rows="3" placeholder="Opcional"
+          class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40">{{ notes }}</textarea>
+      </div>
+
+      <label class="flex items-center gap-2 text-sm font-medium text-slate-700">
+        <input type="checkbox" name="is_active" value="true" {% if is_active %}checked{% endif %}
+          class="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500" />
+        Activa
+      </label>
+
       <div class="flex items-center justify-end gap-3">
         <a href="/admin/companies" class="text-sm font-medium text-slate-500 hover:text-slate-700">Cancelar</a>
         <button type="submit"

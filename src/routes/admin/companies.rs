@@ -34,6 +34,8 @@ struct CompaniesIndexTemplate {
 struct CompanyRow {
     id: String,
     name: String,
+    default_currency: String,
+    is_active: bool,
 }
 
 #[derive(Template)]
@@ -41,6 +43,9 @@ struct CompanyRow {
 struct CompanyFormTemplate {
     action: String,
     name: String,
+    default_currency: String,
+    is_active: bool,
+    notes: String,
     is_edit: bool,
     errors: Option<String>,
 }
@@ -48,6 +53,11 @@ struct CompanyFormTemplate {
 #[derive(Deserialize)]
 pub(crate) struct CompanyFormData {
     name: String,
+    default_currency: String,
+    #[serde(default)]
+    is_active: bool,
+    #[serde(default)]
+    notes: Option<String>,
 }
 
 pub async fn companies_index(
@@ -66,6 +76,8 @@ pub async fn companies_index(
             company.id.map(|id| CompanyRow {
                 id: id.to_hex(),
                 name: company.name,
+                default_currency: company.default_currency,
+                is_active: company.is_active,
             })
         })
         .collect();
@@ -84,6 +96,9 @@ pub async fn companies_new(
     render(CompanyFormTemplate {
         action: "/admin/companies".into(),
         name: String::new(),
+        default_currency: "MXN".into(),
+        is_active: true,
+        notes: String::new(),
         is_edit: false,
         errors: None,
     })
@@ -99,10 +114,25 @@ pub async fn companies_create(
     }
 
     let name = form.name.trim();
+    let default_currency = form.default_currency.trim();
+    let is_active = form.is_active;
+    let notes = form
+        .notes
+        .and_then(|n| {
+            let trimmed = n.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        });
     if name.is_empty() {
         return render(CompanyFormTemplate {
             action: "/admin/companies".into(),
             name: String::new(),
+            default_currency: default_currency.to_string(),
+            is_active,
+            notes: String::new(),
             is_edit: false,
             errors: Some("El nombre es obligatorio".into()),
         })
@@ -110,7 +140,13 @@ pub async fn companies_create(
         .unwrap_or_else(|status| status.into_response());
     }
 
-    match create_company(&state, name).await {
+    let currency = if default_currency.is_empty() {
+        "MXN"
+    } else {
+        default_currency
+    };
+
+    match create_company(&state, name, currency, is_active, notes).await {
         Ok(_) => Redirect::to("/admin/companies").into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
@@ -134,6 +170,9 @@ pub async fn companies_edit(
     render(CompanyFormTemplate {
         action: format!("/admin/companies/{}/update", id),
         name: company.name,
+        default_currency: company.default_currency,
+        is_active: company.is_active,
+        notes: company.notes.unwrap_or_default(),
         is_edit: true,
         errors: None,
     })
@@ -155,10 +194,25 @@ pub async fn companies_update(
     };
 
     let name = form.name.trim();
+    let default_currency = form.default_currency.trim();
+    let is_active = form.is_active;
+    let notes = form
+        .notes
+        .and_then(|n| {
+            let trimmed = n.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        });
     if name.is_empty() {
         return render(CompanyFormTemplate {
             action: format!("/admin/companies/{}/update", id),
             name: String::new(),
+            default_currency: default_currency.to_string(),
+            is_active,
+            notes: String::new(),
             is_edit: true,
             errors: Some("El nombre es obligatorio".into()),
         })
@@ -166,7 +220,13 @@ pub async fn companies_update(
         .unwrap_or_else(|status| status.into_response());
     }
 
-    match update_company(&state, &object_id, name).await {
+    let currency = if default_currency.is_empty() {
+        "MXN"
+    } else {
+        default_currency
+    };
+
+    match update_company(&state, &object_id, name, currency, is_active, notes).await {
         Ok(_) => Redirect::to("/admin/companies").into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }

@@ -1,16 +1,16 @@
 {% extends "layouts/base.html" %}
 
-{% block title %}Compañías{% endblock %}
+{% block title %}Contactos{% endblock %}
 
 {% block content %}
   <div class="flex items-center justify-between pb-6">
     <div>
-      <h1 class="text-2xl font-semibold text-slate-800">Compañías</h1>
-      <p class="mt-1 text-sm text-slate-500">Gestiona las organizaciones disponibles en el sistema.</p>
+      <h1 class="text-2xl font-semibold text-slate-800">Contactos</h1>
+      <p class="mt-1 text-sm text-slate-500">Clientes, proveedores o servicios asociados.</p>
     </div>
-    <a href="/admin/companies/new"
+    <a href="/admin/contacts/new"
       class="inline-flex items-center rounded-md bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2">
-      Nueva compañía
+      Nuevo contacto
     </a>
   </div>
 
@@ -19,34 +19,26 @@
       <thead class="bg-slate-50 text-left font-semibold text-slate-600">
         <tr>
           <th class="px-4 py-2">Nombre</th>
-          <th class="px-4 py-2">Moneda</th>
-          <th class="px-4 py-2">Estado</th>
+          <th class="px-4 py-2">Compañía</th>
+          <th class="px-4 py-2">Tipo</th>
+          <th class="px-4 py-2">Correo</th>
           <th class="px-4 py-2 text-right">Acciones</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-slate-100">
-        {% for company in companies %}
+        {% for contact in contacts %}
         <tr class="transition hover:bg-slate-50">
-          <td class="px-4 py-3 text-slate-800">{{ company.name }}</td>
-          <td class="px-4 py-3 text-slate-600">{{ company.default_currency }}</td>
-          <td class="px-4 py-3">
-            {% if company.is_active %}
-            <span class="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">
-              Activa
-            </span>
-            {% else %}
-            <span class="inline-flex items-center rounded-full bg-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600">
-              Inactiva
-            </span>
-            {% endif %}
-          </td>
+          <td class="px-4 py-3 font-medium text-slate-800">{{ contact.name }}</td>
+          <td class="px-4 py-3 text-slate-600">{{ contact.company }}</td>
+          <td class="px-4 py-3 text-slate-600">{{ contact.kind }}</td>
+          <td class="px-4 py-3 text-slate-600">{{ contact.email }}</td>
           <td class="px-4 py-3 text-right">
             <div class="flex justify-end gap-2">
-              <a href="/admin/companies/{{ company.id }}/edit"
+              <a href="/admin/contacts/{{ contact.id }}/edit"
                  class="inline-flex items-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-sky-400 hover:text-sky-600">
                 Editar
               </a>
-              <form method="post" action="/admin/companies/{{ company.id }}/delete" onsubmit="return confirm('¿Eliminar esta compañía?');">
+              <form method="post" action="/admin/contacts/{{ contact.id }}/delete" onsubmit="return confirm('¿Eliminar este contacto?');">
                 <button type="submit"
                     class="inline-flex items-center rounded-md border border-rose-200 bg-rose-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-rose-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2">
                   Eliminar
@@ -57,7 +49,7 @@
         </tr>
         {% else %}
         <tr>
-          <td colspan="4" class="px-4 py-6 text-center text-sm text-slate-500">Aún no hay compañías registradas.</td>
+          <td colspan="5" class="px-4 py-6 text-center text-sm text-slate-500">Aún no hay contactos registrados.</td>
         </tr>
         {% endfor %}
       </tbody>

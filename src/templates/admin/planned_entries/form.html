@@ -1,0 +1,138 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}{% if is_edit %}Editar compromiso{% else %}Nuevo compromiso{% endif %}{% endblock %}
+
+{% block content %}
+  <div class="max-w-3xl space-y-6">
+    <div>
+      <h1 class="text-2xl font-semibold text-slate-800">{% if is_edit %}Editar compromiso{% else %}Crear nuevo compromiso{% endif %}</h1>
+      <p class="mt-1 text-sm text-slate-500">Registra un compromiso con monto y fecha de vencimiento.</p>
+    </div>
+
+    {% if errors.is_some() %}
+    <div class="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+      {{ errors.as_ref().unwrap() }}
+    </div>
+    {% endif %}
+
+    <form method="post" action="{{ action }}" class="space-y-5 rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div class="space-y-2">
+          <label for="name" class="block text-sm font-medium text-slate-600">Nombre</label>
+          <input id="name" name="name" value="{{ name }}" required
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40" />
+        </div>
+
+        <div class="space-y-2">
+          <label for="flow_type" class="block text-sm font-medium text-slate-600">Tipo de flujo</label>
+          <select id="flow_type" name="flow_type" required
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40">
+            {% for option in flow_options %}
+            <option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div class="space-y-2">
+          <label for="company_id" class="block text-sm font-medium text-slate-600">Compañía</label>
+          <select id="company_id" name="company_id" required
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40">
+            {% for option in companies %}
+            <option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="space-y-2">
+          <label for="category_id" class="block text-sm font-medium text-slate-600">Categoría</label>
+          <select id="category_id" name="category_id" required
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40">
+            {% for option in categories %}
+            <option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="grid gap-4 sm:grid-cols-3">
+        <div class="space-y-2">
+          <label for="account_expected_id" class="block text-sm font-medium text-slate-600">Cuenta esperada</label>
+          <select id="account_expected_id" name="account_expected_id" required
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40">
+            {% for option in accounts %}
+            <option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="space-y-2">
+          <label for="contact_id" class="block text-sm font-medium text-slate-600">Contacto (opcional)</label>
+          <select id="contact_id" name="contact_id"
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40">
+            {% for option in contacts %}
+            <option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="space-y-2">
+          <label for="amount_estimated" class="block text-sm font-medium text-slate-600">Monto estimado</label>
+          <input id="amount_estimated" name="amount_estimated" value="{{ amount_estimated }}" required type="number" step="0.01"
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40" />
+        </div>
+      </div>
+
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div class="space-y-2">
+          <label for="due_date" class="block text-sm font-medium text-slate-600">Fecha de vencimiento</label>
+          <input id="due_date" name="due_date" value="{{ due_date }}" required placeholder="Selecciona fecha y hora" data-datetime-picker
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40" />
+        </div>
+
+        <div class="space-y-2">
+          <label for="status" class="block text-sm font-medium text-slate-600">Estado</label>
+          <select id="status" name="status" required
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40">
+            {% for option in status_options %}
+            <option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div class="space-y-2">
+          <label for="recurring_plan_id" class="block text-sm font-medium text-slate-600">Plan recurrente (opcional)</label>
+          <select id="recurring_plan_id" name="recurring_plan_id"
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40">
+            {% for option in recurring_plans %}
+            <option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="space-y-2">
+          <label for="recurring_plan_version" class="block text-sm font-medium text-slate-600">Versión del plan (opcional)</label>
+          <input id="recurring_plan_version" name="recurring_plan_version" value="{{ recurring_plan_version }}" type="number" min="1"
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40" />
+        </div>
+      </div>
+
+      <div class="space-y-2">
+        <label for="notes" class="block text-sm font-medium text-slate-600">Notas</label>
+        <textarea id="notes" name="notes" rows="3" placeholder="Opcional"
+          class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40">{{ notes }}</textarea>
+      </div>
+
+      <div class="flex items-center justify-end gap-3">
+        <a href="/admin/planned_entries" class="text-sm font-medium text-slate-500 hover:text-slate-700">Cancelar</a>
+        <button type="submit"
+          class="inline-flex items-center rounded-md bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2">
+          {% if is_edit %}Guardar cambios{% else %}Crear compromiso{% endif %}
+        </button>
+      </div>
+    </form>
+  </div>
+{% endblock %}

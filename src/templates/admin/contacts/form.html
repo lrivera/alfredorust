@@ -1,0 +1,78 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}{% if is_edit %}Editar contacto{% else %}Nuevo contacto{% endif %}{% endblock %}
+
+{% block content %}
+  <div class="max-w-2xl space-y-6">
+    <div>
+      <h1 class="text-2xl font-semibold text-slate-800">{% if is_edit %}Editar contacto{% else %}Crear nuevo contacto{% endif %}</h1>
+      <p class="mt-1 text-sm text-slate-500">Guarda clientes, proveedores o servicios frecuentes.</p>
+    </div>
+
+    {% if errors.is_some() %}
+    <div class="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+      {{ errors.as_ref().unwrap() }}
+    </div>
+    {% endif %}
+
+    <form method="post" action="{{ action }}" class="space-y-5 rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div class="space-y-2">
+          <label for="name" class="block text-sm font-medium text-slate-600">Nombre</label>
+          <input id="name" name="name" value="{{ name }}" required
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40" />
+        </div>
+
+        <div class="space-y-2">
+          <label for="contact_type" class="block text-sm font-medium text-slate-600">Tipo</label>
+          <select id="contact_type" name="contact_type" required
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40">
+            {% for option in contact_options %}
+            <option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div class="space-y-2">
+          <label for="company_id" class="block text-sm font-medium text-slate-600">Compañía</label>
+          <select id="company_id" name="company_id" required
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40">
+            {% for option in companies %}
+            <option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="space-y-2">
+          <label for="email" class="block text-sm font-medium text-slate-600">Correo</label>
+          <input id="email" name="email" value="{{ email }}" placeholder="opcional"
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40" />
+        </div>
+      </div>
+
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div class="space-y-2">
+          <label for="phone" class="block text-sm font-medium text-slate-600">Teléfono</label>
+          <input id="phone" name="phone" value="{{ phone }}" placeholder="opcional"
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40" />
+        </div>
+
+        <div class="space-y-2">
+          <label for="notes" class="block text-sm font-medium text-slate-600">Notas</label>
+          <input id="notes" name="notes" value="{{ notes }}" placeholder="opcional"
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40" />
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-3">
+        <a href="/admin/contacts" class="text-sm font-medium text-slate-500 hover:text-slate-700">Cancelar</a>
+        <button type="submit"
+          class="inline-flex items-center rounded-md bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2">
+          {% if is_edit %}Guardar cambios{% else %}Crear contacto{% endif %}
+        </button>
+      </div>
+    </form>
+  </div>
+{% endblock %}

@@ -1,0 +1,122 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}{% if is_edit %}Editar pronóstico{% else %}Nuevo pronóstico{% endif %}{% endblock %}
+
+{% block content %}
+  <div class="max-w-3xl space-y-6">
+    <div>
+      <h1 class="text-2xl font-semibold text-slate-800">{% if is_edit %}Editar pronóstico{% else %}Crear nuevo pronóstico{% endif %}</h1>
+      <p class="mt-1 text-sm text-slate-500">Captura un escenario proyectado para una compañía.</p>
+    </div>
+
+    {% if errors.is_some() %}
+    <div class="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+      {{ errors.as_ref().unwrap() }}
+    </div>
+    {% endif %}
+
+    <form method="post" action="{{ action }}" class="space-y-5 rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div class="space-y-2">
+          <label for="company_id" class="block text-sm font-medium text-slate-600">Compañía</label>
+          <select id="company_id" name="company_id" required
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40">
+            {% for option in companies %}
+            <option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="space-y-2">
+          <label for="currency" class="block text-sm font-medium text-slate-600">Moneda</label>
+          <input id="currency" name="currency" value="{{ currency }}" required placeholder="MXN"
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40" />
+        </div>
+      </div>
+
+      <div class="grid gap-4 sm:grid-cols-3">
+        <div class="space-y-2">
+          <label for="projected_income_total" class="block text-sm font-medium text-slate-600">Ingreso proyectado</label>
+          <input id="projected_income_total" name="projected_income_total" value="{{ projected_income_total }}" required type="number" step="0.01"
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40" />
+        </div>
+        <div class="space-y-2">
+          <label for="projected_expense_total" class="block text-sm font-medium text-slate-600">Gasto proyectado</label>
+          <input id="projected_expense_total" name="projected_expense_total" value="{{ projected_expense_total }}" required type="number" step="0.01"
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40" />
+        </div>
+        <div class="space-y-2">
+          <label for="projected_net" class="block text-sm font-medium text-slate-600">Neto proyectado</label>
+          <input id="projected_net" name="projected_net" value="{{ projected_net }}" required type="number" step="0.01"
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40" />
+        </div>
+      </div>
+
+      <div class="grid gap-4 sm:grid-cols-3">
+        <div class="space-y-2">
+          <label for="initial_balance" class="block text-sm font-medium text-slate-600">Saldo inicial (opcional)</label>
+          <input id="initial_balance" name="initial_balance" value="{{ initial_balance }}" type="number" step="0.01"
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40" />
+        </div>
+        <div class="space-y-2">
+          <label for="final_balance" class="block text-sm font-medium text-slate-600">Saldo final (opcional)</label>
+          <input id="final_balance" name="final_balance" value="{{ final_balance }}" type="number" step="0.01"
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40" />
+        </div>
+        <div class="space-y-2">
+          <label for="generated_by_user_id" class="block text-sm font-medium text-slate-600">Generado por (opcional)</label>
+          <select id="generated_by_user_id" name="generated_by_user_id"
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40">
+            {% for option in users %}
+            <option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="grid gap-4 sm:grid-cols-3">
+        <div class="space-y-2">
+          <label for="generated_at" class="block text-sm font-medium text-slate-600">Generado</label>
+          <input id="generated_at" name="generated_at" value="{{ generated_at }}" required placeholder="Selecciona fecha y hora" data-datetime-picker
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40" />
+        </div>
+        <div class="space-y-2">
+          <label for="start_date" class="block text-sm font-medium text-slate-600">Inicio</label>
+          <input id="start_date" name="start_date" value="{{ start_date }}" required placeholder="Selecciona fecha y hora" data-datetime-picker
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40" />
+        </div>
+        <div class="space-y-2">
+          <label for="end_date" class="block text-sm font-medium text-slate-600">Fin</label>
+          <input id="end_date" name="end_date" value="{{ end_date }}" required placeholder="Selecciona fecha y hora" data-datetime-picker
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40" />
+        </div>
+      </div>
+
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div class="space-y-2">
+          <label for="scenario_name" class="block text-sm font-medium text-slate-600">Escenario (opcional)</label>
+          <input id="scenario_name" name="scenario_name" value="{{ scenario_name }}" placeholder="base, optimista, etc."
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40" />
+        </div>
+        <div class="space-y-2">
+          <label for="details" class="block text-sm font-medium text-slate-600">Detalles (JSON/texto opcional)</label>
+          <textarea id="details" name="details" rows="3"
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40">{{ details }}</textarea>
+        </div>
+      </div>
+
+      <div class="space-y-2">
+        <label for="notes" class="block text-sm font-medium text-slate-600">Notas</label>
+        <textarea id="notes" name="notes" rows="3" placeholder="Opcional"
+          class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40">{{ notes }}</textarea>
+      </div>
+
+      <div class="flex items-center justify-end gap-3">
+        <a href="/admin/forecasts" class="text-sm font-medium text-slate-500 hover:text-slate-700">Cancelar</a>
+        <button type="submit"
+          class="inline-flex items-center rounded-md bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2">
+          {% if is_edit %}Guardar cambios{% else %}Crear pronóstico{% endif %}
+        </button>
+      </div>
+    </form>
+  </div>
+{% endblock %}

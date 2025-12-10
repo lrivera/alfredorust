@@ -5,6 +5,42 @@
   <title>{% block title %}Panel{% endblock %}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+  <style>
+    .flatpickr-calendar {
+      border-radius: 14px;
+      border: 1px solid rgb(203 213 225);
+      box-shadow: 0 10px 30px -12px rgba(15, 23, 42, 0.35);
+      overflow: hidden;
+    }
+    .flatpickr-months .flatpickr-month {
+      height: 48px;
+      padding-top: 6px;
+      background: linear-gradient(90deg, rgb(59 130 246 / 0.18), rgb(56 189 248 / 0.18));
+      color: rgb(15 23 42);
+      font-weight: 600;
+    }
+    .flatpickr-day.selected,
+    .flatpickr-day.startRange,
+    .flatpickr-day.endRange {
+      background: linear-gradient(135deg, #0ea5e9, #2563eb);
+      border-color: transparent;
+      color: white;
+      box-shadow: 0 6px 18px -8px rgba(37, 99, 235, 0.8);
+    }
+    .flatpickr-day.today {
+      border-color: #0ea5e9;
+      color: #0ea5e9;
+    }
+    .flatpickr-time input,
+    .flatpickr-time .numInputWrapper span.arrowUp:after,
+    .flatpickr-time .numInputWrapper span.arrowDown:after {
+      color: rgb(30 41 59);
+    }
+    .flatpickr-time input {
+      font-weight: 600;
+    }
+  </style>
   {% block head %}{% endblock %}
 </head>
 <body class="min-h-screen bg-slate-100 text-slate-900">
@@ -17,6 +53,13 @@
           <a href="/account" class="hover:text-sky-600 transition">Mi cuenta</a>
           <a href="/admin/users" class="hover:text-sky-600 transition">Usuarios</a>
           <a href="/admin/companies" class="hover:text-sky-600 transition">Compañías</a>
+          <a href="/admin/accounts" class="hover:text-sky-600 transition">Cuentas</a>
+          <a href="/admin/categories" class="hover:text-sky-600 transition">Categorías</a>
+          <a href="/admin/contacts" class="hover:text-sky-600 transition">Contactos</a>
+          <a href="/admin/recurring_plans" class="hover:text-sky-600 transition">Planes</a>
+          <a href="/admin/planned_entries" class="hover:text-sky-600 transition">Compromisos</a>
+          <a href="/admin/transactions" class="hover:text-sky-600 transition">Movimientos</a>
+          <a href="/admin/forecasts" class="hover:text-sky-600 transition">Pronósticos</a>
           <a href="/pdf" class="hover:text-sky-600 transition">PDF Typst</a>
         </div>
       </nav>
@@ -25,6 +68,54 @@
       {% block content %}{% endblock %}
     </main>
   </div>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+  <script>
+    (function () {
+      const toIso = (date) => {
+        const iso = date.toISOString();
+        return iso.endsWith(".000Z") ? iso.replace(".000Z", "Z") : iso;
+      };
+
+      const parseIso = (value) => {
+        if (!value) return null;
+        const parsed = new Date(value);
+        return isNaN(parsed.getTime()) ? null : parsed;
+      };
+
+      const pickerOptions = {
+        enableTime: true,
+        time_24hr: true,
+        altInput: true,
+        altFormat: "j M Y, H:i",
+        altInputClass: "block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40",
+        allowInput: true,
+        defaultHour: 12,
+        defaultMinute: 0,
+        dateFormat: "Z",
+        formatDate: (date) => toIso(date),
+        parseDate: (datestr) => parseIso(datestr),
+        onChange: (selectedDates, _dateStr, instance) => {
+          if (selectedDates[0]) {
+            instance.input.value = toIso(selectedDates[0]);
+          }
+        },
+        onReady: (_selectedDates, _dateStr, instance) => {
+          const preset = parseIso(instance.input.value);
+          if (preset) {
+            instance.setDate(preset, false);
+            instance.input.value = toIso(preset);
+          }
+        },
+      };
+
+      document.addEventListener("DOMContentLoaded", () => {
+        if (!window.flatpickr) return;
+        document.querySelectorAll("[data-datetime-picker]").forEach((input) => {
+          flatpickr(input, pickerOptions);
+        });
+      });
+    })();
+  </script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

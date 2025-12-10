@@ -1,0 +1,76 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}{% if is_edit %}Editar cuenta{% else %}Nueva cuenta{% endif %}{% endblock %}
+
+{% block content %}
+  <div class="max-w-2xl space-y-6">
+    <div>
+      <h1 class="text-2xl font-semibold text-slate-800">{% if is_edit %}Editar cuenta{% else %}Crear nueva cuenta{% endif %}</h1>
+      <p class="mt-1 text-sm text-slate-500">Define los datos básicos de la cuenta financiera.</p>
+    </div>
+
+    {% if errors.is_some() %}
+    <div class="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+      {{ errors.as_ref().unwrap() }}
+    </div>
+    {% endif %}
+
+    <form method="post" action="{{ action }}" class="space-y-5 rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div class="space-y-2">
+          <label for="name" class="block text-sm font-medium text-slate-600">Nombre</label>
+          <input id="name" name="name" value="{{ name }}" required
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40" />
+        </div>
+
+        <div class="space-y-2">
+          <label for="currency" class="block text-sm font-medium text-slate-600">Moneda</label>
+          <input id="currency" name="currency" value="{{ currency }}" placeholder="Ej. MXN" required
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40" />
+        </div>
+      </div>
+
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div class="space-y-2">
+          <label for="company_id" class="block text-sm font-medium text-slate-600">Compañía</label>
+          <select id="company_id" name="company_id" required
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40">
+            {% for option in companies %}
+            <option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="space-y-2">
+          <label for="account_type" class="block text-sm font-medium text-slate-600">Tipo</label>
+          <select id="account_type" name="account_type" required
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40">
+            {% for option in account_type_options %}
+            <option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="space-y-2">
+        <label for="notes" class="block text-sm font-medium text-slate-600">Notas</label>
+        <textarea id="notes" name="notes" rows="3" placeholder="Opcional"
+          class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40">{{ notes }}</textarea>
+      </div>
+
+      <label class="flex items-center gap-2 text-sm font-medium text-slate-700">
+        <input type="checkbox" name="is_active" value="true" {% if is_active %}checked{% endif %}
+          class="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500" />
+        Activa
+      </label>
+
+      <div class="flex items-center justify-end gap-3">
+        <a href="/admin/accounts" class="text-sm font-medium text-slate-500 hover:text-slate-700">Cancelar</a>
+        <button type="submit"
+          class="inline-flex items-center rounded-md bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2">
+          {% if is_edit %}Guardar cambios{% else %}Crear cuenta{% endif %}
+        </button>
+      </div>
+    </form>
+  </div>
+{% endblock %}
