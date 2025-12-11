@@ -1830,16 +1830,33 @@ fn upcoming_due_dates(
         }
         "weekly" => {
             let step = chrono::Duration::days(7);
-            let mut current = if now > start { now } else { start };
+            let mut current = start;
+            while current < now {
+                current = current + step;
+            }
             for _ in 0..months_ahead {
-                if current >= start {
-                    if let Some(end) = end_limit {
-                        if current > end {
-                            break;
-                        }
+                if let Some(end) = end_limit {
+                    if current > end {
+                        break;
                     }
-                    dates.push(DateTime::from_chrono(current));
                 }
+                dates.push(DateTime::from_chrono(current));
+                current = current + step;
+            }
+        }
+        "biweekly" => {
+            let step = chrono::Duration::days(14);
+            let mut current = start;
+            while current < now {
+                current = current + step;
+            }
+            for _ in 0..months_ahead {
+                if let Some(end) = end_limit {
+                    if current > end {
+                        break;
+                    }
+                }
+                dates.push(DateTime::from_chrono(current));
                 current = current + step;
             }
         }
