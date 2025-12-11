@@ -1,0 +1,24 @@
+[
+  {
+    "_id": { "$oid": "64b000000000000000000201" },
+    "company_id": { "$oid": "64b000000000000000000001" },
+    "name": "Servicios",
+    "flow_type": "expense",
+    "parent_id": null,
+    "notes": "Luz, agua, internet"
+  },
+  {
+    "_id": { "$oid": "64b000000000000000000202" },
+    "company_id": { "$oid": "64b000000000000000000001" },
+    "name": "Renta",
+    "flow_type": "expense",
+    "parent_id": null
+  },
+  {
+    "_id": { "$oid": "64b000000000000000000203" },
+    "company_id": { "$oid": "64b000000000000000000001" },
+    "name": "Ingresos",
+    "flow_type": "income",
+    "parent_id": null
+  }
+]

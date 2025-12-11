@@ -116,16 +116,14 @@ pub async fn companies_create(
     let name = form.name.trim();
     let default_currency = form.default_currency.trim();
     let is_active = form.is_active;
-    let notes = form
-        .notes
-        .and_then(|n| {
-            let trimmed = n.trim();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed.to_string())
-            }
-        });
+    let notes = form.notes.and_then(|n| {
+        let trimmed = n.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    });
     if name.is_empty() {
         return render(CompanyFormTemplate {
             action: "/admin/companies".into(),
@@ -196,16 +194,14 @@ pub async fn companies_update(
     let name = form.name.trim();
     let default_currency = form.default_currency.trim();
     let is_active = form.is_active;
-    let notes = form
-        .notes
-        .and_then(|n| {
-            let trimmed = n.trim();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed.to_string())
-            }
-        });
+    let notes = form.notes.and_then(|n| {
+        let trimmed = n.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    });
     if name.is_empty() {
         return render(CompanyFormTemplate {
             action: format!("/admin/companies/{}/update", id),

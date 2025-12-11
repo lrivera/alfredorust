@@ -1,0 +1,53 @@
+[
+  {
+    "_id": { "$oid": "64b000000000000000000401" },
+    "company_id": { "$oid": "64b000000000000000000001" },
+    "name": "Luz CFE",
+    "flow_type": "expense",
+    "category_id": { "$oid": "64b000000000000000000201" },
+    "account_expected_id": { "$oid": "64b000000000000000000101" },
+    "contact_id": { "$oid": "64b000000000000000000301" },
+    "amount_estimated": 2000.0,
+    "frequency": "monthly",
+    "day_of_month": 10,
+    "start_date": { "$date": "2024-01-01T00:00:00Z" },
+    "end_date": null,
+    "is_active": true,
+    "version": 1,
+    "notes": "Recibo de luz estimado"
+  },
+  {
+    "_id": { "$oid": "64b000000000000000000402" },
+    "company_id": { "$oid": "64b000000000000000000001" },
+    "name": "Renta oficina",
+    "flow_type": "expense",
+    "category_id": { "$oid": "64b000000000000000000202" },
+    "account_expected_id": { "$oid": "64b000000000000000000101" },
+    "contact_id": { "$oid": "64b000000000000000000302" },
+    "amount_estimated": 15000.0,
+    "frequency": "monthly",
+    "day_of_month": 5,
+    "start_date": { "$date": "2024-01-01T00:00:00Z" },
+    "end_date": null,
+    "is_active": true,
+    "version": 1,
+    "notes": "Renta mensual"
+  },
+  {
+    "_id": { "$oid": "64b000000000000000000403" },
+    "company_id": { "$oid": "64b000000000000000000001" },
+    "name": "Nómina",
+    "flow_type": "income",
+    "category_id": { "$oid": "64b000000000000000000203" },
+    "account_expected_id": { "$oid": "64b000000000000000000101" },
+    "contact_id": { "$oid": "64b000000000000000000303" },
+    "amount_estimated": 50000.0,
+    "frequency": "monthly",
+    "day_of_month": 15,
+    "start_date": { "$date": "2024-01-01T00:00:00Z" },
+    "end_date": null,
+    "is_active": true,
+    "version": 1,
+    "notes": "Ingreso principal"
+  }
+]

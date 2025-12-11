@@ -1,0 +1,27 @@
+[
+  {
+    "_id": { "$oid": "64b000000000000000000301" },
+    "company_id": { "$oid": "64b000000000000000000001" },
+    "name": "CFE",
+    "contact_type": "service",
+    "email": null,
+    "phone": null,
+    "notes": "Luz"
+  },
+  {
+    "_id": { "$oid": "64b000000000000000000302" },
+    "company_id": { "$oid": "64b000000000000000000001" },
+    "name": "Arrendador",
+    "contact_type": "supplier",
+    "email": null,
+    "phone": null
+  },
+  {
+    "_id": { "$oid": "64b000000000000000000303" },
+    "company_id": { "$oid": "64b000000000000000000001" },
+    "name": "Empresa XYZ",
+    "contact_type": "customer",
+    "email": "payroll@xyz.com",
+    "phone": null
+  }
+]

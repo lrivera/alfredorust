@@ -1,0 +1,441 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}Tiempo{% endblock %}
+
+{% block content %}
+  <div class="flex items-center justify-between pb-6">
+    <div>
+      <h1 class="text-2xl font-semibold text-slate-800">Tiempo</h1>
+      <p class="mt-1 text-sm text-slate-500">Línea de tiempo horizontal con navegación infinita.</p>
+    </div>
+  </div>
+
+  <div class="mb-4 flex flex-wrap items-center gap-3">
+    <div class="inline-flex rounded-md border border-slate-200 bg-white shadow-sm">
+      <button data-mode="day" class="mode-btn px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 first:rounded-l-md last:rounded-r-md">
+        Día
+      </button>
+      <button data-mode="week" class="mode-btn px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 first:rounded-l-md last:rounded-r-md">
+        Semana
+      </button>
+      <button data-mode="month" class="mode-btn px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 first:rounded-l-md last:rounded-r-md">
+        Mes
+      </button>
+      <button data-mode="year" class="mode-btn px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 first:rounded-l-md last:rounded-r-md">
+        Año
+      </button>
+    </div>
+    <button id="btnHoy" class="rounded-md bg-sky-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2">
+      Ir a hoy
+    </button>
+  </div>
+
+  <div class="w-full flex flex-1 min-h-[24rem] max-h-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+    <div id="timelineViewport" class="relative w-full h-full overflow-x-auto overflow-y-hidden border-t border-slate-100">
+      <div id="timelineStrip" class="flex h-full min-h-[24rem] w-full"></div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  (() => {
+    const CELL_WIDTH = 560;
+    const TOTAL = 200;
+    const BUFFER = 40;
+    const MIDDLE = Math.floor(TOTAL / 2);
+    const formatter = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 0 });
+
+    const modes = {
+      day: {
+        step: 1,
+        label: "Día",
+        add: (date, n) => {
+          const d = new Date(date);
+          d.setDate(d.getDate() + n);
+          return d;
+        },
+        format: (d) =>
+          `${d.toLocaleDateString("es-MX", { weekday: "short" })} ${d.getDate()} ${d.toLocaleDateString("es-MX", { month: "short" })} ${d.getFullYear()}`,
+      },
+      week: {
+        step: 7,
+        label: "Semana",
+        add: (date, n) => {
+          const d = new Date(date);
+          d.setDate(d.getDate() + n * 7);
+          return d;
+        },
+        format: (d) => {
+          const end = new Date(d);
+          end.setDate(end.getDate() + 6);
+          return `Sem ${d.toLocaleDateString("es-MX", { day: "2-digit", month: "short" })} - ${end.toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" })}`;
+        },
+      },
+      month: {
+        step: 1,
+        label: "Mes",
+        add: (date, n) => {
+          const d = new Date(date);
+          d.setMonth(d.getMonth() + n);
+          return d;
+        },
+        format: (d) => `${d.toLocaleDateString("es-MX", { month: "long" })} ${d.getFullYear()}`,
+      },
+      year: {
+        step: 1,
+        label: "Año",
+        add: (date, n) => {
+          const d = new Date(date);
+          d.setFullYear(d.getFullYear() + n);
+          return d;
+        },
+        format: (d) => `${d.getFullYear()}`,
+      },
+    };
+
+    let mode = "month";
+    let origin = 0;
+    let baseDate = new Date();
+    let bucketData = new Map();
+    let bucketList = [];
+    let cumulativeRange = { min: 0, max: 1 };
+
+    const viewport = document.getElementById("timelineViewport");
+    const strip = document.getElementById("timelineStrip");
+
+    const cells = [];
+    for (let i = 0; i < TOTAL; i++) {
+      const cell = document.createElement("div");
+      cell.className =
+        "flex min-w-[560px] flex-col border-r border-slate-200 px-6 py-4 text-center transition";
+      cell.style.width = `${CELL_WIDTH}px`;
+
+      const label = document.createElement("div");
+      label.className = "text-sm font-semibold uppercase tracking-wide text-slate-600";
+      const value = document.createElement("div");
+      value.className = "mt-1 text-base font-semibold text-slate-800";
+
+      const metrics = document.createElement("div");
+      metrics.className = "mt-2 text-xs leading-snug text-slate-600";
+
+      const items = document.createElement("div");
+      items.className = "mt-3 space-y-1 text-sm leading-snug text-slate-700 w-full";
+
+      cell.appendChild(label);
+      cell.appendChild(value);
+      cell.appendChild(metrics);
+      cell.appendChild(items);
+      strip.appendChild(cell);
+      cells.push({ cell, label, value, metrics, items });
+    }
+
+    const startOfBucket = (date, mode) => {
+      const d = new Date(date);
+      switch (mode) {
+        case "day":
+          d.setUTCHours(0, 0, 0, 0);
+          return d;
+        case "week": {
+          const day = d.getUTCDay(); // 0 Sunday
+          const delta = (day + 6) % 7; // make Monday = 0
+          d.setUTCDate(d.getUTCDate() - delta);
+          d.setUTCHours(0, 0, 0, 0);
+          return d;
+        }
+        case "month":
+          d.setUTCDate(1);
+          d.setUTCHours(0, 0, 0, 0);
+          return d;
+        case "year":
+          d.setUTCMonth(0, 1);
+          d.setUTCHours(0, 0, 0, 0);
+          return d;
+        default:
+          return d;
+      }
+    };
+
+    const addStep = (date, mode, steps) => {
+      const d = new Date(date);
+      switch (mode) {
+        case "day":
+          d.setUTCDate(d.getUTCDate() + steps);
+          return d;
+        case "week":
+          d.setUTCDate(d.getUTCDate() + steps * 7);
+          return d;
+        case "month":
+          d.setUTCMonth(d.getUTCMonth() + steps);
+          return d;
+        case "year":
+          d.setUTCFullYear(d.getUTCFullYear() + steps);
+          return d;
+        default:
+          return d;
+      }
+    };
+
+    const renderBars = (ri, re, pi, pe) => {
+      const values = [ri, re, pi, pe].map((v) => Math.abs(v));
+      const max = Math.max(...values, 1);
+      const scale = (v) => (Math.abs(v) / max) * 60;
+      return `
+        <svg viewBox="0 0 180 80" class="w-full">
+          <g transform="translate(10,10)">
+            <rect x="0" y="${70 - scale(ri)}" width="30" height="${scale(ri)}" fill="#10b981" rx="4"></rect>
+            <rect x="40" y="${70 - scale(re)}" width="30" height="${scale(re)}" fill="#ef4444" rx="4"></rect>
+            <rect x="90" y="${70 - scale(pi)}" width="30" height="${scale(pi)}" fill="#67e8f9" rx="4"></rect>
+            <rect x="130" y="${70 - scale(pe)}" width="30" height="${scale(pe)}" fill="#fb7185" rx="4"></rect>
+            <text x="0" y="78" class="text-[9px] fill-slate-500">RI</text>
+            <text x="40" y="78" class="text-[9px] fill-slate-500">RE</text>
+            <text x="90" y="78" class="text-[9px] fill-slate-500">PI</text>
+            <text x="130" y="78" class="text-[9px] fill-slate-500">PE</text>
+          </g>
+        </svg>
+      `;
+    };
+
+    const renderCumulativeGauge = (real, plan, range) => {
+      const width = 180;
+      const height = 40;
+      const [min, max] = [range.min, range.max];
+      const span = max - min || 1;
+      const scale = (v) => ((v - min) / span) * (width - 20) + 10;
+      const zeroX = scale(0);
+      const realX = scale(real);
+      const planX = scale(plan);
+      return `
+        <svg viewBox="0 0 ${width} ${height}" class="w-full">
+          <line x1="10" y1="${height / 2}" x2="${width - 10}" y2="${height / 2}" stroke="#cbd5e1" stroke-width="4" stroke-linecap="round" />
+          <line x1="${Math.min(zeroX, realX)}" y1="${height / 2}" x2="${Math.max(zeroX, realX)}" y2="${height / 2}" stroke="#0ea5e9" stroke-width="4" stroke-linecap="round" />
+          <line x1="${Math.min(zeroX, planX)}" y1="${height / 2 + 6}" x2="${Math.max(zeroX, planX)}" y2="${height / 2 + 6}" stroke="#a855f7" stroke-width="4" stroke-linecap="round" />
+          <circle cx="${realX}" cy="${height / 2}" r="4" fill="#0ea5e9" />
+          <circle cx="${planX}" cy="${height / 2 + 6}" r="4" fill="#a855f7" />
+          <text x="10" y="12" class="text-[9px] fill-slate-500">Acumulado</text>
+        </svg>
+      `;
+    };
+
+    const renderCells = () => {
+      const config = modes[mode];
+      cells.forEach((entry, idx) => {
+        const offset = idx - MIDDLE;
+        const target = config.add(baseDate, origin + offset);
+        entry.label.textContent = config.label;
+        entry.value.textContent = config.format(target);
+
+        const bucketStart = startOfBucket(target, mode).toISOString();
+        const bucket = bucketData.get(bucketStart);
+        entry.cell.classList.remove("bg-slate-50", "bg-white", "bg-sky-100", "ring", "ring-sky-300", "shadow");
+        const startBucket = startOfBucket(target, mode);
+        const nowBucket = startOfBucket(new Date(), mode);
+        const isTodayBucket = startBucket.getTime() === nowBucket.getTime();
+        if (isTodayBucket) {
+          entry.cell.classList.add("bg-sky-100", "ring", "ring-sky-300", "shadow");
+        } else {
+          entry.cell.classList.add(idx % 2 === 0 ? "bg-white" : "bg-slate-50");
+        }
+        const cumulativeReal = bucket?.cumulative_real ?? (bucketList.length ? bucketList[bucketList.length - 1].cumulative_real : 0);
+        const cumulativePlanned = bucket?.cumulative_planned ?? (bucketList.length ? bucketList[bucketList.length - 1].cumulative_planned : 0);
+        const badge = (value) => {
+          if (value === 0) {
+            return `<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold bg-slate-100 text-slate-700 ring-1 ring-slate-200">${formatter.format(value)}</span>`;
+          }
+          const positive = value > 0;
+          return `<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${positive ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200" : "bg-rose-50 text-rose-700 ring-1 ring-rose-200"}">${formatter.format(value)}</span>`;
+        };
+
+        if (bucket) {
+          const realNet = bucket.net_real;
+          const plannedNet = bucket.net_planned;
+          entry.metrics.innerHTML = `
+            <div class="mb-2 flex flex-col gap-1">
+              ${renderBars(bucket.real_income, bucket.real_expense, bucket.planned_income, bucket.planned_expense)}
+              ${renderCumulativeGauge(cumulativeReal, cumulativePlanned, cumulativeRange)}
+            </div>
+            <div class="overflow-hidden rounded-md ring-1 ring-slate-200">
+              <table class="w-full text-sm">
+                <thead class="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th class="px-2 py-1 text-left">Tipo</th>
+                    <th class="px-2 py-1 text-left">Ingresos</th>
+                    <th class="px-2 py-1 text-left">Gastos</th>
+                    <th class="px-2 py-1 text-left">Total</th>
+                    <th class="px-2 py-1 text-left">Acumulado</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                  <tr>
+                    <td class="px-2 py-1 font-semibold text-slate-700">Real</td>
+                    <td class="px-2 py-1">${badge(bucket.real_income)}</td>
+                    <td class="px-2 py-1">${badge(-bucket.real_expense)}</td>
+                    <td class="px-2 py-1">${badge(realNet)}</td>
+                    <td class="px-2 py-1">${badge(cumulativeReal)}</td>
+                  </tr>
+                  <tr class="bg-slate-50">
+                    <td class="px-2 py-1 font-semibold text-slate-700">Plan</td>
+                    <td class="px-2 py-1">${badge(bucket.planned_income)}</td>
+                    <td class="px-2 py-1">${badge(-bucket.planned_expense)}</td>
+                    <td class="px-2 py-1">${badge(plannedNet)}</td>
+                    <td class="px-2 py-1">${badge(cumulativePlanned)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          `;
+          const txItems = bucket.transactions
+            .map(
+              (tx) =>
+                `<div class="flex items-center justify-between gap-2 rounded bg-slate-50 px-2 py-1">
+                  <span class="font-semibold ${tx.type === "income" ? "text-emerald-700" : tx.type === "expense" ? "text-rose-700" : "text-slate-700"}">
+                    ${tx.type === "income" ? "+" : tx.type === "expense" ? "-" : ""}${formatter.format(tx.amount)}
+                  </span>
+                  <span class="truncate text-slate-700" title="${tx.description}">${tx.description}</span>
+                </div>`
+            )
+            .join("");
+          const plannedItems = bucket.planned_entries
+            .map(
+              (pe) =>
+                `<div class="flex items-center justify-between gap-2 rounded border border-dashed border-slate-200 px-2 py-1">
+                  <span class="font-semibold ${pe.flow_type === "income" ? "text-emerald-700" : "text-rose-700"}">
+                    ${pe.flow_type === "income" ? "+" : "-"}${formatter.format(pe.amount_estimated)}
+                  </span>
+                  <span class="truncate text-slate-700" title="${pe.name} · ${pe.status}">${pe.name} · ${pe.status}</span>
+                </div>`
+            )
+            .join("");
+          const hasContent = txItems || plannedItems;
+          entry.items.innerHTML = hasContent
+            ? `<div class="space-y-1">${txItems}${plannedItems}</div>`
+            : `<div class="text-slate-400">Sin items</div>`;
+        } else {
+          entry.metrics.innerHTML = `
+            <div class="mb-2 flex flex-col gap-1">
+              ${renderBars(0, 0, 0, 0)}
+              ${renderCumulativeGauge(cumulativeReal, cumulativePlanned, cumulativeRange)}
+            </div>
+            <div class="overflow-hidden rounded-md ring-1 ring-slate-200">
+              <table class="w-full text-sm">
+                <thead class="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th class="px-2 py-1 text-left">Tipo</th>
+                    <th class="px-2 py-1 text-left">Ingresos</th>
+                    <th class="px-2 py-1 text-left">Gastos</th>
+                    <th class="px-2 py-1 text-left">Total</th>
+                    <th class="px-2 py-1 text-left">Acumulado</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                  <tr>
+                    <td class="px-2 py-1 font-semibold text-slate-700">Real</td>
+                    <td class="px-2 py-1">${badge(0)}</td>
+                    <td class="px-2 py-1">${badge(0)}</td>
+                    <td class="px-2 py-1">${badge(0)}</td>
+                    <td class="px-2 py-1">${badge(cumulativeReal)}</td>
+                  </tr>
+                  <tr class="bg-slate-50">
+                    <td class="px-2 py-1 font-semibold text-slate-700">Plan</td>
+                    <td class="px-2 py-1">${badge(0)}</td>
+                    <td class="px-2 py-1">${badge(0)}</td>
+                    <td class="px-2 py-1">${badge(0)}</td>
+                    <td class="px-2 py-1">${badge(cumulativePlanned)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          `;
+          entry.items.innerHTML = `<div class="text-slate-400">Sin items</div>`;
+        }
+      });
+    };
+
+    const recenter = () => {
+      viewport.scrollLeft = MIDDLE * CELL_WIDTH;
+    };
+
+    const handleScroll = () => {
+      const scrollIndex = Math.floor(viewport.scrollLeft / CELL_WIDTH);
+      if (scrollIndex < BUFFER) {
+        const delta = MIDDLE - scrollIndex;
+        origin -= delta;
+        renderCells();
+        viewport.scrollLeft += delta * CELL_WIDTH;
+        void loadData();
+      } else if (scrollIndex > TOTAL - BUFFER) {
+        const delta = scrollIndex - MIDDLE;
+        origin += delta;
+        renderCells();
+        viewport.scrollLeft -= delta * CELL_WIDTH;
+        void loadData();
+      }
+    };
+
+    viewport.addEventListener("scroll", handleScroll, { passive: true });
+
+    const updateModeButtons = () => {
+      document.querySelectorAll(".mode-btn").forEach((btn) => {
+        const isActive = btn.dataset.mode === mode;
+        btn.classList.toggle("bg-sky-100", isActive);
+        btn.classList.toggle("text-sky-700", isActive);
+        btn.classList.toggle("ring-1", isActive);
+        btn.classList.toggle("ring-sky-300", isActive);
+        btn.classList.toggle("shadow-inner", isActive);
+      });
+    };
+
+    const setMode = async (nextMode) => {
+      const currentConfig = modes[mode];
+      const anchorDate = currentConfig.add(baseDate, origin);
+      mode = nextMode;
+      baseDate = anchorDate;
+      origin = 0;
+      renderCells();
+      recenter();
+      updateModeButtons();
+      await loadData();
+    };
+
+    document.querySelectorAll(".mode-btn").forEach((btn) => {
+      btn.addEventListener("click", () => setMode(btn.dataset.mode));
+    });
+
+    document.getElementById("btnHoy").addEventListener("click", () => {
+      baseDate = new Date();
+      origin = 0;
+      renderCells();
+      recenter();
+      void loadData();
+    });
+
+    const loadData = async () => {
+      const config = modes[mode];
+      const firstTarget = config.add(baseDate, origin - MIDDLE);
+      const lastTarget = config.add(baseDate, origin + (TOTAL - MIDDLE));
+      const start = startOfBucket(firstTarget < lastTarget ? firstTarget : lastTarget, mode);
+      const endBucket = startOfBucket(firstTarget > lastTarget ? firstTarget : lastTarget, mode);
+      const end = addStep(endBucket, mode, 1);
+
+      const params = new URLSearchParams({
+        mode,
+        from: start.toISOString(),
+        to: end.toISOString(),
+      });
+
+      try {
+        const res = await fetch(`/api/tiempo?${params.toString()}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        bucketList = data;
+        bucketData = new Map(data.map((b) => [b.start, b]));
+        renderCells();
+      } catch (_e) {
+        // swallow for now
+      }
+    };
+
+    void setMode(mode);
+  })();
+</script>
+{% endblock %}

@@ -15,9 +15,11 @@ rand = "0.9.2"                                         # generar secretos si qui
 data-encoding = "^2"
 totp-rs = { version = "^5", features = ["otpauth"] }
 anyhow = "1.0.100"
+bson = { version = "2.15.0", features = ["chrono-0_4"] }
 mongodb = "3.3.0"
 futures = "0.3"
 askama = { version = "0.14.0", features = ["config"] }
 typst = "0.14"
 typst-pdf = "0.14"
 typst-assets = "0.14"
+chrono = { version = "0.4", features = ["clock"] }

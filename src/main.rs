@@ -37,6 +37,7 @@ async fn main() {
         .route("/setup", get(routes::setup))
         .route("/qrcode", get(routes::qrcode))
         .route("/secret", get(routes::secret_generate))
+        .route("/api/tiempo", get(routes::tiempo_data))
         .route("/logout", post(routes::logout))
         .route(
             "/account",
@@ -53,6 +54,7 @@ async fn main() {
         .route("/admin/users/{id}/qrcode", get(routes::users_qrcode))
         .route("/pdf", get(routes::pdf_editor))
         .route("/pdf/preview", post(routes::pdf_preview))
+        .route("/tiempo", get(routes::tiempo_page))
         .route(
             "/admin/companies",
             get(routes::companies_index).post(routes::companies_create),
@@ -73,23 +75,14 @@ async fn main() {
         )
         .route("/admin/accounts/new", get(routes::accounts_new))
         .route("/admin/accounts/{id}/edit", get(routes::accounts_edit))
-        .route(
-            "/admin/accounts/{id}/update",
-            post(routes::accounts_update),
-        )
-        .route(
-            "/admin/accounts/{id}/delete",
-            post(routes::accounts_delete),
-        )
+        .route("/admin/accounts/{id}/update", post(routes::accounts_update))
+        .route("/admin/accounts/{id}/delete", post(routes::accounts_delete))
         .route(
             "/admin/categories",
             get(routes::categories_index).post(routes::categories_create),
         )
         .route("/admin/categories/new", get(routes::categories_new))
-        .route(
-            "/admin/categories/{id}/edit",
-            get(routes::categories_edit),
-        )
+        .route("/admin/categories/{id}/edit", get(routes::categories_edit))
         .route(
             "/admin/categories/{id}/update",
             post(routes::categories_update),
@@ -103,23 +96,17 @@ async fn main() {
             get(routes::contacts_index).post(routes::contacts_create),
         )
         .route("/admin/contacts/new", get(routes::contacts_new))
-        .route(
-            "/admin/contacts/{id}/edit",
-            get(routes::contacts_edit),
-        )
-        .route(
-            "/admin/contacts/{id}/update",
-            post(routes::contacts_update),
-        )
-        .route(
-            "/admin/contacts/{id}/delete",
-            post(routes::contacts_delete),
-        )
+        .route("/admin/contacts/{id}/edit", get(routes::contacts_edit))
+        .route("/admin/contacts/{id}/update", post(routes::contacts_update))
+        .route("/admin/contacts/{id}/delete", post(routes::contacts_delete))
         .route(
             "/admin/recurring_plans",
             get(routes::recurring_plans_index).post(routes::recurring_plans_create),
         )
-        .route("/admin/recurring_plans/new", get(routes::recurring_plans_new))
+        .route(
+            "/admin/recurring_plans/new",
+            get(routes::recurring_plans_new),
+        )
         .route(
             "/admin/recurring_plans/{id}/edit",
             get(routes::recurring_plans_edit),
@@ -133,10 +120,17 @@ async fn main() {
             post(routes::recurring_plans_delete),
         )
         .route(
+            "/admin/recurring_plans/{id}/generate",
+            post(routes::recurring_plans_generate),
+        )
+        .route(
             "/admin/planned_entries",
             get(routes::planned_entries_index).post(routes::planned_entries_create),
         )
-        .route("/admin/planned_entries/new", get(routes::planned_entries_new))
+        .route(
+            "/admin/planned_entries/new",
+            get(routes::planned_entries_new),
+        )
         .route(
             "/admin/planned_entries/{id}/edit",
             get(routes::planned_entries_edit),
@@ -171,10 +165,7 @@ async fn main() {
             get(routes::forecasts_index).post(routes::forecasts_create),
         )
         .route("/admin/forecasts/new", get(routes::forecasts_new))
-        .route(
-            "/admin/forecasts/{id}/edit",
-            get(routes::forecasts_edit),
-        )
+        .route("/admin/forecasts/{id}/edit", get(routes::forecasts_edit))
         .route(
             "/admin/forecasts/{id}/update",
             post(routes::forecasts_update),
@@ -194,7 +185,7 @@ async fn main() {
         .merge(protected)
         .with_state(state);
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], 8080));
+    let addr = SocketAddr::from(([0, 0, 0, 0], 8090));
     println!("Listening on http://{addr}");
     let listener = TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();

@@ -1,0 +1,19 @@
+[
+  {
+    "_id": { "$oid": "64b000000000000000000701" },
+    "company_id": { "$oid": "64b000000000000000000001" },
+    "generated_at": { "$date": "2024-10-01T00:00:00Z" },
+    "generated_by_user_id": { "$oid": "64b000000000000000000001" },
+    "start_date": { "$date": "2024-10-01T00:00:00Z" },
+    "end_date": { "$date": "2025-03-31T00:00:00Z" },
+    "currency": "MXN",
+    "projected_income_total": 300000.0,
+    "projected_expense_total": 120000.0,
+    "projected_net": 180000.0,
+    "initial_balance": 50000.0,
+    "final_balance": 230000.0,
+    "details": "Estimado 6 meses con planes recurrentes",
+    "scenario_name": "base",
+    "notes": "Snapshot inicial"
+  }
+]

@@ -1,0 +1,30 @@
+[
+  {
+    "_id": { "$oid": "64b000000000000000000601" },
+    "company_id": { "$oid": "64b000000000000000000001" },
+    "date": { "$date": "2024-11-10T12:00:00Z" },
+    "description": "Pago luz noviembre",
+    "transaction_type": "expense",
+    "category_id": { "$oid": "64b000000000000000000201" },
+    "account_from_id": { "$oid": "64b000000000000000000101" },
+    "account_to_id": null,
+    "amount": 2100.0,
+    "planned_entry_id": { "$oid": "64b000000000000000000501" },
+    "is_confirmed": true,
+    "notes": "Pagado en línea"
+  },
+  {
+    "_id": { "$oid": "64b000000000000000000602" },
+    "company_id": { "$oid": "64b000000000000000000001" },
+    "date": { "$date": "2024-11-15T09:00:00Z" },
+    "description": "Nómina noviembre",
+    "transaction_type": "income",
+    "category_id": { "$oid": "64b000000000000000000203" },
+    "account_from_id": null,
+    "account_to_id": { "$oid": "64b000000000000000000101" },
+    "amount": 50000.0,
+    "planned_entry_id": { "$oid": "64b000000000000000000503" },
+    "is_confirmed": true,
+    "notes": "Depósito payroll"
+  }
+]

@@ -22,9 +22,9 @@ use crate::{
         delete_recurring_plan, delete_transaction, get_account_by_id, get_category_by_id,
         get_contact_by_id, get_forecast_by_id, get_planned_entry_by_id, get_recurring_plan_by_id,
         get_transaction_by_id, list_accounts, list_categories, list_companies, list_contacts,
-        list_forecasts, list_planned_entries, list_recurring_plans, list_transactions,
-        list_users, update_account, update_category, update_contact, update_forecast,
-        update_planned_entry, update_recurring_plan, update_transaction,
+        list_forecasts, list_planned_entries, list_recurring_plans, list_transactions, list_users,
+        regenerate_planned_entries_for_plan_id, update_account, update_category, update_contact,
+        update_forecast, update_planned_entry, update_recurring_plan, update_transaction,
     },
 };
 
@@ -87,13 +87,19 @@ fn parse_optional_f64_field(value: Option<String>, label: &str) -> Result<Option
 fn parse_datetime_field(value: &str, label: &str) -> Result<DateTime, String> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
-        return Err(format!("{} es obligatorio (usa RFC3339: 2024-01-01T00:00:00Z)", label));
+        return Err(format!(
+            "{} es obligatorio (usa RFC3339: 2024-01-01T00:00:00Z)",
+            label
+        ));
     }
     DateTime::parse_rfc3339_str(trimmed)
         .map_err(|_| format!("Formato de fecha/hora inválido para {}", label))
 }
 
-fn parse_optional_datetime_field(value: Option<String>, label: &str) -> Result<Option<DateTime>, String> {
+fn parse_optional_datetime_field(
+    value: Option<String>,
+    label: &str,
+) -> Result<Option<DateTime>, String> {
     match clean_opt(value) {
         Some(v) => Ok(Some(parse_datetime_field(&v, label)?)),
         None => Ok(None),
@@ -230,42 +236,113 @@ fn flow_options(selected: &str) -> Vec<SimpleOption> {
 
 fn account_type_options(selected: &str) -> Vec<SimpleOption> {
     vec![
-        SimpleOption { value: "bank".into(), label: "Banco".into(), selected: selected == "bank" },
-        SimpleOption { value: "cash".into(), label: "Efectivo".into(), selected: selected == "cash" },
-        SimpleOption { value: "credit_card".into(), label: "Tarjeta de crédito".into(), selected: selected == "credit_card" },
-        SimpleOption { value: "investment".into(), label: "Inversión".into(), selected: selected == "investment" },
-        SimpleOption { value: "other".into(), label: "Otra".into(), selected: selected == "other" },
+        SimpleOption {
+            value: "bank".into(),
+            label: "Banco".into(),
+            selected: selected == "bank",
+        },
+        SimpleOption {
+            value: "cash".into(),
+            label: "Efectivo".into(),
+            selected: selected == "cash",
+        },
+        SimpleOption {
+            value: "credit_card".into(),
+            label: "Tarjeta de crédito".into(),
+            selected: selected == "credit_card",
+        },
+        SimpleOption {
+            value: "investment".into(),
+            label: "Inversión".into(),
+            selected: selected == "investment",
+        },
+        SimpleOption {
+            value: "other".into(),
+            label: "Otra".into(),
+            selected: selected == "other",
+        },
     ]
 }
 
 fn contact_type_options(selected: &str) -> Vec<SimpleOption> {
     vec![
-        SimpleOption { value: "customer".into(), label: "Cliente".into(), selected: selected == "customer" },
-        SimpleOption { value: "supplier".into(), label: "Proveedor".into(), selected: selected == "supplier" },
-        SimpleOption { value: "service".into(), label: "Servicio".into(), selected: selected == "service" },
-        SimpleOption { value: "other".into(), label: "Otro".into(), selected: selected == "other" },
+        SimpleOption {
+            value: "customer".into(),
+            label: "Cliente".into(),
+            selected: selected == "customer",
+        },
+        SimpleOption {
+            value: "supplier".into(),
+            label: "Proveedor".into(),
+            selected: selected == "supplier",
+        },
+        SimpleOption {
+            value: "service".into(),
+            label: "Servicio".into(),
+            selected: selected == "service",
+        },
+        SimpleOption {
+            value: "other".into(),
+            label: "Otro".into(),
+            selected: selected == "other",
+        },
     ]
 }
 
 fn planned_status_options(selected: &str) -> Vec<SimpleOption> {
     vec![
-        SimpleOption { value: "planned".into(), label: "Planeado".into(), selected: selected == "planned" },
-        SimpleOption { value: "partially_covered".into(), label: "Parcial".into(), selected: selected == "partially_covered" },
-        SimpleOption { value: "covered".into(), label: "Cubierto".into(), selected: selected == "covered" },
-        SimpleOption { value: "overdue".into(), label: "Vencido".into(), selected: selected == "overdue" },
-        SimpleOption { value: "cancelled".into(), label: "Cancelado".into(), selected: selected == "cancelled" },
+        SimpleOption {
+            value: "planned".into(),
+            label: "Planeado".into(),
+            selected: selected == "planned",
+        },
+        SimpleOption {
+            value: "partially_covered".into(),
+            label: "Parcial".into(),
+            selected: selected == "partially_covered",
+        },
+        SimpleOption {
+            value: "covered".into(),
+            label: "Cubierto".into(),
+            selected: selected == "covered",
+        },
+        SimpleOption {
+            value: "overdue".into(),
+            label: "Vencido".into(),
+            selected: selected == "overdue",
+        },
+        SimpleOption {
+            value: "cancelled".into(),
+            label: "Cancelado".into(),
+            selected: selected == "cancelled",
+        },
     ]
 }
 
 fn transaction_type_options(selected: &str) -> Vec<SimpleOption> {
     vec![
-        SimpleOption { value: "income".into(), label: "Ingreso".into(), selected: selected == "income" },
-        SimpleOption { value: "expense".into(), label: "Gasto".into(), selected: selected == "expense" },
-        SimpleOption { value: "transfer".into(), label: "Transferencia".into(), selected: selected == "transfer" },
+        SimpleOption {
+            value: "income".into(),
+            label: "Ingreso".into(),
+            selected: selected == "income",
+        },
+        SimpleOption {
+            value: "expense".into(),
+            label: "Gasto".into(),
+            selected: selected == "expense",
+        },
+        SimpleOption {
+            value: "transfer".into(),
+            label: "Transferencia".into(),
+            selected: selected == "transfer",
+        },
     ]
 }
 
-fn select_from_map(map: &HashMap<ObjectId, String>, selected: Option<&ObjectId>) -> Vec<SimpleOption> {
+fn select_from_map(
+    map: &HashMap<ObjectId, String>,
+    selected: Option<&ObjectId>,
+) -> Vec<SimpleOption> {
     map.iter()
         .map(|(id, name)| SimpleOption {
             value: id.to_hex(),
@@ -288,7 +365,8 @@ fn opt_to_string(opt: &Option<ObjectId>) -> Option<String> {
 }
 
 fn datetime_to_string(dt: &DateTime) -> String {
-    dt.try_to_rfc3339_string().unwrap_or_else(|_| dt.to_string())
+    dt.try_to_rfc3339_string()
+        .unwrap_or_else(|_| dt.to_string())
 }
 
 /// ---------- ACCOUNTS ----------
@@ -428,7 +506,7 @@ pub async fn accounts_create(
                 errors: Some(msg),
             })
             .map(IntoResponse::into_response)
-            .unwrap_or_else(|status| status.into_response())
+            .unwrap_or_else(|status| status.into_response());
         }
     };
 
@@ -448,7 +526,7 @@ pub async fn accounts_create(
                 errors: Some(msg),
             })
             .map(IntoResponse::into_response)
-            .unwrap_or_else(|status| status.into_response())
+            .unwrap_or_else(|status| status.into_response());
         }
     };
 
@@ -734,7 +812,9 @@ pub async fn categories_create(
     }
 
     let companies = company_options(&state, None).await.unwrap_or_default();
-    let parents = category_parent_options(&state, None).await.unwrap_or_default();
+    let parents = category_parent_options(&state, None)
+        .await
+        .unwrap_or_default();
 
     let company_id = match parse_object_id(&form.company_id, "Compañía") {
         Ok(id) => id,
@@ -765,7 +845,9 @@ pub async fn categories_create(
                 parent_id: form.parent_id.clone(),
                 companies,
                 flow_options: flow_options(&form.flow_type),
-                parent_options: category_parent_options(&state, None).await.unwrap_or_default(),
+                parent_options: category_parent_options(&state, None)
+                    .await
+                    .unwrap_or_default(),
                 is_edit: false,
                 errors: Some(msg),
             })
@@ -810,7 +892,16 @@ pub async fn categories_create(
         None => None,
     };
 
-    match create_category(&state, &company_id, form.name.trim(), flow_type, parent_id, None).await {
+    match create_category(
+        &state,
+        &company_id,
+        form.name.trim(),
+        flow_type,
+        parent_id,
+        None,
+    )
+    .await
+    {
         Ok(_) => Redirect::to("/admin/categories").into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
@@ -866,7 +957,9 @@ pub async fn categories_update(
         Ok(id) => id,
         Err(msg) => {
             let companies = company_options(&state, None).await.unwrap_or_default();
-            let parents = category_parent_options(&state, None).await.unwrap_or_default();
+            let parents = category_parent_options(&state, None)
+                .await
+                .unwrap_or_default();
             return render(CategoryFormTemplate {
                 action: format!("/admin/categories/{}/update", id),
                 name: form.name.clone(),
@@ -889,7 +982,9 @@ pub async fn categories_update(
             let companies = company_options(&state, Some(&company_id))
                 .await
                 .unwrap_or_default();
-            let parents = category_parent_options(&state, None).await.unwrap_or_default();
+            let parents = category_parent_options(&state, None)
+                .await
+                .unwrap_or_default();
             return render(CategoryFormTemplate {
                 action: format!("/admin/categories/{}/update", id),
                 name: form.name.clone(),
@@ -1565,33 +1660,30 @@ pub async fn recurring_plans_create(
             Some(trimmed)
         }
     }) {
-        Some(cid) => Some(
-            parse_object_id(&cid, "Contacto")
-                .map_err(|msg| {
-                    render(RecurringPlanFormTemplate {
-                        action: "/admin/recurring_plans".into(),
-                        name: form.name.clone(),
-                        flow_type: form.flow_type.clone(),
-                        amount_estimated: form.amount_estimated.clone(),
-                        frequency: form.frequency.clone(),
-                        day_of_month: form.day_of_month.clone().unwrap_or_default(),
-                        start_date: form.start_date.clone(),
-                        end_date: form.end_date.clone().unwrap_or_default(),
-                        version: form.version.clone(),
-                        is_active: form.is_active,
-                        notes: form.notes.clone().unwrap_or_default(),
-                        companies: companies.clone(),
-                        flow_options: flow_options(&form.flow_type),
-                        categories: categories.clone(),
-                        accounts: accounts.clone(),
-                        contacts: contacts.clone(),
-                        is_edit: false,
-                        errors: Some(msg),
-                    })
-                    .map(IntoResponse::into_response)
-                    .unwrap_or_else(|status| status.into_response())
-                }),
-        ),
+        Some(cid) => Some(parse_object_id(&cid, "Contacto").map_err(|msg| {
+            render(RecurringPlanFormTemplate {
+                action: "/admin/recurring_plans".into(),
+                name: form.name.clone(),
+                flow_type: form.flow_type.clone(),
+                amount_estimated: form.amount_estimated.clone(),
+                frequency: form.frequency.clone(),
+                day_of_month: form.day_of_month.clone().unwrap_or_default(),
+                start_date: form.start_date.clone(),
+                end_date: form.end_date.clone().unwrap_or_default(),
+                version: form.version.clone(),
+                is_active: form.is_active,
+                notes: form.notes.clone().unwrap_or_default(),
+                companies: companies.clone(),
+                flow_options: flow_options(&form.flow_type),
+                categories: categories.clone(),
+                accounts: accounts.clone(),
+                contacts: contacts.clone(),
+                is_edit: false,
+                errors: Some(msg),
+            })
+            .map(IntoResponse::into_response)
+            .unwrap_or_else(|status| status.into_response())
+        })),
         None => None,
     };
 
@@ -1795,7 +1887,10 @@ pub async fn recurring_plans_edit(
         frequency: plan.frequency,
         day_of_month: plan.day_of_month.map(|d| d.to_string()).unwrap_or_default(),
         start_date: datetime_to_string(&plan.start_date),
-        end_date: plan.end_date.map(|d| datetime_to_string(&d)).unwrap_or_default(),
+        end_date: plan
+            .end_date
+            .map(|d| datetime_to_string(&d))
+            .unwrap_or_default(),
         version: plan.version.to_string(),
         is_active: plan.is_active,
         notes: plan.notes.unwrap_or_default(),
@@ -1928,6 +2023,26 @@ pub async fn recurring_plans_delete(
     };
 
     match delete_recurring_plan(&state, &object_id).await {
+        Ok(_) => Redirect::to("/admin/recurring_plans").into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+pub async fn recurring_plans_generate(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    if !session_user.is_admin() {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+
+    let object_id = match ObjectId::from_str(&id) {
+        Ok(id) => id,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+
+    match regenerate_planned_entries_for_plan_id(&state, &object_id).await {
         Ok(_) => Redirect::to("/admin/recurring_plans").into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
@@ -2237,25 +2352,29 @@ pub async fn planned_entries_update(
     };
 
     let company_id = match parse_object_id(&form.company_id, "Compañía") {
-        Ok(id)=>id,
-        Err(_)=>return StatusCode::BAD_REQUEST.into_response(),
+        Ok(id) => id,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
     let flow_type = match parse_flow_type(&form.flow_type) {
-        Ok(v)=>v,
-        Err(_)=>return StatusCode::BAD_REQUEST.into_response(),
+        Ok(v) => v,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
     let category_id = match parse_object_id(&form.category_id, "Categoría") {
-        Ok(id)=>id,
-        Err(_)=>return StatusCode::BAD_REQUEST.into_response(),
+        Ok(id) => id,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
     let account_expected_id = match parse_object_id(&form.account_expected_id, "Cuenta esperada") {
-        Ok(id)=>id,
-        Err(_)=>return StatusCode::BAD_REQUEST.into_response(),
+        Ok(id) => id,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
 
     let contact_id = match form.contact_id.clone().and_then(|v| {
         let trimmed = v.trim().to_string();
-        if trimmed.is_empty() { None } else { Some(trimmed) }
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
     }) {
         Some(cid) => match parse_object_id(&cid, "Contacto") {
             Ok(id) => Some(id),
@@ -2266,7 +2385,11 @@ pub async fn planned_entries_update(
 
     let recurring_plan_id = match form.recurring_plan_id.clone().and_then(|v| {
         let trimmed = v.trim().to_string();
-        if trimmed.is_empty() { None } else { Some(trimmed) }
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
     }) {
         Some(rpid) => match parse_object_id(&rpid, "Plan recurrente") {
             Ok(id) => Some(id),
@@ -2281,9 +2404,9 @@ pub async fn planned_entries_update(
         .and_then(|v| if v.trim().is_empty() { None } else { Some(v) })
     {
         Some(v) => match parse_i32_field(&v, "Versión del plan") {
-                Ok(num) => Some(num),
-                Err(_) => return StatusCode::BAD_REQUEST.into_response(),
-            },
+            Ok(num) => Some(num),
+            Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+        },
         None => None,
     };
 
@@ -2497,7 +2620,11 @@ pub async fn transactions_create(
 
     let account_from_id = match form.account_from_id.clone().and_then(|v| {
         let trimmed = v.trim().to_string();
-        if trimmed.is_empty() { None } else { Some(trimmed) }
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
     }) {
         Some(val) => match parse_object_id(&val, "Cuenta origen") {
             Ok(id) => Some(id),
@@ -2508,7 +2635,11 @@ pub async fn transactions_create(
 
     let account_to_id = match form.account_to_id.clone().and_then(|v| {
         let trimmed = v.trim().to_string();
-        if trimmed.is_empty() { None } else { Some(trimmed) }
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
     }) {
         Some(val) => match parse_object_id(&val, "Cuenta destino") {
             Ok(id) => Some(id),
@@ -2519,7 +2650,11 @@ pub async fn transactions_create(
 
     let planned_entry_id = match form.planned_entry_id.clone().and_then(|v| {
         let trimmed = v.trim().to_string();
-        if trimmed.is_empty() { None } else { Some(trimmed) }
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
     }) {
         Some(val) => match parse_object_id(&val, "Compromiso planificado") {
             Ok(id) => Some(id),
@@ -2586,7 +2721,8 @@ pub async fn transactions_edit(
             .or(transaction.account_to_id.as_ref()),
     )
     .await?;
-    let planned_entries = planned_entry_options(&state, transaction.planned_entry_id.as_ref()).await?;
+    let planned_entries =
+        planned_entry_options(&state, transaction.planned_entry_id.as_ref()).await?;
 
     render(TransactionFormTemplate {
         action: format!("/admin/transactions/{}/update", id),
@@ -2640,7 +2776,11 @@ pub async fn transactions_update(
 
     let account_from_id = match form.account_from_id.clone().and_then(|v| {
         let trimmed = v.trim().to_string();
-        if trimmed.is_empty() { None } else { Some(trimmed) }
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
     }) {
         Some(val) => match parse_object_id(&val, "Cuenta origen") {
             Ok(id) => Some(id),
@@ -2651,7 +2791,11 @@ pub async fn transactions_update(
 
     let account_to_id = match form.account_to_id.clone().and_then(|v| {
         let trimmed = v.trim().to_string();
-        if trimmed.is_empty() { None } else { Some(trimmed) }
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
     }) {
         Some(val) => match parse_object_id(&val, "Cuenta destino") {
             Ok(id) => Some(id),
@@ -2662,7 +2806,11 @@ pub async fn transactions_update(
 
     let planned_entry_id = match form.planned_entry_id.clone().and_then(|v| {
         let trimmed = v.trim().to_string();
-        if trimmed.is_empty() { None } else { Some(trimmed) }
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
     }) {
         Some(val) => match parse_object_id(&val, "Compromiso planificado") {
             Ok(id) => Some(id),
@@ -2874,23 +3022,26 @@ pub async fn forecasts_create(
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
 
-    let projected_income_total = match parse_f64_field(&form.projected_income_total, "Ingreso proyectado") {
-        Ok(v) => v,
-        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
-    };
-    let projected_expense_total = match parse_f64_field(&form.projected_expense_total, "Gasto proyectado") {
-        Ok(v) => v,
-        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
-    };
+    let projected_income_total =
+        match parse_f64_field(&form.projected_income_total, "Ingreso proyectado") {
+            Ok(v) => v,
+            Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+        };
+    let projected_expense_total =
+        match parse_f64_field(&form.projected_expense_total, "Gasto proyectado") {
+            Ok(v) => v,
+            Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+        };
     let projected_net = match parse_f64_field(&form.projected_net, "Neto proyectado") {
         Ok(v) => v,
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
 
-    let initial_balance = match parse_optional_f64_field(form.initial_balance.clone(), "Saldo inicial") {
-        Ok(v) => v,
-        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
-    };
+    let initial_balance =
+        match parse_optional_f64_field(form.initial_balance.clone(), "Saldo inicial") {
+            Ok(v) => v,
+            Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+        };
     let final_balance = match parse_optional_f64_field(form.final_balance.clone(), "Saldo final") {
         Ok(v) => v,
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
@@ -2909,9 +3060,11 @@ pub async fn forecasts_create(
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
 
-    let generated_by_user_id = match form.generated_by_user_id.clone().and_then(|v| {
-        if v.trim().is_empty() { None } else { Some(v) }
-    }) {
+    let generated_by_user_id = match form
+        .generated_by_user_id
+        .clone()
+        .and_then(|v| if v.trim().is_empty() { None } else { Some(v) })
+    {
         Some(val) => match parse_object_id(&val, "Usuario") {
             Ok(id) => Some(id),
             Err(_) => return StatusCode::BAD_REQUEST.into_response(),
@@ -2971,8 +3124,14 @@ pub async fn forecasts_edit(
         projected_income_total: forecast.projected_income_total.to_string(),
         projected_expense_total: forecast.projected_expense_total.to_string(),
         projected_net: forecast.projected_net.to_string(),
-        initial_balance: forecast.initial_balance.map(|v| v.to_string()).unwrap_or_default(),
-        final_balance: forecast.final_balance.map(|v| v.to_string()).unwrap_or_default(),
+        initial_balance: forecast
+            .initial_balance
+            .map(|v| v.to_string())
+            .unwrap_or_default(),
+        final_balance: forecast
+            .final_balance
+            .map(|v| v.to_string())
+            .unwrap_or_default(),
         generated_at: datetime_to_string(&forecast.generated_at),
         start_date: datetime_to_string(&forecast.start_date),
         end_date: datetime_to_string(&forecast.end_date),
@@ -3010,23 +3169,26 @@ pub async fn forecasts_update(
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
 
-    let projected_income_total = match parse_f64_field(&form.projected_income_total, "Ingreso proyectado") {
-        Ok(v) => v,
-        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
-    };
-    let projected_expense_total = match parse_f64_field(&form.projected_expense_total, "Gasto proyectado") {
-        Ok(v) => v,
-        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
-    };
+    let projected_income_total =
+        match parse_f64_field(&form.projected_income_total, "Ingreso proyectado") {
+            Ok(v) => v,
+            Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+        };
+    let projected_expense_total =
+        match parse_f64_field(&form.projected_expense_total, "Gasto proyectado") {
+            Ok(v) => v,
+            Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+        };
     let projected_net = match parse_f64_field(&form.projected_net, "Neto proyectado") {
         Ok(v) => v,
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
 
-    let initial_balance = match parse_optional_f64_field(form.initial_balance.clone(), "Saldo inicial") {
-        Ok(v) => v,
-        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
-    };
+    let initial_balance =
+        match parse_optional_f64_field(form.initial_balance.clone(), "Saldo inicial") {
+            Ok(v) => v,
+            Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+        };
     let final_balance = match parse_optional_f64_field(form.final_balance.clone(), "Saldo final") {
         Ok(v) => v,
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
@@ -3045,9 +3207,11 @@ pub async fn forecasts_update(
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
 
-    let generated_by_user_id = match form.generated_by_user_id.clone().and_then(|v| {
-        if v.trim().is_empty() { None } else { Some(v) }
-    }) {
+    let generated_by_user_id = match form
+        .generated_by_user_id
+        .clone()
+        .and_then(|v| if v.trim().is_empty() { None } else { Some(v) })
+    {
         Some(val) => match parse_object_id(&val, "Usuario") {
             Ok(id) => Some(id),
             Err(_) => return StatusCode::BAD_REQUEST.into_response(),
