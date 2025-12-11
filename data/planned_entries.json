@@ -1,48 +1,5 @@
 [
   {
-    "_id": { "$oid": "64b000000000000000000501" },
-    "company_id": { "$oid": "64b000000000000000000001" },
-    "recurring_plan_id": { "$oid": "64b000000000000000000401" },
-    "recurring_plan_version": 1,
-    "name": "Luz CFE noviembre",
-    "flow_type": "expense",
-    "category_id": { "$oid": "64b000000000000000000201" },
-    "account_expected_id": { "$oid": "64b000000000000000000101" },
-    "contact_id": { "$oid": "64b000000000000000000301" },
-    "amount_estimated": 2000.0,
-    "due_date": { "$date": "2024-11-10T00:00:00Z" },
-    "status": "planned",
-    "notes": "Estimado noviembre"
-  },
-  {
-    "_id": { "$oid": "64b000000000000000000502" },
-    "company_id": { "$oid": "64b000000000000000000001" },
-    "recurring_plan_id": { "$oid": "64b000000000000000000402" },
-    "recurring_plan_version": 1,
-    "name": "Renta noviembre",
-    "flow_type": "expense",
-    "category_id": { "$oid": "64b000000000000000000202" },
-    "account_expected_id": { "$oid": "64b000000000000000000101" },
-    "contact_id": { "$oid": "64b000000000000000000302" },
-    "amount_estimated": 15000.0,
-    "due_date": { "$date": "2024-11-05T00:00:00Z" },
-    "status": "planned"
-  },
-  {
-    "_id": { "$oid": "64b000000000000000000503" },
-    "company_id": { "$oid": "64b000000000000000000001" },
-    "recurring_plan_id": { "$oid": "64b000000000000000000403" },
-    "recurring_plan_version": 1,
-    "name": "Nómina noviembre",
-    "flow_type": "income",
-    "category_id": { "$oid": "64b000000000000000000203" },
-    "account_expected_id": { "$oid": "64b000000000000000000101" },
-    "contact_id": { "$oid": "64b000000000000000000303" },
-    "amount_estimated": 50000.0,
-    "due_date": { "$date": "2024-11-15T00:00:00Z" },
-    "status": "planned"
-  },
-  {
     "_id": { "$oid": "64b000000000000000000504" },
     "company_id": { "$oid": "64b000000000000000000001" },
     "recurring_plan_id": null,
