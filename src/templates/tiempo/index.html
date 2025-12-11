@@ -55,6 +55,8 @@
     const MIDDLE = Math.floor(TOTAL / 2);
     const formatter = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 0 });
 
+    const fmt = (d, opts) => new Intl.DateTimeFormat("es-MX", { ...opts, timeZone: "UTC" }).format(d);
+
     const modes = {
       day: {
         step: 1,
@@ -65,7 +67,7 @@
           return d;
         },
         format: (d) =>
-          `${d.toLocaleDateString("es-MX", { weekday: "short" })} ${d.getDate()} ${d.toLocaleDateString("es-MX", { month: "short" })} ${d.getFullYear()}`,
+          `${fmt(d, { weekday: "short" })} ${fmt(d, { day: "2-digit" })} ${fmt(d, { month: "short" })} ${fmt(d, { year: "numeric" })}`,
       },
       week: {
         step: 7,
@@ -75,10 +77,10 @@
           d.setDate(d.getDate() + n * 7);
           return d;
         },
-        format: (d) => {
-          const end = new Date(d);
+        format: (start) => {
+          const end = new Date(start);
           end.setDate(end.getDate() + 6);
-          return `Sem ${d.toLocaleDateString("es-MX", { day: "2-digit", month: "short" })} - ${end.toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" })}`;
+          return `Sem ${fmt(start, { day: "2-digit", month: "short" })} - ${fmt(end, { day: "2-digit", month: "short", year: "numeric" })}`;
         },
       },
       month: {
@@ -89,7 +91,7 @@
           d.setMonth(d.getMonth() + n);
           return d;
         },
-        format: (d) => `${d.toLocaleDateString("es-MX", { month: "long" })} ${d.getFullYear()}`,
+        format: (d) => `${fmt(d, { month: "long" })} ${fmt(d, { year: "numeric" })}`,
       },
       year: {
         step: 1,
@@ -99,7 +101,7 @@
           d.setFullYear(d.getFullYear() + n);
           return d;
         },
-        format: (d) => `${d.getFullYear()}`,
+        format: (d) => `${fmt(d, { year: "numeric" })}`,
       },
     };
 
@@ -191,11 +193,15 @@
       cells.forEach((entry, idx) => {
         const offset = idx - MIDDLE;
         const target = config.add(baseDate, origin + offset);
-        entry.label.textContent = config.label;
-        entry.value.textContent = config.format(target);
-
-        const bucketStart = startOfBucket(target, mode).toISOString();
+        const bucketStartDate = startOfBucket(target, mode);
+        const bucketStart = bucketStartDate.toISOString();
         const bucket = bucketData.get(bucketStart);
+        entry.label.textContent = config.label;
+        if (mode === "week") {
+          entry.value.textContent = config.format(bucket ? new Date(bucket.start) : bucketStartDate);
+        } else {
+          entry.value.textContent = config.format(bucket ? new Date(bucket.start) : target);
+        }
         entry.cell.classList.remove("bg-slate-50", "bg-white", "bg-sky-100", "ring", "ring-sky-300", "shadow");
         const startBucket = startOfBucket(target, mode);
         const nowBucket = startOfBucket(new Date(), mode);

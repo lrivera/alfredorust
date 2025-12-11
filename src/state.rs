@@ -1125,7 +1125,21 @@ pub async fn update_recurring_plan(
 }
 
 pub async fn delete_recurring_plan(state: &AppState, id: &ObjectId) -> Result<()> {
-    state.recurring_plans.delete_one(doc! { "_id": id }).await?;
+    let now = DateTime::from_system_time(SystemTime::now());
+    // Marca el plan como inactivo y define fecha de término
+    state
+        .recurring_plans
+        .update_one(
+            doc! { "_id": id },
+            doc! { "$set": {
+                "is_active": false,
+                "end_date": now,
+                "updated_at": now,
+            }},
+        )
+        .await?;
+    // Elimina compromisos futuros abiertos ligados al plan
+    delete_future_open_entries(state, id).await?;
     Ok(())
 }
 
@@ -1767,8 +1781,8 @@ async fn generate_planned_entries_for_plan(
         return Ok(());
     };
 
-    let now = Utc::now();
-    let due_dates = upcoming_due_dates(plan, months_ahead, now);
+    let now_ref = Utc::now();
+    let due_dates = upcoming_due_dates(plan, months_ahead, now_ref);
 
     for due in due_dates {
         let _ = state
@@ -1798,7 +1812,7 @@ async fn generate_planned_entries_for_plan(
 fn upcoming_due_dates(
     plan: &RecurringPlan,
     months_ahead: u32,
-    now: ChronoDateTime<Utc>,
+    now_ref: ChronoDateTime<Utc>,
 ) -> Vec<DateTime> {
     let start = plan.start_date.to_chrono();
     let mut dates = Vec::new();
@@ -1807,8 +1821,8 @@ fn upcoming_due_dates(
     match plan.frequency.to_lowercase().as_str() {
         "monthly" => {
             let anchor = align_to_day(start, plan.day_of_month);
-            let base = if now.date_naive() > anchor.date_naive() {
-                align_to_day(now, plan.day_of_month)
+            let base = if now_ref.date_naive() > anchor.date_naive() {
+                align_to_day(now_ref, plan.day_of_month)
             } else {
                 anchor
             };
@@ -1831,7 +1845,7 @@ fn upcoming_due_dates(
         "weekly" => {
             let step = chrono::Duration::days(7);
             let mut current = start;
-            while current < now {
+            while current + step <= now_ref {
                 current = current + step;
             }
             for _ in 0..months_ahead {
@@ -1840,14 +1854,16 @@ fn upcoming_due_dates(
                         break;
                     }
                 }
-                dates.push(DateTime::from_chrono(current));
+                if current >= start {
+                    dates.push(DateTime::from_chrono(current));
+                }
                 current = current + step;
             }
         }
         "biweekly" => {
             let step = chrono::Duration::days(14);
             let mut current = start;
-            while current < now {
+            while current + step <= now_ref {
                 current = current + step;
             }
             for _ in 0..months_ahead {
@@ -1856,13 +1872,15 @@ fn upcoming_due_dates(
                         break;
                     }
                 }
-                dates.push(DateTime::from_chrono(current));
+                if current >= start {
+                    dates.push(DateTime::from_chrono(current));
+                }
                 current = current + step;
             }
         }
         _ => {
             let step = chrono::Duration::days(30);
-            let mut current = if now > start { now } else { start };
+            let mut current = if now_ref > start { now_ref } else { start };
             for _ in 0..months_ahead {
                 if current >= start {
                     if let Some(end) = end_limit {

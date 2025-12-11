@@ -80,17 +80,31 @@
         </div>
       </div>
 
-      <div class="grid gap-4 sm:grid-cols-3">
+      <div class="grid gap-4 sm:grid-cols-4">
         <div class="space-y-2">
           <label for="frequency" class="block text-sm font-medium text-slate-600">Frecuencia</label>
           <select id="frequency" name="frequency" required
             class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40">
             <option value="daily" {% if frequency == "daily" %}selected{% endif %}>Diaria</option>
             <option value="weekly" {% if frequency == "weekly" %}selected{% endif %}>Semanal</option>
-            <option value="biweekly" {% if frequency == "biweekly" %}selected{% endif %}>Quincenal</option>
+            <option value="biweekly" {% if frequency == "biweekly" %}selected{% endif %}>Quincenal (cada 2 semanas)</option>
             <option value="monthly" {% if frequency == "monthly" %}selected{% endif %}>Mensual</option>
             <option value="quarterly" {% if frequency == "quarterly" %}selected{% endif %}>Trimestral</option>
             <option value="yearly" {% if frequency == "yearly" %}selected{% endif %}>Anual</option>
+          </select>
+        </div>
+        <div class="space-y-2" id="day-of-week-wrapper">
+          <label for="day_of_week" class="block text-sm font-medium text-slate-600">Día de la semana</label>
+          <select id="day_of_week" name="day_of_week"
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40">
+            <option value="">Selecciona día</option>
+            <option value="1">Lunes</option>
+            <option value="2">Martes</option>
+            <option value="3">Miércoles</option>
+            <option value="4">Jueves</option>
+            <option value="5">Viernes</option>
+            <option value="6">Sábado</option>
+            <option value="0">Domingo</option>
           </select>
         </div>
         <div class="space-y-2">
@@ -111,12 +125,12 @@
           <input id="start_date" name="start_date" value="{{ start_date }}" placeholder="Selecciona fecha y hora" required data-datetime-picker
             class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40" />
         </div>
-        <div class="space-y-2">
-          <label for="end_date" class="block text-sm font-medium text-slate-600">Fecha de término (opcional)</label>
-          <input id="end_date" name="end_date" value="{{ end_date }}" placeholder="Selecciona fecha y hora" data-datetime-picker
-            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40" />
-        </div>
+      <div class="space-y-2">
+        <label for="end_date" class="block text-sm font-medium text-slate-600">Fecha de término (opcional)</label>
+        <input id="end_date" name="end_date" value="{{ end_date }}" placeholder="Selecciona fecha y hora" data-datetime-picker
+          class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40" />
       </div>
+    </div>
 
       <div class="space-y-2">
         <label for="notes" class="block text-sm font-medium text-slate-600">Notas</label>
@@ -139,4 +153,64 @@
       </div>
     </form>
   </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  (function() {
+    const freq = document.getElementById("frequency");
+    const dowWrapper = document.getElementById("day-of-week-wrapper");
+    const dow = document.getElementById("day_of_week");
+    const startInput = document.getElementById("start_date");
+
+    const formatIsoNoMs = (d) => {
+      const iso = d.toISOString();
+      return iso.replace(".000Z", "Z");
+    };
+
+    const setStartFromWeekday = () => {
+      if (!dow.value) return;
+      const target = parseInt(dow.value, 10);
+      if (Number.isNaN(target)) return;
+      const base = (() => {
+        if (startInput && startInput.value) {
+          const parsed = new Date(startInput.value);
+          if (!isNaN(parsed.getTime())) return parsed;
+        }
+        return new Date();
+      })();
+      const currentDow = base.getDay(); // 0-6, Sunday = 0
+      const diff = (target - currentDow + 7) % 7;
+      const next = new Date(base);
+      next.setDate(base.getDate() + diff);
+      // conserva la hora del inicio si existe, de lo contrario 12:00
+      const hour = !isNaN(base.getHours()) ? base.getHours() : 12;
+      const minute = !isNaN(base.getMinutes()) ? base.getMinutes() : 0;
+      next.setHours(hour, minute, 0, 0);
+      startInput.value = formatIsoNoMs(next);
+    };
+
+    const updateVisibility = () => {
+      const show = freq.value === "weekly" || freq.value === "biweekly";
+      dowWrapper.classList.toggle("hidden", !show);
+      if (show && dow.value) {
+        setStartFromWeekday();
+      }
+    };
+
+    if (freq && dowWrapper) {
+      if (!dow.value && startInput && startInput.value) {
+        const parsed = new Date(startInput.value);
+        if (!isNaN(parsed.getTime())) {
+          dow.value = parsed.getDay().toString();
+        }
+      }
+      updateVisibility();
+      freq.addEventListener("change", updateVisibility);
+    }
+    if (dow) {
+      dow.addEventListener("change", setStartFromWeekday);
+    }
+  })();
+</script>
 {% endblock %}
