@@ -1,4 +1,4 @@
-use std::{str::FromStr, sync::Arc};
+use std::{collections::HashSet, str::FromStr, sync::Arc};
 
 use askama::Template;
 use axum::{
@@ -8,7 +8,9 @@ use axum::{
     response::{Html, IntoResponse, Redirect, Response},
 };
 use mongodb::bson::oid::ObjectId;
-use serde::Deserialize;
+use serde::de::{self, MapAccess, SeqAccess, Visitor};
+use serde::{Deserialize, Deserializer};
+use std::fmt;
 
 #[allow(unused_imports)]
 use crate::filters;
@@ -77,13 +79,161 @@ struct RoleOption {
     selected: bool,
 }
 
-#[derive(Deserialize)]
 pub(crate) struct UserFormData {
     email: String,
     secret: String,
-    #[serde(default)]
     company_ids: Vec<String>,
     role: String,
+}
+
+impl<'de> Deserialize<'de> for UserFormData {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        enum Field {
+            Email,
+            Secret,
+            CompanyIds,
+            Role,
+        }
+
+        impl<'de> Deserialize<'de> for Field {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                struct FieldVisitor;
+                impl<'de> Visitor<'de> for FieldVisitor {
+                    type Value = Field;
+                    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                        formatter.write_str("`email`, `secret`, `company_ids`, or `role`")
+                    }
+                    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+                    where
+                        E: de::Error,
+                    {
+                        match v {
+                            "email" => Ok(Field::Email),
+                            "secret" => Ok(Field::Secret),
+                            "company_ids" => Ok(Field::CompanyIds),
+                            "role" => Ok(Field::Role),
+                            other => Err(de::Error::unknown_field(
+                                other,
+                                &["email", "secret", "company_ids", "role"],
+                            )),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(FieldVisitor)
+            }
+        }
+
+        struct FormVisitor;
+        impl<'de> Visitor<'de> for FormVisitor {
+            type Value = UserFormData;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("user form data")
+            }
+
+            fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
+            where
+                M: MapAccess<'de>,
+            {
+                let mut email: Option<String> = None;
+                let mut secret: Option<String> = None;
+                let mut company_ids: Vec<String> = Vec::new();
+                let mut role: Option<String> = None;
+
+                while let Some(key) = map.next_key::<Field>()? {
+                    match key {
+                        Field::Email => {
+                            if email.is_some() {
+                                return Err(de::Error::duplicate_field("email"));
+                            }
+                            email = Some(map.next_value()?);
+                        }
+                        Field::Secret => {
+                            if secret.is_some() {
+                                return Err(de::Error::duplicate_field("secret"));
+                            }
+                            secret = Some(map.next_value()?);
+                        }
+                        Field::CompanyIds => {
+                            let part: OneOrManyStrings = map.next_value()?;
+                            company_ids.extend(part.0);
+                        }
+                        Field::Role => {
+                            if role.is_some() {
+                                return Err(de::Error::duplicate_field("role"));
+                            }
+                            role = Some(map.next_value()?);
+                        }
+                    }
+                }
+
+                let email = email.ok_or_else(|| de::Error::missing_field("email"))?;
+                let secret = secret.ok_or_else(|| de::Error::missing_field("secret"))?;
+                let role = role.ok_or_else(|| de::Error::missing_field("role"))?;
+
+                Ok(UserFormData {
+                    email,
+                    secret,
+                    company_ids,
+                    role,
+                })
+            }
+        }
+
+        deserializer.deserialize_map(FormVisitor)
+    }
+}
+
+/// Helper that accepts either a single string or a sequence of strings.
+struct OneOrManyStrings(Vec<String>);
+
+impl<'de> Deserialize<'de> for OneOrManyStrings {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct OneOrManyVisitor;
+        impl<'de> Visitor<'de> for OneOrManyVisitor {
+            type Value = OneOrManyStrings;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("string or list of strings")
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(OneOrManyStrings(vec![v.to_string()]))
+            }
+
+            fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(OneOrManyStrings(vec![v]))
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: SeqAccess<'de>,
+            {
+                let mut values = Vec::new();
+                while let Some(v) = seq.next_element::<String>()? {
+                    values.push(v);
+                }
+                Ok(OneOrManyStrings(values))
+            }
+        }
+
+        deserializer.deserialize_any(OneOrManyVisitor)
+    }
 }
 
 pub async fn users_index(
@@ -129,7 +279,8 @@ pub async fn users_new(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let companies = load_company_options(&state, None).await?;
+    let companies =
+        load_company_options(&state, None, session_user.user().company_ids.as_slice()).await?;
     let form = UserFormView {
         email: String::new(),
         secret: generate_base32_secret_n(DEFAULT_SECRET_BYTES),
@@ -157,7 +308,15 @@ pub async fn users_create(
         return StatusCode::FORBIDDEN.into_response();
     }
 
-    match process_user_form(form, None, &state, true).await {
+    match process_user_form(
+        form,
+        None,
+        &state,
+        true,
+        session_user.user().company_ids.as_slice(),
+    )
+    .await
+    {
         Ok(_) => Redirect::to("/admin/users").into_response(),
         Err((form_view, companies, message, selected_role)) => render(UserFormTemplate {
             form: form_view,
@@ -189,7 +348,12 @@ pub async fn users_edit(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let companies = load_company_options(&state, Some(&user.company_ids)).await?;
+    let companies = load_company_options(
+        &state,
+        Some(&user.company_ids),
+        session_user.user().company_ids.as_slice(),
+    )
+    .await?;
     let form = UserFormView {
         email: user.email.clone(),
         secret: user.secret.clone(),
@@ -238,6 +402,7 @@ pub async fn users_update(
         Some((&object_id, target_user.role.clone())),
         &state,
         admin_action,
+        session_user.user().company_ids.as_slice(),
     )
     .await
     {
@@ -332,22 +497,26 @@ async fn process_user_form(
     existing: Option<(&ObjectId, UserRole)>,
     state: &Arc<AppState>,
     allow_role_change: bool,
+    allowed_company_ids: &[ObjectId],
 ) -> Result<(), (UserFormView, Vec<CompanyOption>, String, UserRole)> {
+    let allowed: HashSet<ObjectId> = allowed_company_ids.iter().cloned().collect();
     let company_ids: Vec<ObjectId> = {
         let mut ids = Vec::new();
         for raw in &form.company_ids {
             if let Ok(id) = ObjectId::from_str(raw.trim()) {
-                if !ids.contains(&id) {
+                if allowed.contains(&id) && !ids.contains(&id) {
                     ids.push(id);
                 }
             }
         }
         if ids.is_empty() {
-            let companies = load_company_options(state, None).await.unwrap_or_default();
+            let companies = load_company_options(state, None, allowed_company_ids)
+                .await
+                .unwrap_or_default();
             return Err((
                 form_view_from_data(&form),
                 companies,
-                "Selecciona al menos una compañía válida".into(),
+                "Selecciona al menos una compañía válida (que tengas asignada)".into(),
                 role_from_str(&form.role),
             ));
         }
@@ -373,7 +542,7 @@ async fn process_user_form(
     };
 
     if email_trimmed.is_empty() || secret_trimmed.is_empty() {
-        let companies = load_company_options(state, Some(&company_ids))
+        let companies = load_company_options(state, Some(&company_ids), allowed_company_ids)
             .await
             .unwrap_or_default();
         return Err((
@@ -385,10 +554,17 @@ async fn process_user_form(
     }
 
     if let Some((id, _existing_role)) = existing {
-        if let Err(_) = update_user(state, id, &email_trimmed, &secret_trimmed, &company_ids, role.clone())
+        if let Err(_) = update_user(
+            state,
+            id,
+            &email_trimmed,
+            &secret_trimmed,
+            &company_ids,
+            role.clone(),
+        )
         .await
         {
-            let companies = load_company_options(state, Some(&company_ids))
+            let companies = load_company_options(state, Some(&company_ids), allowed_company_ids)
                 .await
                 .unwrap_or_default();
             return Err((
@@ -399,10 +575,16 @@ async fn process_user_form(
             ));
         }
     } else {
-        if let Err(_) = create_user(state, &email_trimmed, &secret_trimmed, &company_ids, role.clone())
+        if let Err(_) = create_user(
+            state,
+            &email_trimmed,
+            &secret_trimmed,
+            &company_ids,
+            role.clone(),
+        )
         .await
         {
-            let companies = load_company_options(state, Some(&company_ids))
+            let companies = load_company_options(state, Some(&company_ids), allowed_company_ids)
                 .await
                 .unwrap_or_default();
             return Err((
@@ -428,14 +610,20 @@ fn form_view_from_data(data: &UserFormData) -> UserFormView {
 async fn load_company_options(
     state: &Arc<AppState>,
     selected: Option<&[ObjectId]>,
+    allowed: &[ObjectId],
 ) -> Result<Vec<CompanyOption>, StatusCode> {
+    let allowed_set: HashSet<ObjectId> = allowed.iter().cloned().collect();
     let companies = list_companies(state)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let mut options: Vec<CompanyOption> = companies
         .into_iter()
         .filter_map(|company| {
-            let id = company.id?.to_hex();
+            let cid = company.id?;
+            if !allowed_set.contains(&cid) {
+                return None;
+            }
+            let id = cid.to_hex();
             let selected_flag = selected
                 .map(|sel_list| sel_list.iter().any(|sel| sel.to_hex() == id))
                 .unwrap_or(false);

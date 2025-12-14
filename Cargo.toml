@@ -23,3 +23,4 @@ typst = "0.14"
 typst-pdf = "0.14"
 typst-assets = "0.14"
 chrono = { version = "0.4", features = ["clock"] }
+slug = "0.1.5"

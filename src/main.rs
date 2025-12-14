@@ -55,6 +55,7 @@ async fn main() {
         .route("/pdf", get(routes::pdf_editor))
         .route("/pdf/preview", post(routes::pdf_preview))
         .route("/tiempo", get(routes::tiempo_page))
+        .route("/api/me/companies", get(routes::me_companies))
         .route(
             "/admin/companies",
             get(routes::companies_index).post(routes::companies_create),

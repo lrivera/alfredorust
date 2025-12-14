@@ -59,6 +59,10 @@ pub struct Company {
     pub id: Option<ObjectId>,
     pub name: String,
 
+    /// URL-friendly identifier; must be unique.
+    #[serde(default)]
+    pub slug: String,
+
     /// Default currency for this company (tenant), e.g. "MXN", "USD".
     #[serde(default)]
     pub default_currency: String,
@@ -99,6 +103,16 @@ pub struct User {
     #[serde(rename = "companies", default)]
     pub company_ids: Vec<ObjectId>,
 
+    pub role: UserRole,
+}
+
+/// User-company membership with per-company role.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserCompany {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub user_id: ObjectId,
+    pub company_id: ObjectId,
     pub role: UserRole,
 }
 

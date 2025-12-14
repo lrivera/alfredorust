@@ -20,11 +20,12 @@ use crate::{
         create_planned_entry, create_recurring_plan, create_transaction, delete_account,
         delete_category, delete_contact, delete_forecast, delete_planned_entry,
         delete_recurring_plan, delete_transaction, get_account_by_id, get_category_by_id,
-        get_contact_by_id, get_forecast_by_id, get_planned_entry_by_id, get_recurring_plan_by_id,
-        get_transaction_by_id, list_accounts, list_categories, list_companies, list_contacts,
-        list_forecasts, list_planned_entries, list_recurring_plans, list_transactions, list_users,
-        regenerate_planned_entries_for_plan_id, update_account, update_category, update_contact,
-        update_forecast, update_planned_entry, update_recurring_plan, update_transaction,
+        get_company_by_id, get_contact_by_id, get_forecast_by_id, get_planned_entry_by_id,
+        get_recurring_plan_by_id, get_transaction_by_id, list_accounts, list_categories,
+        list_contacts, list_forecasts, list_planned_entries, list_recurring_plans,
+        list_transactions, list_users, regenerate_planned_entries_for_plan_id, update_account,
+        update_category, update_contact, update_forecast, update_planned_entry,
+        update_recurring_plan, update_transaction,
     },
 };
 
@@ -201,22 +202,20 @@ fn transaction_type_value(value: &TransactionType) -> &'static str {
 
 async fn company_options(
     state: &AppState,
-    selected: Option<&ObjectId>,
+    active: &ObjectId,
 ) -> Result<Vec<SimpleOption>, StatusCode> {
-    let companies = list_companies(state)
+    let company = get_company_by_id(state, active)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    Ok(companies
-        .into_iter()
-        .filter_map(|c| {
-            c.id.map(|id| SimpleOption {
-                value: id.to_hex(),
-                label: c.name,
-                selected: selected.map(|s| *s == id).unwrap_or(false),
-            })
-        })
-        .collect())
+    let mut opts = Vec::new();
+    if let Some(c) = company {
+        opts.push(SimpleOption {
+            value: active.to_hex(),
+            label: c.name,
+            selected: true,
+        });
+    }
+    Ok(opts)
 }
 
 fn flow_options(selected: &str) -> Vec<SimpleOption> {
@@ -421,30 +420,20 @@ pub async fn accounts_index(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let companies = list_companies(&state)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let company_map = build_lookup_map(
-        companies
-            .into_iter()
-            .filter_map(|c| c.id.map(|id| (id, c.name)))
-            .collect(),
-    );
-
     let accounts = list_accounts(&state)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let active_company = session_user.active_company_id().clone();
+    let active_name = session_user.user().company_name.clone();
 
     let rows = accounts
         .into_iter()
+        .filter(|acc| acc.company_id == active_company)
         .filter_map(|acc| {
             acc.id.map(|id| AccountRow {
                 id: id.to_hex(),
                 name: acc.name,
-                company: company_map
-                    .get(&acc.company_id)
-                    .cloned()
-                    .unwrap_or_else(|| acc.company_id.to_hex()),
+                company: active_name.clone(),
                 account_type: account_type_value(&acc.account_type).to_string(),
                 currency: acc.currency,
                 is_active: acc.is_active,
@@ -463,7 +452,7 @@ pub async fn accounts_new(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let companies = company_options(&state, None).await?;
+    let companies = company_options(&state, session_user.active_company_id()).await?;
 
     render(AccountFormTemplate {
         action: "/admin/accounts".into(),
@@ -488,27 +477,11 @@ pub async fn accounts_create(
         return StatusCode::FORBIDDEN.into_response();
     }
 
-    let companies = company_options(&state, None).await.unwrap_or_default();
+    let companies = company_options(&state, session_user.active_company_id())
+        .await
+        .unwrap_or_default();
 
-    let company_id = match parse_object_id(&form.company_id, "Compañía") {
-        Ok(id) => id,
-        Err(msg) => {
-            return render(AccountFormTemplate {
-                action: "/admin/accounts".into(),
-                name: form.name.clone(),
-                currency: form.currency.clone(),
-                account_type: form.account_type.clone(),
-                is_active: form.is_active,
-                notes: form.notes.clone().unwrap_or_default(),
-                companies,
-                account_type_options: account_type_options(&form.account_type),
-                is_edit: false,
-                errors: Some(msg),
-            })
-            .map(IntoResponse::into_response)
-            .unwrap_or_else(|status| status.into_response());
-        }
-    };
+    let company_id = session_user.active_company_id().clone();
 
     let account_type = match parse_account_type(&form.account_type) {
         Ok(t) => t,
@@ -569,7 +542,7 @@ pub async fn accounts_edit(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
 
-    let companies = company_options(&state, Some(&account.company_id)).await?;
+    let companies = company_options(&state, session_user.active_company_id()).await?;
 
     render(AccountFormTemplate {
         action: format!("/admin/accounts/{}/update", id),
@@ -600,31 +573,12 @@ pub async fn accounts_update(
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
 
-    let company_id = match parse_object_id(&form.company_id, "Compañía") {
-        Ok(id) => id,
-        Err(msg) => {
-            let companies = company_options(&state, None).await.unwrap_or_default();
-            return render(AccountFormTemplate {
-                action: format!("/admin/accounts/{}/update", id),
-                name: form.name.clone(),
-                currency: form.currency.clone(),
-                account_type: form.account_type.clone(),
-                is_active: form.is_active,
-                notes: form.notes.clone().unwrap_or_default(),
-                companies,
-                account_type_options: account_type_options(&form.account_type),
-                is_edit: true,
-                errors: Some(msg),
-            })
-            .map(IntoResponse::into_response)
-            .unwrap_or_else(|status| status.into_response());
-        }
-    };
+    let company_id = session_user.active_company_id().clone();
 
     let account_type = match parse_account_type(&form.account_type) {
         Ok(t) => t,
         Err(msg) => {
-            let companies = company_options(&state, Some(&company_id))
+            let companies = company_options(&state, session_user.active_company_id())
                 .await
                 .unwrap_or_default();
             return render(AccountFormTemplate {
@@ -736,16 +690,6 @@ pub async fn categories_index(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let companies = list_companies(&state)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let company_map = build_lookup_map(
-        companies
-            .into_iter()
-            .filter_map(|c| c.id.map(|id| (id, c.name)))
-            .collect(),
-    );
-
     let categories = list_categories(&state)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -755,17 +699,17 @@ pub async fn categories_index(
             .filter_map(|c| c.id.map(|id| (id, c.name.clone())))
             .collect(),
     );
+    let active_company = session_user.active_company_id().clone();
+    let active_name = session_user.user().company_name.clone();
 
     let rows = categories
         .into_iter()
+        .filter(|cat| cat.company_id == active_company)
         .filter_map(|cat| {
             cat.id.map(|id| CategoryRow {
                 id: id.to_hex(),
                 name: cat.name,
-                company: company_map
-                    .get(&cat.company_id)
-                    .cloned()
-                    .unwrap_or_else(|| cat.company_id.to_hex()),
+                company: active_name.clone(),
                 flow_type: flow_type_value(&cat.flow_type).to_string(),
                 parent: cat
                     .parent_id
@@ -786,7 +730,7 @@ pub async fn categories_new(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let companies = company_options(&state, None).await?;
+    let companies = company_options(&state, session_user.active_company_id()).await?;
     let parents = category_parent_options(&state, None).await?;
 
     render(CategoryFormTemplate {
@@ -811,29 +755,14 @@ pub async fn categories_create(
         return StatusCode::FORBIDDEN.into_response();
     }
 
-    let companies = company_options(&state, None).await.unwrap_or_default();
+    let companies = company_options(&state, session_user.active_company_id())
+        .await
+        .unwrap_or_default();
     let parents = category_parent_options(&state, None)
         .await
         .unwrap_or_default();
 
-    let company_id = match parse_object_id(&form.company_id, "Compañía") {
-        Ok(id) => id,
-        Err(msg) => {
-            return render(CategoryFormTemplate {
-                action: "/admin/categories".into(),
-                name: form.name.clone(),
-                flow_type: form.flow_type.clone(),
-                parent_id: form.parent_id.clone(),
-                companies,
-                flow_options: flow_options(&form.flow_type),
-                parent_options: parents,
-                is_edit: false,
-                errors: Some(msg),
-            })
-            .map(IntoResponse::into_response)
-            .unwrap_or_else(|status| status.into_response());
-        }
-    };
+    let company_id = session_user.active_company_id().clone();
 
     let flow_type = match parse_flow_type(&form.flow_type) {
         Ok(f) => f,
@@ -922,7 +851,7 @@ pub async fn categories_edit(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
 
-    let companies = company_options(&state, Some(&category.company_id)).await?;
+    let companies = company_options(&state, session_user.active_company_id()).await?;
     let parents = category_parent_options(&state, category.parent_id.as_ref()).await?;
 
     render(CategoryFormTemplate {
@@ -953,33 +882,12 @@ pub async fn categories_update(
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
 
-    let company_id = match parse_object_id(&form.company_id, "Compañía") {
-        Ok(id) => id,
-        Err(msg) => {
-            let companies = company_options(&state, None).await.unwrap_or_default();
-            let parents = category_parent_options(&state, None)
-                .await
-                .unwrap_or_default();
-            return render(CategoryFormTemplate {
-                action: format!("/admin/categories/{}/update", id),
-                name: form.name.clone(),
-                flow_type: form.flow_type.clone(),
-                parent_id: form.parent_id.clone(),
-                companies,
-                flow_options: flow_options(&form.flow_type),
-                parent_options: parents,
-                is_edit: true,
-                errors: Some(msg),
-            })
-            .map(IntoResponse::into_response)
-            .unwrap_or_else(|status| status.into_response());
-        }
-    };
+    let company_id = session_user.active_company_id().clone();
 
     let flow_type = match parse_flow_type(&form.flow_type) {
         Ok(f) => f,
         Err(msg) => {
-            let companies = company_options(&state, Some(&company_id))
+            let companies = company_options(&state, session_user.active_company_id())
                 .await
                 .unwrap_or_default();
             let parents = category_parent_options(&state, None)
@@ -1127,30 +1035,20 @@ pub async fn contacts_index(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let companies = list_companies(&state)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let company_map = build_lookup_map(
-        companies
-            .into_iter()
-            .filter_map(|c| c.id.map(|id| (id, c.name)))
-            .collect(),
-    );
-
     let contacts = list_contacts(&state)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let active_company = session_user.active_company_id().clone();
+    let active_name = session_user.user().company_name.clone();
 
     let rows = contacts
         .into_iter()
+        .filter(|c| c.company_id == active_company)
         .filter_map(|c| {
             c.id.map(|id| ContactRow {
                 id: id.to_hex(),
                 name: c.name,
-                company: company_map
-                    .get(&c.company_id)
-                    .cloned()
-                    .unwrap_or_else(|| c.company_id.to_hex()),
+                company: active_name.clone(),
                 kind: contact_type_value(&c.contact_type).to_string(),
                 email: c.email.unwrap_or_else(|| "-".into()),
             })
@@ -1168,7 +1066,7 @@ pub async fn contacts_new(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let companies = company_options(&state, None).await?;
+    let companies = company_options(&state, session_user.active_company_id()).await?;
 
     render(ContactFormTemplate {
         action: "/admin/contacts".into(),
@@ -1193,27 +1091,11 @@ pub async fn contacts_create(
         return StatusCode::FORBIDDEN.into_response();
     }
 
-    let companies = company_options(&state, None).await.unwrap_or_default();
+    let companies = company_options(&state, session_user.active_company_id())
+        .await
+        .unwrap_or_default();
 
-    let company_id = match parse_object_id(&form.company_id, "Compañía") {
-        Ok(id) => id,
-        Err(msg) => {
-            return render(ContactFormTemplate {
-                action: "/admin/contacts".into(),
-                name: form.name.clone(),
-                contact_type: form.contact_type.clone(),
-                email: form.email.clone().unwrap_or_default(),
-                phone: form.phone.clone().unwrap_or_default(),
-                notes: form.notes.clone().unwrap_or_default(),
-                companies,
-                contact_options: contact_type_options(&form.contact_type),
-                is_edit: false,
-                errors: Some(msg),
-            })
-            .map(IntoResponse::into_response)
-            .unwrap_or_else(|status| status.into_response());
-        }
-    };
+    let company_id = session_user.active_company_id().clone();
 
     let contact_type = match parse_contact_type(&form.contact_type) {
         Ok(c) => c,
@@ -1270,7 +1152,7 @@ pub async fn contacts_edit(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
 
-    let companies = company_options(&state, Some(&contact.company_id)).await?;
+    let companies = company_options(&state, session_user.active_company_id()).await?;
 
     render(ContactFormTemplate {
         action: format!("/admin/contacts/{}/update", id),
@@ -1301,31 +1183,12 @@ pub async fn contacts_update(
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
 
-    let company_id = match parse_object_id(&form.company_id, "Compañía") {
-        Ok(id) => id,
-        Err(msg) => {
-            let companies = company_options(&state, None).await.unwrap_or_default();
-            return render(ContactFormTemplate {
-                action: format!("/admin/contacts/{}/update", id),
-                name: form.name.clone(),
-                contact_type: form.contact_type.clone(),
-                email: form.email.clone().unwrap_or_default(),
-                phone: form.phone.clone().unwrap_or_default(),
-                notes: form.notes.clone().unwrap_or_default(),
-                companies,
-                contact_options: contact_type_options(&form.contact_type),
-                is_edit: true,
-                errors: Some(msg),
-            })
-            .map(IntoResponse::into_response)
-            .unwrap_or_else(|status| status.into_response());
-        }
-    };
+    let company_id = session_user.active_company_id().clone();
 
     let contact_type = match parse_contact_type(&form.contact_type) {
         Ok(c) => c,
         Err(msg) => {
-            let companies = company_options(&state, Some(&company_id))
+            let companies = company_options(&state, session_user.active_company_id())
                 .await
                 .unwrap_or_default();
             return render(ContactFormTemplate {
@@ -1457,30 +1320,20 @@ pub async fn recurring_plans_index(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let companies = list_companies(&state)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let company_map = build_lookup_map(
-        companies
-            .into_iter()
-            .filter_map(|c| c.id.map(|id| (id, c.name)))
-            .collect(),
-    );
-
     let plans = list_recurring_plans(&state)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let active_company = session_user.active_company_id().clone();
+    let active_name = session_user.user().company_name.clone();
 
     let rows = plans
         .into_iter()
+        .filter(|p| p.company_id == active_company)
         .filter_map(|p| {
             p.id.map(|id| RecurringPlanRow {
                 id: id.to_hex(),
                 name: p.name,
-                company: company_map
-                    .get(&p.company_id)
-                    .cloned()
-                    .unwrap_or_else(|| p.company_id.to_hex()),
+                company: active_name.clone(),
                 flow_type: flow_type_value(&p.flow_type).to_string(),
                 amount: p.amount_estimated,
                 active: p.is_active,
@@ -1499,10 +1352,10 @@ pub async fn recurring_plans_new(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let companies = company_options(&state, None).await?;
-    let categories = category_options(&state, None).await?;
-    let accounts = account_options(&state, None).await?;
-    let contacts = contact_options(&state, None).await?;
+    let companies = company_options(&state, session_user.active_company_id()).await?;
+    let categories = category_options(&state, None, session_user.active_company_id()).await?;
+    let accounts = account_options(&state, None, session_user.active_company_id()).await?;
+    let contacts = contact_options(&state, None, session_user.active_company_id()).await?;
 
     render(RecurringPlanFormTemplate {
         action: "/admin/recurring_plans".into(),
@@ -1535,38 +1388,20 @@ pub async fn recurring_plans_create(
         return StatusCode::FORBIDDEN.into_response();
     }
 
-    let companies = company_options(&state, None).await.unwrap_or_default();
-    let categories = category_options(&state, None).await.unwrap_or_default();
-    let accounts = account_options(&state, None).await.unwrap_or_default();
-    let contacts = contact_options(&state, None).await.unwrap_or_default();
+    let companies = company_options(&state, session_user.active_company_id())
+        .await
+        .unwrap_or_default();
+    let categories = category_options(&state, None, session_user.active_company_id())
+        .await
+        .unwrap_or_default();
+    let accounts = account_options(&state, None, session_user.active_company_id())
+        .await
+        .unwrap_or_default();
+    let contacts = contact_options(&state, None, session_user.active_company_id())
+        .await
+        .unwrap_or_default();
 
-    let company_id = match parse_object_id(&form.company_id, "Compañía") {
-        Ok(id) => id,
-        Err(msg) => {
-            return render(RecurringPlanFormTemplate {
-                action: "/admin/recurring_plans".into(),
-                name: form.name.clone(),
-                flow_type: form.flow_type.clone(),
-                amount_estimated: form.amount_estimated.clone(),
-                frequency: form.frequency.clone(),
-                day_of_month: form.day_of_month.clone().unwrap_or_default(),
-                start_date: form.start_date.clone(),
-                end_date: form.end_date.clone().unwrap_or_default(),
-                version: form.version.clone(),
-                is_active: form.is_active,
-                notes: form.notes.clone().unwrap_or_default(),
-                companies: companies.clone(),
-                flow_options: flow_options(&form.flow_type),
-                categories: categories.clone(),
-                accounts: accounts.clone(),
-                contacts: contacts.clone(),
-                is_edit: false,
-                errors: Some(msg),
-            })
-            .map(IntoResponse::into_response)
-            .unwrap_or_else(|status| status.into_response());
-        }
-    };
+    let company_id = session_user.active_company_id().clone();
 
     let flow_type = match parse_flow_type(&form.flow_type) {
         Ok(f) => f,
@@ -1874,10 +1709,25 @@ pub async fn recurring_plans_edit(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
 
-    let companies = company_options(&state, Some(&plan.company_id)).await?;
-    let categories = category_options(&state, Some(&plan.category_id)).await?;
-    let accounts = account_options(&state, Some(&plan.account_expected_id)).await?;
-    let contacts = contact_options(&state, plan.contact_id.as_ref()).await?;
+    let companies = company_options(&state, session_user.active_company_id()).await?;
+    let categories = category_options(
+        &state,
+        Some(&plan.category_id),
+        session_user.active_company_id(),
+    )
+    .await?;
+    let accounts = account_options(
+        &state,
+        Some(&plan.account_expected_id),
+        session_user.active_company_id(),
+    )
+    .await?;
+    let contacts = contact_options(
+        &state,
+        plan.contact_id.as_ref(),
+        session_user.active_company_id(),
+    )
+    .await?;
 
     render(RecurringPlanFormTemplate {
         action: format!("/admin/recurring_plans/{}/update", id),
@@ -1919,10 +1769,7 @@ pub async fn recurring_plans_update(
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
 
-    let company_id = match parse_object_id(&form.company_id, "Compañía") {
-        Ok(id) => id,
-        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
-    };
+    let company_id = session_user.active_company_id().clone();
 
     let flow_type = match parse_flow_type(&form.flow_type) {
         Ok(f) => f,
@@ -2115,30 +1962,20 @@ pub async fn planned_entries_index(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let companies = list_companies(&state)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let company_map = build_lookup_map(
-        companies
-            .into_iter()
-            .filter_map(|c| c.id.map(|id| (id, c.name)))
-            .collect(),
-    );
-
     let entries = list_planned_entries(&state)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let active_company = session_user.active_company_id().clone();
+    let active_name = session_user.user().company_name.clone();
 
     let rows = entries
         .into_iter()
+        .filter(|e| e.company_id == active_company)
         .filter_map(|e| {
             e.id.map(|id| PlannedEntryRow {
                 id: id.to_hex(),
                 name: e.name,
-                company: company_map
-                    .get(&e.company_id)
-                    .cloned()
-                    .unwrap_or_else(|| e.company_id.to_hex()),
+                company: active_name.clone(),
                 flow_type: flow_type_value(&e.flow_type).to_string(),
                 amount: e.amount_estimated,
                 status: planned_status_value(&e.status).to_string(),
@@ -2157,11 +1994,12 @@ pub async fn planned_entries_new(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let companies = company_options(&state, None).await?;
-    let categories = category_options(&state, None).await?;
-    let accounts = account_options(&state, None).await?;
-    let contacts = contact_options(&state, None).await?;
-    let recurring_plans = recurring_plan_options(&state, None).await?;
+    let companies = company_options(&state, session_user.active_company_id()).await?;
+    let categories = category_options(&state, None, session_user.active_company_id()).await?;
+    let accounts = account_options(&state, None, session_user.active_company_id()).await?;
+    let contacts = contact_options(&state, None, session_user.active_company_id()).await?;
+    let recurring_plans =
+        recurring_plan_options(&state, None, session_user.active_company_id()).await?;
 
     render(PlannedEntryFormTemplate {
         action: "/admin/planned_entries".into(),
@@ -2193,10 +2031,7 @@ pub async fn planned_entries_create(
         return StatusCode::FORBIDDEN.into_response();
     }
 
-    let company_id = match parse_object_id(&form.company_id, "Compañía") {
-        Ok(id) => id,
-        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
-    };
+    let company_id = session_user.active_company_id().clone();
 
     let flow_type = match parse_flow_type(&form.flow_type) {
         Ok(f) => f,
@@ -2306,11 +2141,31 @@ pub async fn planned_entries_edit(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
 
-    let companies = company_options(&state, Some(&entry.company_id)).await?;
-    let categories = category_options(&state, Some(&entry.category_id)).await?;
-    let accounts = account_options(&state, Some(&entry.account_expected_id)).await?;
-    let contacts = contact_options(&state, entry.contact_id.as_ref()).await?;
-    let recurring_plans = recurring_plan_options(&state, entry.recurring_plan_id.as_ref()).await?;
+    let companies = company_options(&state, session_user.active_company_id()).await?;
+    let categories = category_options(
+        &state,
+        Some(&entry.category_id),
+        session_user.active_company_id(),
+    )
+    .await?;
+    let accounts = account_options(
+        &state,
+        Some(&entry.account_expected_id),
+        session_user.active_company_id(),
+    )
+    .await?;
+    let contacts = contact_options(
+        &state,
+        entry.contact_id.as_ref(),
+        session_user.active_company_id(),
+    )
+    .await?;
+    let recurring_plans = recurring_plan_options(
+        &state,
+        entry.recurring_plan_id.as_ref(),
+        session_user.active_company_id(),
+    )
+    .await?;
 
     render(PlannedEntryFormTemplate {
         action: format!("/admin/planned_entries/{}/update", id),
@@ -2351,10 +2206,7 @@ pub async fn planned_entries_update(
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
 
-    let company_id = match parse_object_id(&form.company_id, "Compañía") {
-        Ok(id) => id,
-        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
-    };
+    let company_id = session_user.active_company_id().clone();
     let flow_type = match parse_flow_type(&form.flow_type) {
         Ok(v) => v,
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
@@ -2504,6 +2356,7 @@ struct TransactionFormTemplate {
 
 #[derive(Deserialize)]
 pub struct TransactionFormData {
+    #[serde(default)]
     company_id: String,
     date: String,
     description: String,
@@ -2530,30 +2383,20 @@ pub async fn transactions_index(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let companies = list_companies(&state)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let company_map = build_lookup_map(
-        companies
-            .into_iter()
-            .filter_map(|c| c.id.map(|id| (id, c.name)))
-            .collect(),
-    );
-
     let transactions = list_transactions(&state)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let active_company = session_user.active_company_id().clone();
+    let active_name = session_user.user().company_name.clone();
 
     let rows = transactions
         .into_iter()
+        .filter(|t| t.company_id == active_company)
         .filter_map(|t| {
             t.id.map(|id| TransactionRow {
                 id: id.to_hex(),
                 description: t.description,
-                company: company_map
-                    .get(&t.company_id)
-                    .cloned()
-                    .unwrap_or_else(|| t.company_id.to_hex()),
+                company: active_name.clone(),
                 amount: t.amount,
                 transaction_type: transaction_type_value(&t.transaction_type).to_string(),
             })
@@ -2571,10 +2414,11 @@ pub async fn transactions_new(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let companies = company_options(&state, None).await?;
-    let categories = category_options(&state, None).await?;
-    let accounts = account_options(&state, None).await?;
-    let planned_entries = planned_entry_options(&state, None).await?;
+    let companies = company_options(&state, session_user.active_company_id()).await?;
+    let categories = category_options(&state, None, session_user.active_company_id()).await?;
+    let accounts = account_options(&state, None, session_user.active_company_id()).await?;
+    let planned_entries =
+        planned_entry_options(&state, None, session_user.active_company_id()).await?;
 
     render(TransactionFormTemplate {
         action: "/admin/transactions".into(),
@@ -2603,10 +2447,7 @@ pub async fn transactions_create(
         return StatusCode::FORBIDDEN.into_response();
     }
 
-    let company_id = match parse_object_id(&form.company_id, "Compañía") {
-        Ok(id) => id,
-        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
-    };
+    let company_id = session_user.active_company_id().clone();
 
     let transaction_type = match parse_transaction_type(&form.transaction_type) {
         Ok(t) => t,
@@ -2711,18 +2552,28 @@ pub async fn transactions_edit(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
 
-    let companies = company_options(&state, Some(&transaction.company_id)).await?;
-    let categories = category_options(&state, Some(&transaction.category_id)).await?;
+    let companies = company_options(&state, session_user.active_company_id()).await?;
+    let categories = category_options(
+        &state,
+        Some(&transaction.category_id),
+        session_user.active_company_id(),
+    )
+    .await?;
     let accounts = account_options(
         &state,
         transaction
             .account_from_id
             .as_ref()
             .or(transaction.account_to_id.as_ref()),
+        session_user.active_company_id(),
     )
     .await?;
-    let planned_entries =
-        planned_entry_options(&state, transaction.planned_entry_id.as_ref()).await?;
+    let planned_entries = planned_entry_options(
+        &state,
+        transaction.planned_entry_id.as_ref(),
+        session_user.active_company_id(),
+    )
+    .await?;
 
     render(TransactionFormTemplate {
         action: format!("/admin/transactions/{}/update", id),
@@ -2759,10 +2610,7 @@ pub async fn transactions_update(
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
 
-    let company_id = match parse_object_id(&form.company_id, "Compañía") {
-        Ok(id) => id,
-        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
-    };
+    let company_id = session_user.active_company_id().clone();
 
     let transaction_type = match parse_transaction_type(&form.transaction_type) {
         Ok(t) => t,
@@ -2943,29 +2791,19 @@ pub async fn forecasts_index(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let companies = list_companies(&state)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let company_map = build_lookup_map(
-        companies
-            .into_iter()
-            .filter_map(|c| c.id.map(|id| (id, c.name)))
-            .collect(),
-    );
-
     let forecasts = list_forecasts(&state)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let active_company = session_user.active_company_id().clone();
+    let active_name = session_user.user().company_name.clone();
 
     let rows = forecasts
         .into_iter()
+        .filter(|f| f.company_id == active_company)
         .filter_map(|f| {
             f.id.map(|id| ForecastRow {
                 id: id.to_hex(),
-                company: company_map
-                    .get(&f.company_id)
-                    .cloned()
-                    .unwrap_or_else(|| f.company_id.to_hex()),
+                company: active_name.clone(),
                 currency: f.currency,
                 projected_net: f.projected_net,
             })
@@ -2983,8 +2821,8 @@ pub async fn forecasts_new(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let companies = company_options(&state, None).await?;
-    let users = user_options(&state, None).await?;
+    let companies = company_options(&state, session_user.active_company_id()).await?;
+    let users = user_options(&state, None, session_user.active_company_id()).await?;
 
     render(ForecastFormTemplate {
         action: "/admin/forecasts".into(),
@@ -3017,10 +2855,7 @@ pub async fn forecasts_create(
         return StatusCode::FORBIDDEN.into_response();
     }
 
-    let company_id = match parse_object_id(&form.company_id, "Compañía") {
-        Ok(id) => id,
-        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
-    };
+    let company_id = session_user.active_company_id().clone();
 
     let projected_income_total =
         match parse_f64_field(&form.projected_income_total, "Ingreso proyectado") {
@@ -3115,8 +2950,13 @@ pub async fn forecasts_edit(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
 
-    let companies = company_options(&state, Some(&forecast.company_id)).await?;
-    let users = user_options(&state, forecast.generated_by_user_id.as_ref()).await?;
+    let companies = company_options(&state, session_user.active_company_id()).await?;
+    let users = user_options(
+        &state,
+        forecast.generated_by_user_id.as_ref(),
+        session_user.active_company_id(),
+    )
+    .await?;
 
     render(ForecastFormTemplate {
         action: format!("/admin/forecasts/{}/update", id),
@@ -3164,10 +3004,7 @@ pub async fn forecasts_update(
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
 
-    let company_id = match parse_object_id(&form.company_id, "Compañía") {
-        Ok(id) => id,
-        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
-    };
+    let company_id = session_user.active_company_id().clone();
 
     let projected_income_total =
         match parse_f64_field(&form.projected_income_total, "Ingreso proyectado") {
@@ -3273,12 +3110,14 @@ pub async fn forecasts_delete(
 async fn category_options(
     state: &AppState,
     selected: Option<&ObjectId>,
+    company_id: &ObjectId,
 ) -> Result<Vec<SimpleOption>, StatusCode> {
     let categories = list_categories(state)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(categories
         .into_iter()
+        .filter(|c| c.company_id == *company_id)
         .filter_map(|c| {
             c.id.map(|id| SimpleOption {
                 value: id.to_hex(),
@@ -3292,12 +3131,14 @@ async fn category_options(
 async fn account_options(
     state: &AppState,
     selected: Option<&ObjectId>,
+    company_id: &ObjectId,
 ) -> Result<Vec<SimpleOption>, StatusCode> {
     let accounts = list_accounts(state)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(accounts
         .into_iter()
+        .filter(|a| a.company_id == *company_id)
         .filter_map(|a| {
             a.id.map(|id| SimpleOption {
                 value: id.to_hex(),
@@ -3311,6 +3152,7 @@ async fn account_options(
 async fn contact_options(
     state: &AppState,
     selected: Option<&ObjectId>,
+    company_id: &ObjectId,
 ) -> Result<Vec<SimpleOption>, StatusCode> {
     let contacts = list_contacts(state)
         .await
@@ -3321,19 +3163,25 @@ async fn contact_options(
         label: "Sin contacto".into(),
         selected: selected.is_none(),
     });
-    options.extend(contacts.into_iter().filter_map(|c| {
-        c.id.map(|id| SimpleOption {
-            value: id.to_hex(),
-            label: c.name,
-            selected: selected.map(|s| *s == id).unwrap_or(false),
-        })
-    }));
+    options.extend(
+        contacts
+            .into_iter()
+            .filter(|c| c.company_id == *company_id)
+            .filter_map(|c| {
+                c.id.map(|id| SimpleOption {
+                    value: id.to_hex(),
+                    label: c.name,
+                    selected: selected.map(|s| *s == id).unwrap_or(false),
+                })
+            }),
+    );
     Ok(options)
 }
 
 async fn recurring_plan_options(
     state: &AppState,
     selected: Option<&ObjectId>,
+    company_id: &ObjectId,
 ) -> Result<Vec<SimpleOption>, StatusCode> {
     let plans = list_recurring_plans(state)
         .await
@@ -3344,19 +3192,25 @@ async fn recurring_plan_options(
         label: "Sin plan".into(),
         selected: selected.is_none(),
     });
-    options.extend(plans.into_iter().filter_map(|p| {
-        p.id.map(|id| SimpleOption {
-            value: id.to_hex(),
-            label: p.name,
-            selected: selected.map(|s| *s == id).unwrap_or(false),
-        })
-    }));
+    options.extend(
+        plans
+            .into_iter()
+            .filter(|p| p.company_id == *company_id)
+            .filter_map(|p| {
+                p.id.map(|id| SimpleOption {
+                    value: id.to_hex(),
+                    label: p.name,
+                    selected: selected.map(|s| *s == id).unwrap_or(false),
+                })
+            }),
+    );
     Ok(options)
 }
 
 async fn planned_entry_options(
     state: &AppState,
     selected: Option<&ObjectId>,
+    company_id: &ObjectId,
 ) -> Result<Vec<SimpleOption>, StatusCode> {
     let entries = list_planned_entries(state)
         .await
@@ -3367,19 +3221,25 @@ async fn planned_entry_options(
         label: "Sin enlace".into(),
         selected: selected.is_none(),
     });
-    options.extend(entries.into_iter().filter_map(|e| {
-        e.id.map(|id| SimpleOption {
-            value: id.to_hex(),
-            label: e.name,
-            selected: selected.map(|s| *s == id).unwrap_or(false),
-        })
-    }));
+    options.extend(
+        entries
+            .into_iter()
+            .filter(|e| e.company_id == *company_id)
+            .filter_map(|e| {
+                e.id.map(|id| SimpleOption {
+                    value: id.to_hex(),
+                    label: e.name,
+                    selected: selected.map(|s| *s == id).unwrap_or(false),
+                })
+            }),
+    );
     Ok(options)
 }
 
 async fn user_options(
     state: &AppState,
     selected: Option<&ObjectId>,
+    company_id: &ObjectId,
 ) -> Result<Vec<SimpleOption>, StatusCode> {
     let users = list_users(state)
         .await
@@ -3390,10 +3250,15 @@ async fn user_options(
         label: "Sin usuario".into(),
         selected: selected.is_none(),
     });
-    options.extend(users.into_iter().map(|u| SimpleOption {
-        value: u.id.to_hex(),
-        label: u.email,
-        selected: selected.map(|s| s == &u.id).unwrap_or(false),
-    }));
+    options.extend(
+        users
+            .into_iter()
+            .filter(|u| u.company_ids.contains(company_id))
+            .map(|u| SimpleOption {
+                value: u.id.to_hex(),
+                label: u.email,
+                selected: selected.map(|s| s == &u.id).unwrap_or(false),
+            }),
+    );
     Ok(options)
 }

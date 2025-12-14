@@ -11,6 +11,7 @@ use mongodb::{
 };
 use rand::RngCore;
 use serde::de::DeserializeOwned;
+use slug::slugify;
 use std::{
     collections::{HashMap, HashSet},
     env, fs,
@@ -20,7 +21,7 @@ use std::{
 use crate::models::{
     Account, AccountType, Category, Company, Contact, ContactType, FlowType, Forecast,
     PlannedEntry, PlannedStatus, RecurringPlan, SeedUser, Session, Transaction, TransactionType,
-    User, UserRole,
+    User, UserCompany, UserRole,
 };
 
 pub const SESSION_TTL_SECONDS: u64 = 60 * 60 * 24; // 1 day
@@ -29,6 +30,7 @@ const PLANNED_MONTHS_AHEAD: u32 = 24;
 #[derive(Clone)]
 pub struct AppState {
     pub users: Collection<User>,
+    pub user_companies: Collection<UserCompany>,
     pub companies: Collection<Company>,
     pub sessions: Collection<Session>,
     pub accounts: Collection<Account>,
@@ -46,7 +48,9 @@ pub struct UserWithCompany {
     pub email: String,
     pub secret: String,
     pub company_id: ObjectId,
+    pub company_slug: String,
     pub company_ids: Vec<ObjectId>,
+    pub company_slugs: Vec<String>,
     pub company_name: String,
     pub company_names: Vec<String>,
     pub role: UserRole,
@@ -69,6 +73,7 @@ pub async fn init_state() -> Result<AppState> {
 
     Ok(AppState {
         users: db.collection::<User>("users"),
+        user_companies: db.collection::<UserCompany>("user_companies"),
         companies: db.collection::<Company>("company"),
         sessions: db.collection::<Session>("sessions"),
         accounts: db.collection::<Account>("accounts"),
@@ -120,6 +125,9 @@ async fn ensure_collections(db: &Database) -> Result<()> {
     if !existing.iter().any(|name| name == "users") {
         db.create_collection("users").await?;
     }
+    if !existing.iter().any(|name| name == "user_companies") {
+        db.create_collection("user_companies").await?;
+    }
     if !existing.iter().any(|name| name == "company") {
         db.create_collection("company").await?;
     }
@@ -147,6 +155,22 @@ async fn ensure_collections(db: &Database) -> Result<()> {
     if !existing.iter().any(|name| name == "forecasts") {
         db.create_collection("forecasts").await?;
     }
+    // Ensure unique index on company slug
+    let company_coll = db.collection::<Company>("company");
+    company_coll
+        .create_index(
+            mongodb::IndexModel::builder()
+                .keys(doc! { "slug": 1 })
+                .options(
+                    mongodb::options::IndexOptions::builder()
+                        .unique(true)
+                        .name("slug_unique".to_string())
+                        .build(),
+                )
+                .build(),
+        )
+        .await
+        .ok();
     Ok(())
 }
 
@@ -158,7 +182,11 @@ async fn seed_default_companies(
     let mut map = HashMap::new();
 
     for name in names {
-        if let Some(existing) = coll.find_one(doc! { "name": name.clone() }).await? {
+        let slug = slugify(name);
+        if let Some(existing) = coll
+            .find_one(doc! { "$or": [ { "name": name.clone() }, { "slug": &slug } ] })
+            .await?
+        {
             if let Some(id) = existing.id {
                 map.insert(name.clone(), id);
                 continue;
@@ -169,6 +197,7 @@ async fn seed_default_companies(
             .insert_one(Company {
                 id: None,
                 name: name.clone(),
+                slug: slug.clone(),
                 default_currency: String::new(),
                 is_active: true,
                 created_at: None,
@@ -192,6 +221,7 @@ async fn seed_default_users(
     company_ids: &HashMap<String, ObjectId>,
 ) -> Result<()> {
     let coll = db.collection::<mongodb::bson::Document>("users");
+    let memberships = db.collection::<mongodb::bson::Document>("user_companies");
     for user in defaults {
         let mut mapped_companies = Vec::new();
         let primary_id = company_ids
@@ -207,14 +237,68 @@ async fn seed_default_users(
             }
         }
 
+        // Preserve existing user memberships/secrets/role if present
+        let existing_doc = coll.find_one(doc! { "email": &user.email }).await?;
+        let existing_primary = existing_doc
+            .as_ref()
+            .and_then(|d| d.get_object_id("company").ok());
+        let mut existing_companies: Vec<ObjectId> = existing_doc
+            .as_ref()
+            .and_then(|d| d.get_array("companies").ok())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_object_id().map(|oid| oid.clone()))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_else(|| existing_primary.iter().cloned().collect());
+        let existing_secret = existing_doc
+            .as_ref()
+            .and_then(|d| d.get_str("secret").ok())
+            .map(|s| s.to_string());
+        let existing_role = existing_doc
+            .as_ref()
+            .and_then(|d| d.get_str("role").ok())
+            .and_then(|r| match r {
+                "admin" => Some(UserRole::Admin),
+                "staff" => Some(UserRole::Staff),
+                _ => None,
+            });
+
+        // Union of existing + defaults
+        for cid in mapped_companies.clone() {
+            if !existing_companies.contains(&cid) {
+                existing_companies.push(cid);
+            }
+        }
+        if existing_companies.is_empty() {
+            existing_companies.push(primary_id.clone());
+        }
+
+        let primary_effective = existing_primary.unwrap_or_else(|| primary_id.clone());
+
+        let mut companies_final = Vec::new();
+        companies_final.push(primary_effective.clone());
+        for cid in existing_companies {
+            if cid != primary_effective && !companies_final.contains(&cid) {
+                companies_final.push(cid);
+            }
+        }
+
+        let secret_final = existing_secret.unwrap_or_else(|| user.secret.clone());
+        let role_final = if existing_role == Some(UserRole::Admin) || user.role.is_admin() {
+            UserRole::Admin
+        } else {
+            UserRole::Staff
+        };
+
         coll.update_one(
             doc! { "email": &user.email },
             doc! {
                 "$set": {
-                    "secret": &user.secret,
-                    "company": &primary_id,
-                    "companies": &mapped_companies,
-                    "role": user.role.as_str(),
+                    "secret": &secret_final,
+                    "company": &primary_effective,
+                    "companies": &companies_final,
+                    "role": role_final.as_str(),
                 },
                 "$setOnInsert": {
                     "email": &user.email,
@@ -223,6 +307,26 @@ async fn seed_default_users(
         )
         .upsert(true)
         .await?;
+
+        if let Some(user_doc) = coll
+            .find_one(doc! { "email": &user.email })
+            .await
+            .ok()
+            .flatten()
+        {
+            if let Some(uid) = user_doc.get_object_id("_id").ok() {
+                let _ = memberships.delete_many(doc! { "user_id": uid }).await;
+                for cid in &companies_final {
+                    let _ = memberships
+                        .insert_one(doc! {
+                            "user_id": uid,
+                            "company_id": cid,
+                            "role": role_final.as_str(),
+                        })
+                        .await;
+                }
+            }
+        }
     }
     Ok(())
 }
@@ -546,6 +650,7 @@ pub async fn create_user(
     company_ids: &[ObjectId],
     role: UserRole,
 ) -> Result<ObjectId> {
+    let role_clone = role.clone();
     let primary = company_ids
         .first()
         .cloned()
@@ -558,12 +663,31 @@ pub async fn create_user(
             secret: secret.to_string(),
             company_id: Some(primary),
             company_ids: company_ids.to_vec(),
-            role,
+            role: role_clone.clone(),
         })
         .await?;
-    res.inserted_id
+    let uid = res
+        .inserted_id
         .as_object_id()
-        .context("user insert missing _id")
+        .context("user insert missing _id")?;
+
+    let _ = state
+        .user_companies
+        .delete_many(doc! { "user_id": &uid })
+        .await;
+    for cid in company_ids {
+        let _ = state
+            .user_companies
+            .insert_one(UserCompany {
+                id: None,
+                user_id: uid.clone(),
+                company_id: cid.clone(),
+                role: role_clone.clone(),
+            })
+            .await;
+    }
+
+    Ok(uid)
 }
 
 pub async fn update_user(
@@ -585,11 +709,82 @@ pub async fn update_user(
             doc! { "$set": {"email": email, "secret": secret, "company": primary, "companies": company_ids, "role": role.as_str()} },
         )
         .await?;
+
+    let _ = state
+        .user_companies
+        .delete_many(doc! { "user_id": id })
+        .await;
+    for cid in company_ids {
+        let _ = state
+            .user_companies
+            .insert_one(UserCompany {
+                id: None,
+                user_id: id.clone(),
+                company_id: cid.clone(),
+                role: role.clone(),
+            })
+            .await;
+    }
+
+    Ok(())
+}
+
+/// Attach a user to a company (idempotent) and ensure membership document exists.
+pub async fn add_user_to_company(
+    state: &AppState,
+    user_id: &ObjectId,
+    company_id: &ObjectId,
+    role: UserRole,
+) -> Result<()> {
+    // Update embedded array on the user document
+    let user = state
+        .users
+        .find_one(doc! { "_id": user_id })
+        .await?
+        .context("user not found when attaching company")?;
+
+    let mut company_ids = user.company_ids.clone();
+    if let Some(primary) = &user.company_id {
+        if !company_ids.contains(primary) {
+            company_ids.push(primary.clone());
+        }
+    }
+    if !company_ids.contains(company_id) {
+        company_ids.push(company_id.clone());
+    }
+
+    let primary = user
+        .company_id
+        .clone()
+        .unwrap_or_else(|| company_id.clone());
+
+    state
+        .users
+        .update_one(
+            doc! { "_id": user_id },
+            doc! { "$set": { "companies": &company_ids, "company": primary } },
+        )
+        .await?;
+
+    // Upsert membership row
+    state
+        .user_companies
+        .update_one(
+            doc! { "user_id": user_id, "company_id": company_id },
+            doc! { "$set": { "role": role.as_str() } },
+        )
+        .upsert(true)
+        .await?;
+
     Ok(())
 }
 
 pub async fn delete_user(state: &AppState, id: &ObjectId) -> Result<()> {
     state.users.delete_one(doc! { "_id": id }).await?;
+    let _ = state
+        .user_companies
+        .delete_many(doc! { "user_id": id })
+        .await;
     Ok(())
 }
 
@@ -613,15 +808,22 @@ pub async fn get_company_by_id(state: &AppState, id: &ObjectId) -> Result<Option
 pub async fn create_company(
     state: &AppState,
     name: &str,
+    slug: &str,
     default_currency: &str,
     is_active: bool,
     notes: Option<String>,
 ) -> Result<ObjectId> {
+    let slug = if slug.trim().is_empty() {
+        slugify(name)
+    } else {
+        slug.to_string()
+    };
     let res = state
         .companies
         .insert_one(Company {
             id: None,
             name: name.to_string(),
+            slug,
             default_currency: default_currency.to_string(),
             is_active,
             created_at: Some(DateTime::from_system_time(SystemTime::now())),
@@ -638,16 +840,23 @@ pub async fn update_company(
     state: &AppState,
     id: &ObjectId,
     name: &str,
+    slug: &str,
     default_currency: &str,
     is_active: bool,
     notes: Option<String>,
 ) -> Result<()> {
+    let slug = if slug.trim().is_empty() {
+        slugify(name)
+    } else {
+        slug.to_string()
+    };
     state
         .companies
         .update_one(
             doc! { "_id": id },
             doc! { "$set": {
                 "name": name,
+                "slug": slug,
                 "default_currency": default_currency,
                 "is_active": is_active,
                 "notes": notes.clone(),
@@ -1535,21 +1744,36 @@ pub async fn delete_forecast(state: &AppState, id: &ObjectId) -> Result<()> {
 
 async fn build_user_with_company(state: &AppState, user: User) -> Result<UserWithCompany> {
     let id = user.id.context("user missing _id")?;
-    let mut all_company_ids = user.company_ids.clone();
-    if let Some(primary) = &user.company_id {
-        if !all_company_ids.contains(primary) {
-            all_company_ids.insert(0, primary.clone());
+    let mut memberships = Vec::new();
+    let mut cursor = state.user_companies.find(doc! { "user_id": &id }).await?;
+    while let Some(m) = cursor.try_next().await? {
+        memberships.push(m);
+    }
+
+    // Union of embedded list and membership collection
+    let mut all_company_ids: Vec<ObjectId> = user.company_ids.clone();
+    for m in &memberships {
+        if !all_company_ids.contains(&m.company_id) {
+            all_company_ids.push(m.company_id.clone());
         }
     }
-    let primary_company_id = all_company_ids
-        .get(0)
-        .cloned()
-        .context("user has no company assigned")?;
+    if let Some(primary) = &user.company_id {
+        if let Some(pos) = all_company_ids.iter().position(|id| id == primary) {
+            all_company_ids.remove(pos);
+        }
+        all_company_ids.insert(0, primary.clone());
+    }
+    if all_company_ids.is_empty() {
+        return Err(anyhow::anyhow!("user has no company assigned"));
+    }
+    let primary_company_id = all_company_ids[0].clone();
 
     let mut company_names = Vec::new();
+    let mut company_slugs = Vec::new();
     for cid in &all_company_ids {
         if let Some(c) = state.companies.find_one(doc! { "_id": cid }).await? {
             company_names.push(c.name.clone());
+            company_slugs.push(c.slug.clone());
         }
     }
     let primary_company = state
@@ -1557,15 +1781,40 @@ async fn build_user_with_company(state: &AppState, user: User) -> Result<UserWit
         .find_one(doc! { "_id": &primary_company_id })
         .await?
         .context("user references missing primary company")?;
+
+    let normalized_slugs: Vec<String> = company_slugs
+        .iter()
+        .zip(company_names.iter())
+        .map(|(slug, name)| {
+            if slug.is_empty() {
+                slugify(name)
+            } else {
+                slug.clone()
+            }
+        })
+        .collect();
+    let primary_slug = if normalized_slugs.is_empty() {
+        slugify(&primary_company.name)
+    } else {
+        normalized_slugs[0].clone()
+    };
+
+    let effective_role = if memberships.iter().any(|m| m.role.is_admin()) {
+        UserRole::Admin
+    } else {
+        user.role
+    };
     Ok(UserWithCompany {
         id,
         email: user.email,
         secret: user.secret,
         company_id: primary_company_id,
+        company_slug: primary_slug,
         company_ids: all_company_ids,
+        company_slugs: normalized_slugs,
         company_name: primary_company.name,
         company_names,
-        role: user.role,
+        role: effective_role,
     })
 }
 

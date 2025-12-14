@@ -49,19 +49,30 @@
       <nav class="mx-auto flex w-full max-w-5xl items-center justify-between px-4 py-4">
         <a href="/" class="text-lg font-semibold text-sky-700">Axum TOTP</a>
         <div class="flex items-center gap-4 text-sm font-medium text-slate-600">
-          <a href="/" class="hover:text-sky-600 transition">Inicio</a>
-          <a href="/account" class="hover:text-sky-600 transition">Mi cuenta</a>
-          <a href="/admin/users" class="hover:text-sky-600 transition">Usuarios</a>
-          <a href="/admin/companies" class="hover:text-sky-600 transition">Compañías</a>
-          <a href="/admin/accounts" class="hover:text-sky-600 transition">Cuentas</a>
-          <a href="/admin/categories" class="hover:text-sky-600 transition">Categorías</a>
-          <a href="/admin/contacts" class="hover:text-sky-600 transition">Contactos</a>
-          <a href="/admin/recurring_plans" class="hover:text-sky-600 transition">Planes</a>
-          <a href="/admin/planned_entries" class="hover:text-sky-600 transition">Compromisos</a>
-          <a href="/admin/transactions" class="hover:text-sky-600 transition">Movimientos</a>
-          <a href="/admin/forecasts" class="hover:text-sky-600 transition">Pronósticos</a>
-          <a href="/tiempo" class="hover:text-sky-600 transition">Tiempo</a>
-          <a href="/pdf" class="hover:text-sky-600 transition">PDF Typst</a>
+          <a data-nav href="/" class="hover:text-sky-600 transition">Inicio</a>
+          <a data-nav href="/account" class="hover:text-sky-600 transition">Mi cuenta</a>
+          <a data-nav href="/admin/users" class="hover:text-sky-600 transition">Usuarios</a>
+          <a data-nav href="/admin/companies" class="hover:text-sky-600 transition">Compañías</a>
+          <a data-nav href="/admin/accounts" class="hover:text-sky-600 transition">Cuentas</a>
+          <a data-nav href="/admin/categories" class="hover:text-sky-600 transition">Categorías</a>
+          <a data-nav href="/admin/contacts" class="hover:text-sky-600 transition">Contactos</a>
+          <a data-nav href="/admin/recurring_plans" class="hover:text-sky-600 transition">Planes</a>
+          <a data-nav href="/admin/planned_entries" class="hover:text-sky-600 transition">Compromisos</a>
+          <a data-nav href="/admin/transactions" class="hover:text-sky-600 transition">Movimientos</a>
+          <a data-nav href="/admin/forecasts" class="hover:text-sky-600 transition">Pronósticos</a>
+          <a data-nav href="/tiempo" class="hover:text-sky-600 transition">Tiempo</a>
+          <a data-nav href="/pdf" class="hover:text-sky-600 transition">PDF Typst</a>
+          <div class="relative" id="companySwitcher">
+            <button id="companyToggle" class="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:border-sky-300 hover:text-sky-700">
+              <span id="companyActiveName">Compañía</span>
+              <svg class="h-3 w-3" viewBox="0 0 10 6" fill="none" stroke="currentColor">
+                <path d="M1 1l4 4 4-4" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </button>
+            <div id="companyMenu" class="absolute right-0 mt-1 w-56 origin-top-right rounded-md border border-slate-200 bg-white shadow-lg ring-1 ring-slate-200 hidden">
+              <div id="companyList" class="py-1 text-sm text-slate-700"></div>
+            </div>
+          </div>
         </div>
       </nav>
     </header>
@@ -118,5 +129,99 @@
     })();
   </script>
   {% block scripts %}{% endblock %}
+  <script>
+    (() => {
+      // Resaltar link activo del navbar
+      const currentPath = window.location.pathname;
+      const links = document.querySelectorAll("a[data-nav]");
+      links.forEach((link) => {
+        const href = link.getAttribute("href") || "";
+        const isRoot = href === "/" && currentPath === "/";
+        const isMatch =
+          isRoot ||
+          (href !== "/" && currentPath.startsWith(href));
+        if (isMatch) {
+          link.classList.add(
+            "text-sky-700",
+            "font-semibold",
+            "bg-sky-50",
+            "rounded-md",
+            "px-2",
+            "py-1",
+            "shadow-sm"
+          );
+        }
+      });
+
+      const toggle = document.getElementById("companyToggle");
+      const menu = document.getElementById("companyMenu");
+      const list = document.getElementById("companyList");
+      const activeName = document.getElementById("companyActiveName");
+      if (!toggle || !menu || !list || !activeName) return;
+
+      const currentHost = window.location.host;
+      const baseDomain = (() => {
+        const parts = currentHost.split(".");
+        if (parts.length >= 3) {
+          parts.shift();
+          return parts.join(".");
+        }
+        return currentHost;
+      })();
+
+      const switchTo = (slug) => {
+        const newHost = baseDomain.includes("localhost")
+          ? `${slug}.${baseDomain}`
+          : `${slug}.${baseDomain}`;
+        window.location.href = `${window.location.protocol}//${newHost}${window.location.pathname}${window.location.search}`;
+      };
+
+      const renderList = (items) => {
+        list.innerHTML = items
+          .map(
+            (c) => `
+              <button data-slug="${c.slug}"
+                class="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-slate-50 ${c.active ? "bg-sky-50 text-sky-700" : ""}">
+                <span>${c.name}</span>
+                ${c.active ? '<span class="text-[11px] font-semibold text-sky-600">Activo</span>' : ""}
+              </button>
+            `
+          )
+          .join("");
+        const active = items.find((c) => c.active);
+        if (active) {
+          activeName.textContent = active.name;
+        }
+        list.querySelectorAll("button").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const slug = btn.dataset.slug;
+            if (slug) switchTo(slug);
+          });
+        });
+      };
+
+      const fetchCompanies = async () => {
+        try {
+          const res = await fetch("/api/me/companies");
+          if (!res.ok) return;
+          const data = await res.json();
+          renderList(data);
+        } catch (e) {
+          console.error("company fetch failed", e);
+        }
+      };
+
+      toggle.addEventListener("click", () => {
+        menu.classList.toggle("hidden");
+      });
+      document.addEventListener("click", (e) => {
+        if (!menu.contains(e.target) && !toggle.contains(e.target)) {
+          menu.classList.add("hidden");
+        }
+      });
+
+      fetchCompanies();
+    })();
+  </script>
 </body>
 </html>

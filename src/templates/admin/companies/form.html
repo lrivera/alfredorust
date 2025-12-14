@@ -23,6 +23,13 @@
       </div>
 
       <div class="space-y-2">
+        <label for="slug" class="block text-sm font-medium text-slate-600">Slug (subdominio)</label>
+        <input id="slug" name="slug" value="{{ slug }}" placeholder="ej. research"
+          class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40" />
+        <p class="text-xs text-slate-500">Usa minúsculas, números y guiones. Déjalo vacío para generar uno.</p>
+      </div>
+
+      <div class="space-y-2">
         <label for="default_currency" class="block text-sm font-medium text-slate-600">Moneda por defecto</label>
         <input id="default_currency" name="default_currency" value="{{ default_currency }}" placeholder="Ej. MXN"
           class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40" />
