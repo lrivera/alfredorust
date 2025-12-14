@@ -46,7 +46,9 @@ pub struct UserWithCompany {
     pub email: String,
     pub secret: String,
     pub company_id: ObjectId,
+    pub company_ids: Vec<ObjectId>,
     pub company_name: String,
+    pub company_names: Vec<String>,
     pub role: UserRole,
 }
 
@@ -100,8 +102,14 @@ fn derive_company_names(users: &[SeedUser]) -> Vec<String> {
     let mut seen = HashSet::new();
     let mut companies = Vec::new();
     for user in users {
-        if seen.insert(user.company.clone()) {
-            companies.push(user.company.clone());
+        let mut push_name = |name: &String| {
+            if seen.insert(name.clone()) {
+                companies.push(name.clone());
+            }
+        };
+        push_name(&user.company);
+        for extra in &user.companies {
+            push_name(extra);
         }
     }
     companies
@@ -185,17 +193,27 @@ async fn seed_default_users(
 ) -> Result<()> {
     let coll = db.collection::<mongodb::bson::Document>("users");
     for user in defaults {
-        let company_id = company_ids
+        let mut mapped_companies = Vec::new();
+        let primary_id = company_ids
             .get(&user.company)
             .cloned()
             .context(format!("missing company id for {}", user.company))?;
+        mapped_companies.push(primary_id.clone());
+        for name in &user.companies {
+            if let Some(id) = company_ids.get(name) {
+                if !mapped_companies.contains(id) {
+                    mapped_companies.push(id.clone());
+                }
+            }
+        }
 
         coll.update_one(
             doc! { "email": &user.email },
             doc! {
                 "$set": {
                     "secret": &user.secret,
-                    "company": company_id,
+                    "company": &primary_id,
+                    "companies": &mapped_companies,
                     "role": user.role.as_str(),
                 },
                 "$setOnInsert": {
@@ -525,16 +543,21 @@ pub async fn create_user(
     state: &AppState,
     email: &str,
     secret: &str,
-    company_id: &ObjectId,
+    company_ids: &[ObjectId],
     role: UserRole,
 ) -> Result<ObjectId> {
+    let primary = company_ids
+        .first()
+        .cloned()
+        .context("at least one company is required for user")?;
     let res = state
         .users
         .insert_one(User {
             id: None,
             email: email.to_string(),
             secret: secret.to_string(),
-            company_id: company_id.clone(),
+            company_id: Some(primary),
+            company_ids: company_ids.to_vec(),
             role,
         })
         .await?;
@@ -548,14 +571,18 @@ pub async fn update_user(
     id: &ObjectId,
     email: &str,
     secret: &str,
-    company_id: &ObjectId,
+    company_ids: &[ObjectId],
     role: UserRole,
 ) -> Result<()> {
+    let primary = company_ids
+        .first()
+        .cloned()
+        .context("at least one company is required for user")?;
     state
         .users
         .update_one(
             doc! { "_id": id },
-            doc! { "$set": {"email": email, "secret": secret, "company": company_id, "role": role.as_str()} },
+            doc! { "$set": {"email": email, "secret": secret, "company": primary, "companies": company_ids, "role": role.as_str()} },
         )
         .await?;
     Ok(())
@@ -1508,17 +1535,36 @@ pub async fn delete_forecast(state: &AppState, id: &ObjectId) -> Result<()> {
 
 async fn build_user_with_company(state: &AppState, user: User) -> Result<UserWithCompany> {
     let id = user.id.context("user missing _id")?;
-    let company = state
+    let mut all_company_ids = user.company_ids.clone();
+    if let Some(primary) = &user.company_id {
+        if !all_company_ids.contains(primary) {
+            all_company_ids.insert(0, primary.clone());
+        }
+    }
+    let primary_company_id = all_company_ids
+        .get(0)
+        .cloned()
+        .context("user has no company assigned")?;
+
+    let mut company_names = Vec::new();
+    for cid in &all_company_ids {
+        if let Some(c) = state.companies.find_one(doc! { "_id": cid }).await? {
+            company_names.push(c.name.clone());
+        }
+    }
+    let primary_company = state
         .companies
-        .find_one(doc! { "_id": &user.company_id })
+        .find_one(doc! { "_id": &primary_company_id })
         .await?
-        .context("user references missing company")?;
+        .context("user references missing primary company")?;
     Ok(UserWithCompany {
         id,
         email: user.email,
         secret: user.secret,
-        company_id: user.company_id,
-        company_name: company.name,
+        company_id: primary_company_id,
+        company_ids: all_company_ids,
+        company_name: primary_company.name,
+        company_names,
         role: user.role,
     })
 }

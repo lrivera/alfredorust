@@ -81,7 +81,8 @@ struct RoleOption {
 pub(crate) struct UserFormData {
     email: String,
     secret: String,
-    company_id: String,
+    #[serde(default)]
+    company_ids: Vec<String>,
     role: String,
 }
 
@@ -101,12 +102,19 @@ pub async fn users_index(
 
     let rows = users
         .into_iter()
-        .map(|user| UserRow {
-            id: user.id.to_hex(),
-            email: user.email,
-            company: user.company_name,
-            role: user.role.as_str().to_string(),
-            is_self: current_id == user.id,
+        .map(|user| {
+            let company_label = if user.company_names.is_empty() {
+                user.company_name.clone()
+            } else {
+                user.company_names.join(", ")
+            };
+            UserRow {
+                id: user.id.to_hex(),
+                email: user.email,
+                company: company_label,
+                role: user.role.as_str().to_string(),
+                is_self: current_id == user.id,
+            }
         })
         .collect();
 
@@ -181,7 +189,7 @@ pub async fn users_edit(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let companies = load_company_options(&state, Some(&user.company_id)).await?;
+    let companies = load_company_options(&state, Some(&user.company_ids)).await?;
     let form = UserFormView {
         email: user.email.clone(),
         secret: user.secret.clone(),
@@ -325,17 +333,25 @@ async fn process_user_form(
     state: &Arc<AppState>,
     allow_role_change: bool,
 ) -> Result<(), (UserFormView, Vec<CompanyOption>, String, UserRole)> {
-    let company_id = match ObjectId::from_str(form.company_id.trim()) {
-        Ok(id) => id,
-        Err(_) => {
+    let company_ids: Vec<ObjectId> = {
+        let mut ids = Vec::new();
+        for raw in &form.company_ids {
+            if let Ok(id) = ObjectId::from_str(raw.trim()) {
+                if !ids.contains(&id) {
+                    ids.push(id);
+                }
+            }
+        }
+        if ids.is_empty() {
             let companies = load_company_options(state, None).await.unwrap_or_default();
             return Err((
                 form_view_from_data(&form),
                 companies,
-                "Compañía inválida".into(),
+                "Selecciona al menos una compañía válida".into(),
                 role_from_str(&form.role),
             ));
         }
+        ids
     };
 
     let requested_role = role_from_str(&form.role);
@@ -357,7 +373,7 @@ async fn process_user_form(
     };
 
     if email_trimmed.is_empty() || secret_trimmed.is_empty() {
-        let companies = load_company_options(state, Some(&company_id))
+        let companies = load_company_options(state, Some(&company_ids))
             .await
             .unwrap_or_default();
         return Err((
@@ -369,17 +385,10 @@ async fn process_user_form(
     }
 
     if let Some((id, _existing_role)) = existing {
-        if let Err(_) = update_user(
-            state,
-            id,
-            &email_trimmed,
-            &secret_trimmed,
-            &company_id,
-            role.clone(),
-        )
+        if let Err(_) = update_user(state, id, &email_trimmed, &secret_trimmed, &company_ids, role.clone())
         .await
         {
-            let companies = load_company_options(state, Some(&company_id))
+            let companies = load_company_options(state, Some(&company_ids))
                 .await
                 .unwrap_or_default();
             return Err((
@@ -390,16 +399,10 @@ async fn process_user_form(
             ));
         }
     } else {
-        if let Err(_) = create_user(
-            state,
-            &email_trimmed,
-            &secret_trimmed,
-            &company_id,
-            role.clone(),
-        )
+        if let Err(_) = create_user(state, &email_trimmed, &secret_trimmed, &company_ids, role.clone())
         .await
         {
-            let companies = load_company_options(state, Some(&company_id))
+            let companies = load_company_options(state, Some(&company_ids))
                 .await
                 .unwrap_or_default();
             return Err((
@@ -424,7 +427,7 @@ fn form_view_from_data(data: &UserFormData) -> UserFormView {
 
 async fn load_company_options(
     state: &Arc<AppState>,
-    selected: Option<&ObjectId>,
+    selected: Option<&[ObjectId]>,
 ) -> Result<Vec<CompanyOption>, StatusCode> {
     let companies = list_companies(state)
         .await
@@ -433,7 +436,9 @@ async fn load_company_options(
         .into_iter()
         .filter_map(|company| {
             let id = company.id?.to_hex();
-            let selected_flag = selected.map(|sel| sel.to_hex() == id).unwrap_or(false);
+            let selected_flag = selected
+                .map(|sel_list| sel_list.iter().any(|sel| sel.to_hex() == id))
+                .unwrap_or(false);
             Some(CompanyOption {
                 id,
                 name: company.name,

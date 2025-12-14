@@ -42,7 +42,11 @@ impl Default for UserRole {
 pub struct SeedUser {
     pub email: String,
     pub secret: String,
+    /// Primary company by name (backwards compatibility).
     pub company: String,
+    /// Additional companies by name (including the primary if you want).
+    #[serde(default)]
+    pub companies: Vec<String>,
     #[serde(default = "UserRole::default_admin")]
     pub role: UserRole,
 }
@@ -87,9 +91,13 @@ pub struct User {
     pub email: String,
     pub secret: String,
 
-    /// Tenant the user belongs to.
-    #[serde(rename = "company")]
-    pub company_id: ObjectId,
+    /// Primary tenant the user belongs to (for compatibility).
+    #[serde(rename = "company", skip_serializing_if = "Option::is_none")]
+    pub company_id: Option<ObjectId>,
+
+    /// All companies the user can access.
+    #[serde(rename = "companies", default)]
+    pub company_ids: Vec<ObjectId>,
 
     pub role: UserRole,
 }

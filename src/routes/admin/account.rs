@@ -95,7 +95,7 @@ pub async fn account_update(
         session_user.user_id(),
         &email,
         &secret,
-        &user.company_id,
+        &user.company_ids,
         user.role.clone(),
     )
     .await;
