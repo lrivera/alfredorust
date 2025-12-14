@@ -29,13 +29,21 @@ pub async fn logout(
         "{}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0",
         crate::session::SESSION_COOKIE_NAME,
     );
-    let domain_cookie = domain.map(|d| {
-        format!(
-            "{}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Domain={}",
-            crate::session::SESSION_COOKIE_NAME,
-            d
-        )
-    });
+    let domain_cookies: Vec<String> = match domain {
+        Some(d) => vec![
+            format!(
+                "{}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Domain={}",
+                crate::session::SESSION_COOKIE_NAME,
+                d
+            ),
+            format!(
+                "{}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Domain=.{}",
+                crate::session::SESSION_COOKIE_NAME,
+                d.trim_start_matches('.')
+            ),
+        ],
+        None => Vec::new(),
+    };
 
     match delete_result {
         Ok(_) => {
@@ -44,8 +52,8 @@ pub async fn logout(
             if let Ok(header_value) = HeaderValue::from_str(&host_cookie) {
                 response.headers_mut().append(SET_COOKIE, header_value);
             }
-            if let Some(dc) = domain_cookie {
-                if let Ok(header_value) = HeaderValue::from_str(&dc) {
+            for dc in domain_cookies.iter() {
+                if let Ok(header_value) = HeaderValue::from_str(dc) {
                     response.headers_mut().append(SET_COOKIE, header_value);
                 }
             }
@@ -60,8 +68,8 @@ pub async fn logout(
             if let Ok(header_value) = HeaderValue::from_str(&host_cookie) {
                 response.headers_mut().append(SET_COOKIE, header_value);
             }
-            if let Some(dc) = domain_cookie {
-                if let Ok(header_value) = HeaderValue::from_str(&dc) {
+            for dc in domain_cookies.iter() {
+                if let Ok(header_value) = HeaderValue::from_str(dc) {
                     response.headers_mut().append(SET_COOKIE, header_value);
                 }
             }

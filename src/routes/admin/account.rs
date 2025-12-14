@@ -90,15 +90,14 @@ pub async fn account_update(
     }
 
     let user = session_user.user();
-    let update_result = update_user(
-        &state,
-        session_user.user_id(),
-        &email,
-        &secret,
-        &user.company_ids,
-        user.role.clone(),
-    )
-    .await;
+    let company_roles: Vec<_> = user
+        .company_ids
+        .iter()
+        .zip(user.company_roles.iter())
+        .map(|(id, role)| (id.clone(), role.clone()))
+        .collect();
+    let update_result =
+        update_user(&state, session_user.user_id(), &email, &secret, &company_roles).await;
 
     match update_result {
         Ok(_) => Redirect::to("/account?saved=1").into_response(),

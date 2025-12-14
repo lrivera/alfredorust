@@ -53,6 +53,7 @@ pub struct UserWithCompany {
     pub company_slugs: Vec<String>,
     pub company_name: String,
     pub company_names: Vec<String>,
+    pub company_roles: Vec<UserRole>,
     pub role: UserRole,
 }
 
@@ -237,7 +238,7 @@ async fn seed_default_users(
             }
         }
 
-        // Preserve existing user memberships/secrets/role if present
+        // Preserve existing user memberships/secrets if present
         let existing_doc = coll.find_one(doc! { "email": &user.email }).await?;
         let existing_primary = existing_doc
             .as_ref()
@@ -255,14 +256,6 @@ async fn seed_default_users(
             .as_ref()
             .and_then(|d| d.get_str("secret").ok())
             .map(|s| s.to_string());
-        let existing_role = existing_doc
-            .as_ref()
-            .and_then(|d| d.get_str("role").ok())
-            .and_then(|r| match r {
-                "admin" => Some(UserRole::Admin),
-                "staff" => Some(UserRole::Staff),
-                _ => None,
-            });
 
         // Union of existing + defaults
         for cid in mapped_companies.clone() {
@@ -285,11 +278,7 @@ async fn seed_default_users(
         }
 
         let secret_final = existing_secret.unwrap_or_else(|| user.secret.clone());
-        let role_final = if existing_role == Some(UserRole::Admin) || user.role.is_admin() {
-            UserRole::Admin
-        } else {
-            UserRole::Staff
-        };
+        let role_final = user.role.clone();
 
         coll.update_one(
             doc! { "email": &user.email },
@@ -297,8 +286,7 @@ async fn seed_default_users(
                 "$set": {
                     "secret": &secret_final,
                     "company": &primary_effective,
-                    "companies": &companies_final,
-                    "role": role_final.as_str(),
+                    "companies": &companies_final
                 },
                 "$setOnInsert": {
                     "email": &user.email,
@@ -647,14 +635,13 @@ pub async fn create_user(
     state: &AppState,
     email: &str,
     secret: &str,
-    company_ids: &[ObjectId],
-    role: UserRole,
+    company_roles: &[(ObjectId, UserRole)],
 ) -> Result<ObjectId> {
-    let role_clone = role.clone();
-    let primary = company_ids
+    let (primary, _) = company_roles
         .first()
         .cloned()
         .context("at least one company is required for user")?;
+    let company_ids: Vec<ObjectId> = company_roles.iter().map(|(id, _)| id.clone()).collect();
     let res = state
         .users
         .insert_one(User {
@@ -662,8 +649,7 @@ pub async fn create_user(
             email: email.to_string(),
             secret: secret.to_string(),
             company_id: Some(primary),
-            company_ids: company_ids.to_vec(),
-            role: role_clone.clone(),
+            company_ids: company_ids.clone(),
         })
         .await?;
     let uid = res
@@ -675,14 +661,14 @@ pub async fn create_user(
         .user_companies
         .delete_many(doc! { "user_id": &uid })
         .await;
-    for cid in company_ids {
+    for (cid, role) in company_roles {
         let _ = state
             .user_companies
             .insert_one(UserCompany {
                 id: None,
                 user_id: uid.clone(),
                 company_id: cid.clone(),
-                role: role_clone.clone(),
+                role: role.clone(),
             })
             .await;
     }
@@ -695,18 +681,18 @@ pub async fn update_user(
     id: &ObjectId,
     email: &str,
     secret: &str,
-    company_ids: &[ObjectId],
-    role: UserRole,
+    company_roles: &[(ObjectId, UserRole)],
 ) -> Result<()> {
-    let primary = company_ids
+    let (primary, _) = company_roles
         .first()
         .cloned()
         .context("at least one company is required for user")?;
+    let company_ids: Vec<ObjectId> = company_roles.iter().map(|(id, _)| id.clone()).collect();
     state
         .users
         .update_one(
             doc! { "_id": id },
-            doc! { "$set": {"email": email, "secret": secret, "company": primary, "companies": company_ids, "role": role.as_str()} },
+            doc! { "$set": {"email": email, "secret": secret, "company": primary, "companies": company_ids} },
         )
         .await?;
 
@@ -714,7 +700,7 @@ pub async fn update_user(
         .user_companies
         .delete_many(doc! { "user_id": id })
         .await;
-    for cid in company_ids {
+    for (cid, role) in company_roles {
         let _ = state
             .user_companies
             .insert_one(UserCompany {
@@ -1770,11 +1756,18 @@ async fn build_user_with_company(state: &AppState, user: User) -> Result<UserWit
 
     let mut company_names = Vec::new();
     let mut company_slugs = Vec::new();
+    let mut company_roles = Vec::new();
     for cid in &all_company_ids {
         if let Some(c) = state.companies.find_one(doc! { "_id": cid }).await? {
             company_names.push(c.name.clone());
             company_slugs.push(c.slug.clone());
         }
+        let role_for_company = memberships
+            .iter()
+            .find(|m| &m.company_id == cid)
+            .map(|m| m.role.clone())
+            .unwrap_or(UserRole::Staff);
+        company_roles.push(role_for_company);
     }
     let primary_company = state
         .companies
@@ -1799,11 +1792,7 @@ async fn build_user_with_company(state: &AppState, user: User) -> Result<UserWit
         normalized_slugs[0].clone()
     };
 
-    let effective_role = if memberships.iter().any(|m| m.role.is_admin()) {
-        UserRole::Admin
-    } else {
-        user.role
-    };
+    let effective_role = company_roles.get(0).cloned().unwrap_or(UserRole::Staff);
     Ok(UserWithCompany {
         id,
         email: user.email,
@@ -1814,6 +1803,7 @@ async fn build_user_with_company(state: &AppState, user: User) -> Result<UserWit
         company_slugs: normalized_slugs,
         company_name: primary_company.name,
         company_names,
+        company_roles,
         role: effective_role,
     })
 }

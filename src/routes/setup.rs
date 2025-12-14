@@ -22,6 +22,7 @@ pub async fn setup(session: SessionUser) -> Response {
                 Json(serde_json::json!({
                     "email": current.email,
                     "company": current.company_name,
+                    "role": current.role.as_str(),
                     "otpauth_url": url
                 })),
             )

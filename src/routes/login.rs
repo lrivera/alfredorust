@@ -7,7 +7,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde::Deserialize;
-use std::sync::Arc;
+use std::{net::IpAddr, sync::Arc};
 
 use crate::session::SESSION_COOKIE_NAME;
 use crate::state::{AppState, SESSION_TTL_SECONDS, create_session, find_user};
@@ -32,43 +32,31 @@ pub async fn login(
                 if ok {
                     match create_session(&st, &user.email).await {
                         Ok(token) => {
-                            let mut response =
-                                (StatusCode::OK, Json(serde_json::json!({ "ok": true })))
-                                    .into_response();
+                            let redirect_url = compute_redirect_url(
+                                headers
+                                    .get("host")
+                                    .and_then(|h| h.to_str().ok())
+                                    .unwrap_or("localhost"),
+                                &user.company_slug,
+                            );
+                            let mut response = (
+                                StatusCode::OK,
+                                Json(serde_json::json!({
+                                    "ok": true,
+                                    "redirect_url": redirect_url
+                                })),
+                            )
+                                .into_response();
                             let host = headers
                                 .get("host")
                                 .and_then(|h| h.to_str().ok())
                                 .unwrap_or("localhost");
-                            // host-only cookie
-                            let cookie_host_only = format!(
-                                "{}={}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}",
-                                SESSION_COOKIE_NAME, token, SESSION_TTL_SECONDS
+                            set_cookies_for_host(
+                                &mut response,
+                                &token,
+                                host,
+                                &user.company_slug,
                             );
-                            if let Ok(header_value) = HeaderValue::from_str(&cookie_host_only) {
-                                response.headers_mut().append(SET_COOKIE, header_value);
-                            }
-                            // domain cookie (subdomain sharing)
-                            if let Some(domain) = compute_cookie_domain(host) {
-                                let cookie_domain = format!(
-                                    "{}={}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}; Domain={}",
-                                    SESSION_COOKIE_NAME, token, SESSION_TTL_SECONDS, domain
-                                );
-                                if let Ok(header_value) = HeaderValue::from_str(&cookie_domain) {
-                                    response.headers_mut().append(SET_COOKIE, header_value);
-                                }
-                            }
-                            // cookie for slug host (e.g., company.localhost)
-                            let host_base = host.split(':').next().unwrap_or(host);
-                            if !user.company_slug.is_empty() {
-                                let slug_host = format!("{}.{}", user.company_slug, host_base);
-                                let cookie_slug = format!(
-                                    "{}={}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}; Domain={}",
-                                    SESSION_COOKIE_NAME, token, SESSION_TTL_SECONDS, slug_host
-                                );
-                                if let Ok(header_value) = HeaderValue::from_str(&cookie_slug) {
-                                    response.headers_mut().append(SET_COOKIE, header_value);
-                                }
-                            }
                             response
                         }
                         Err(e) => (
@@ -103,12 +91,91 @@ pub async fn login(
             .into_response(),
     }
 }
-pub fn compute_cookie_domain(host: &str) -> Option<String> {
-    let base = host.split(':').next().unwrap_or(host);
-    // Accept dot for sharing across subdomains; allow localhost
-    if base == "localhost" || base.parse::<std::net::IpAddr>().is_ok() || base.contains('.') {
-        Some(format!(".{}", base.trim_start_matches('.')))
-    } else {
-        None
+fn set_cookies_for_host(response: &mut Response, token: &str, host: &str, slug: &str) {
+    let host_base = host.split(':').next().unwrap_or(host).trim_start_matches('.');
+
+    // Host-only cookie (current host)
+    if let Ok(header_value) = HeaderValue::from_str(&format!(
+        "{}={}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}",
+        SESSION_COOKIE_NAME, token, SESSION_TTL_SECONDS
+    )) {
+        response.headers_mut().append(SET_COOKIE, header_value);
     }
+
+    // Domain cookies for the current base host (with and without leading dot)
+    for domain in [format!(".{}", host_base), host_base.to_string()] {
+        if let Ok(header_value) = HeaderValue::from_str(&format!(
+            "{}={}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}; Domain={}",
+            SESSION_COOKIE_NAME, token, SESSION_TTL_SECONDS, domain
+        )) {
+            response.headers_mut().append(SET_COOKIE, header_value);
+        }
+    }
+
+    if let Some(root) = compute_root_domain(host_base) {
+        let root_no_dot = root.trim_start_matches('.');
+        // Root domain cookie (shared across subdominios) with and without leading dot
+        for domain in [format!(".{}", root_no_dot), root_no_dot.to_string()] {
+            if let Ok(header_value) = HeaderValue::from_str(&format!(
+                "{}={}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}; Domain={}",
+                SESSION_COOKIE_NAME, token, SESSION_TTL_SECONDS, domain
+            )) {
+                response.headers_mut().append(SET_COOKIE, header_value);
+            }
+        }
+
+        // Slug-specific cookie in both dotted and non-dotted variants
+        if !slug.is_empty() {
+            let slug_host = format!("{}.{}", slug, root_no_dot);
+            for domain in [slug_host.clone(), format!(".{}", slug_host)] {
+                if let Ok(header_value) = HeaderValue::from_str(&format!(
+                    "{}={}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}; Domain={}",
+                    SESSION_COOKIE_NAME, token, SESSION_TTL_SECONDS, domain
+                )) {
+                    response.headers_mut().append(SET_COOKIE, header_value);
+                }
+            }
+        }
+    }
+}
+
+fn compute_root_domain(base: &str) -> Option<String> {
+    if base.eq_ignore_ascii_case("localhost") {
+        return Some("localhost".to_string());
+    }
+    if base.parse::<IpAddr>().is_ok() {
+        return None;
+    }
+    let parts: Vec<&str> = base.split('.').collect();
+    if parts.len() >= 3 {
+        // Drop only the first label: foo.miapp.local -> miapp.local
+        return Some(parts[1..].join("."));
+    }
+    if parts.len() == 2 {
+        return Some(base.to_string());
+    }
+    None
+}
+
+pub fn compute_cookie_domain(host: &str) -> Option<String> {
+    let base = host.split(':').next().unwrap_or(host).trim_start_matches('.');
+    compute_root_domain(base)
+}
+
+fn compute_redirect_url(host: &str, slug: &str) -> Option<String> {
+    if slug.is_empty() {
+        return None;
+    }
+    let (host_no_port, port_part) = host
+        .split_once(':')
+        .map(|(h, p)| (h, Some(p)))
+        .unwrap_or((host, None));
+    let base = host_no_port.trim_start_matches('.');
+    let root = compute_root_domain(base)?;
+    let target_host = format!("{}.{}", slug, root);
+    if host_no_port.eq_ignore_ascii_case(&target_host) {
+        return None;
+    }
+    let port = port_part.map(|p| format!(":{}", p)).unwrap_or_default();
+    Some(format!("http://{}{}", target_host, port))
 }

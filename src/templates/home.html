@@ -118,6 +118,10 @@
           if (response.ok && data.ok) {
             result.textContent = 'Login correcto';
             localStorage.setItem(STORAGE_KEY, body.email);
+            if (data.redirect_url) {
+              window.location.href = data.redirect_url;
+              return;
+            }
             await checkSession();
             return;
           }

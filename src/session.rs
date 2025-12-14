@@ -29,13 +29,25 @@ pub async fn require_session(
     mut request: Request,
     next: Next,
 ) -> Result<Response, Response> {
-    let token = match extract_cookie(request.headers(), SESSION_COOKIE_NAME) {
-        Some(value) => value.to_string(),
-        None => return Err(unauthorized_response()),
-    };
+    let tokens = extract_cookies(request.headers(), SESSION_COOKIE_NAME);
+    if tokens.is_empty() {
+        return Err(unauthorized_response());
+    }
 
-    match find_user_by_session(&state, &token).await {
-        Ok(Some(mut user)) => {
+    // Try all cookies with the session name until one is valid
+    let mut found = None;
+    for token in tokens {
+        match find_user_by_session(&state, &token).await {
+            Ok(Some(user)) => {
+                found = Some((user, token));
+                break;
+            }
+            Ok(None) => continue,
+            Err(_) => return Err((StatusCode::INTERNAL_SERVER_ERROR, "session lookup failed").into_response()),
+        }
+    }
+
+    if let Some((mut user, token)) = found {
             // Select active company by subdomain if present
             if let Some(host) = request.headers().get("host").and_then(|h| h.to_str().ok()) {
                 let (host_no_port, port_part) = host
@@ -66,6 +78,9 @@ pub async fn require_session(
                         user.company_id = user.company_ids[idx].clone();
                         user.company_slug = user.company_slugs[idx].clone();
                         user.company_name = user.company_names[idx].clone();
+                        if let Some(role) = user.company_roles.get(idx) {
+                            user.role = role.clone();
+                        }
                     } else if !desired_slug.is_empty() {
                         // Wrong subdomain → redirect to desired
                         let new_host = match port_part {
@@ -110,9 +125,8 @@ pub async fn require_session(
 
             request.extensions_mut().insert(SessionData { user, token });
             Ok(next.run(request).await)
-        }
-        Ok(None) => Err(unauthorized_response()),
-        Err(_) => Err((StatusCode::INTERNAL_SERVER_ERROR, "session lookup failed").into_response()),
+    } else {
+        Err(unauthorized_response())
     }
 }
 
@@ -133,6 +147,10 @@ impl SessionUser {
 
     pub fn is_admin(&self) -> bool {
         self.0.user.role.is_admin()
+    }
+
+    pub fn active_role(&self) -> &crate::models::UserRole {
+        &self.0.user.role
     }
 
     pub fn active_company_id(&self) -> &ObjectId {
@@ -178,7 +196,7 @@ fn unauthorized_response() -> Response {
     (StatusCode::UNAUTHORIZED, "unauthorized").into_response()
 }
 
-fn extract_cookie(headers: &HeaderMap, name: &str) -> Option<String> {
+fn extract_cookies(headers: &HeaderMap, name: &str) -> Vec<String> {
     headers
         .get_all(COOKIE)
         .into_iter()
@@ -194,5 +212,5 @@ fn extract_cookie(headers: &HeaderMap, name: &str) -> Option<String> {
                 None
             }
         })
-        .next()
+        .collect()
 }

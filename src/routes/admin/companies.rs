@@ -69,10 +69,6 @@ pub async fn companies_index(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<Html<String>, StatusCode> {
-    if !session_user.is_admin() {
-        return Err(StatusCode::FORBIDDEN);
-    }
-
     let allowed: HashSet<_> = session_user.user().company_ids.iter().cloned().collect();
 
     let companies = list_companies(&state)
@@ -101,10 +97,6 @@ pub async fn companies_new(
     session_user: SessionUser,
     State(_state): State<Arc<AppState>>,
 ) -> Result<Html<String>, StatusCode> {
-    if !session_user.is_admin() {
-        return Err(StatusCode::FORBIDDEN);
-    }
-
     render(CompanyFormTemplate {
         action: "/admin/companies".into(),
         name: String::new(),
@@ -122,10 +114,6 @@ pub async fn companies_create(
     State(state): State<Arc<AppState>>,
     Form(form): Form<CompanyFormData>,
 ) -> impl IntoResponse {
-    if !session_user.is_admin() {
-        return StatusCode::FORBIDDEN.into_response();
-    }
-
     let name = form.name.trim();
     let is_active = form.is_active;
     let slug_raw = form.slug.unwrap_or_default();

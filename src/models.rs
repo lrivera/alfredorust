@@ -102,8 +102,6 @@ pub struct User {
     /// All companies the user can access.
     #[serde(rename = "companies", default)]
     pub company_ids: Vec<ObjectId>,
-
-    pub role: UserRole,
 }
 
 /// User-company membership with per-company role.

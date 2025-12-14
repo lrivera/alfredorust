@@ -22,36 +22,36 @@
           class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40" />
       </div>
 
-      <div class="grid gap-4 md:grid-cols-2">
-        <div class="space-y-2">
-          <label for="role" class="block text-sm font-medium text-slate-600">Rol</label>
-          {% if can_edit_role %}
-          <select id="role" name="role"
-            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40">
-            {% for option in roles %}
-            <option value="{{ option.value }}"{% if option.selected %} selected{% endif %}>{{ option.label }}</option>
-            {% endfor %}
-          </select>
-          {% else %}
-          <select id="role" name="role" disabled
-            class="block w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500 shadow-sm">
-            {% for option in roles %}
-            <option value="{{ option.value }}"{% if option.selected %} selected{% endif %}>{{ option.label }}</option>
-            {% endfor %}
-          </select>
-          <input type="hidden" name="role" value="{{ form.role }}" />
-          {% endif %}
+      <div class="space-y-3">
+        <p class="block text-sm font-medium text-slate-600">Compañías y rol</p>
+        <div class="space-y-2 rounded-md border border-slate-200 bg-slate-50 p-3">
+          {% for company in companies %}
+            <div class="flex flex-wrap items-center gap-3 rounded-md bg-white px-3 py-2 shadow-sm">
+              <label class="inline-flex items-center gap-2">
+                <input type="checkbox" name="company_ids" value="{{ company.id }}"{% if company.selected %} checked{% endif %}
+                  class="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500" />
+                <span class="text-sm text-slate-700">{{ company.name }}</span>
+              </label>
+              <div class="ml-auto flex items-center gap-2">
+                <span class="text-xs text-slate-500">Rol</span>
+                {% if can_edit_role %}
+                <select name="role_{{ company.id }}"
+                  class="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40">
+                  <option value="staff"{% if company.role == "staff" %} selected{% endif %}>Staff</option>
+                  <option value="admin"{% if company.role == "admin" %} selected{% endif %}>Administrador</option>
+                </select>
+                {% else %}
+                <select name="role_{{ company.id }}" disabled
+                  class="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-500 shadow-sm">
+                  <option value="staff"{% if company.role == "staff" %} selected{% endif %}>Staff</option>
+                  <option value="admin"{% if company.role == "admin" %} selected{% endif %}>Administrador</option>
+                </select>
+                {% endif %}
+              </div>
+            </div>
+          {% endfor %}
         </div>
-        <div class="space-y-2">
-          <label for="company_ids" class="block text-sm font-medium text-slate-600">Compañías</label>
-          <select id="company_ids" name="company_ids" multiple required
-            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40">
-            {% for company in companies %}
-            <option value="{{ company.id }}"{% if company.selected %} selected{% endif %}>{{ company.name }}</option>
-            {% endfor %}
-          </select>
-          <p class="text-xs text-slate-500">Selecciona una o varias compañías. La primera será la primaria.</p>
-        </div>
+        <p class="text-xs text-slate-500">Marca una o varias compañías. La primera marcada será la primaria.</p>
       </div>
 
       <div class="space-y-2">
