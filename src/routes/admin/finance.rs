@@ -21,13 +21,101 @@ use crate::{
         delete_category, delete_contact, delete_forecast, delete_planned_entry,
         delete_recurring_plan, delete_transaction, get_account_by_id, get_category_by_id,
         get_company_by_id, get_contact_by_id, get_forecast_by_id, get_planned_entry_by_id,
-        get_recurring_plan_by_id, get_transaction_by_id, list_accounts, list_categories,
-        list_contacts, list_forecasts, list_planned_entries, list_recurring_plans,
+        get_recurring_plan_by_id, get_transaction_by_id, get_user_by_id, list_accounts,
+        list_categories, list_contacts, list_forecasts, list_planned_entries, list_recurring_plans,
         list_transactions, list_users, regenerate_planned_entries_for_plan_id, update_account,
         update_category, update_contact, update_forecast, update_planned_entry,
         update_recurring_plan, update_transaction,
     },
 };
+
+fn require_admin_active(session_user: &SessionUser) -> Result<ObjectId, StatusCode> {
+    if !session_user.is_admin() {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    Ok(session_user.active_company_id().clone())
+}
+
+fn ensure_same_company(entity_company: &ObjectId, active_company: &ObjectId) -> Result<(), StatusCode> {
+    if entity_company != active_company {
+        Err(StatusCode::FORBIDDEN)
+    } else {
+        Ok(())
+    }
+}
+
+async fn validate_company_refs(
+    state: &AppState,
+    active_company: &ObjectId,
+    category: Option<&ObjectId>,
+    account: Option<&ObjectId>,
+    contact: Option<&ObjectId>,
+) -> Result<(), StatusCode> {
+    if let Some(cid) = category {
+        match get_category_by_id(state, cid).await {
+            Ok(Some(cat)) => ensure_same_company(&cat.company_id, active_company)?,
+            Ok(None) => return Err(StatusCode::BAD_REQUEST),
+            Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+        }
+    }
+    if let Some(aid) = account {
+        match get_account_by_id(state, aid).await {
+            Ok(Some(acc)) => ensure_same_company(&acc.company_id, active_company)?,
+            Ok(None) => return Err(StatusCode::BAD_REQUEST),
+            Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+        }
+    }
+    if let Some(cid) = contact {
+        match get_contact_by_id(state, cid).await {
+            Ok(Some(c)) => ensure_same_company(&c.company_id, active_company)?,
+            Ok(None) => return Err(StatusCode::BAD_REQUEST),
+            Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+        }
+    }
+    Ok(())
+}
+
+async fn validate_recurring_plan_company(
+    state: &AppState,
+    plan_id: &ObjectId,
+    active_company: &ObjectId,
+) -> Result<(), StatusCode> {
+    match get_recurring_plan_by_id(state, plan_id).await {
+        Ok(Some(plan)) => ensure_same_company(&plan.company_id, active_company),
+        Ok(None) => Err(StatusCode::BAD_REQUEST),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
+}
+
+async fn validate_planned_entry_company(
+    state: &AppState,
+    entry_id: &ObjectId,
+    active_company: &ObjectId,
+) -> Result<(), StatusCode> {
+    match get_planned_entry_by_id(state, entry_id).await {
+        Ok(Some(entry)) => ensure_same_company(&entry.company_id, active_company),
+        Ok(None) => Err(StatusCode::BAD_REQUEST),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
+}
+
+async fn validate_user_in_company(
+    state: &AppState,
+    user_id: &ObjectId,
+    active_company: &ObjectId,
+) -> Result<(), StatusCode> {
+    match get_user_by_id(state, user_id).await {
+        Ok(Some(user)) => {
+            if user.company_ids.contains(active_company) {
+                Ok(())
+            } else {
+                Err(StatusCode::FORBIDDEN)
+            }
+        }
+        Ok(None) => Err(StatusCode::BAD_REQUEST),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
+}
 
 fn render<T: Template>(tpl: T) -> Result<Html<String>, StatusCode> {
     tpl.render()
@@ -448,11 +536,8 @@ pub async fn accounts_new(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<Html<String>, StatusCode> {
-    if !session_user.is_admin() {
-        return Err(StatusCode::FORBIDDEN);
-    }
-
-    let companies = company_options(&state, session_user.active_company_id()).await?;
+    let active_company = require_admin_active(&session_user)?;
+    let companies = company_options(&state, &active_company).await?;
 
     render(AccountFormTemplate {
         action: "/admin/accounts".into(),
@@ -473,15 +558,12 @@ pub async fn accounts_create(
     State(state): State<Arc<AppState>>,
     Form(form): Form<AccountFormData>,
 ) -> impl IntoResponse {
-    if !session_user.is_admin() {
-        return StatusCode::FORBIDDEN.into_response();
-    }
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
 
-    let companies = company_options(&state, session_user.active_company_id())
-        .await
-        .unwrap_or_default();
-
-    let company_id = session_user.active_company_id().clone();
+    let companies = company_options(&state, &company_id).await.unwrap_or_default();
 
     let account_type = match parse_account_type(&form.account_type) {
         Ok(t) => t,
@@ -532,17 +614,16 @@ pub async fn accounts_edit(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Html<String>, StatusCode> {
-    if !session_user.is_admin() {
-        return Err(StatusCode::FORBIDDEN);
-    }
+    let active_company = require_admin_active(&session_user)?;
 
     let object_id = ObjectId::from_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
     let account = get_account_by_id(&state, &object_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
+    ensure_same_company(&account.company_id, &active_company)?;
 
-    let companies = company_options(&state, session_user.active_company_id()).await?;
+    let companies = company_options(&state, &active_company).await?;
 
     render(AccountFormTemplate {
         action: format!("/admin/accounts/{}/update", id),
@@ -564,16 +645,25 @@ pub async fn accounts_update(
     Path(id): Path<String>,
     Form(form): Form<AccountFormData>,
 ) -> impl IntoResponse {
-    if !session_user.is_admin() {
-        return StatusCode::FORBIDDEN.into_response();
-    }
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
 
     let object_id = match ObjectId::from_str(&id) {
         Ok(id) => id,
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
 
-    let company_id = session_user.active_company_id().clone();
+    match get_account_by_id(&state, &object_id).await {
+        Ok(Some(acc)) => {
+            if let Err(status) = ensure_same_company(&acc.company_id, &company_id) {
+                return status.into_response();
+            }
+        }
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
 
     let account_type = match parse_account_type(&form.account_type) {
         Ok(t) => t,
@@ -628,14 +718,25 @@ pub async fn accounts_delete(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
-    if !session_user.is_admin() {
-        return StatusCode::FORBIDDEN.into_response();
-    }
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
 
     let object_id = match ObjectId::from_str(&id) {
         Ok(id) => id,
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
+
+    match get_account_by_id(&state, &object_id).await {
+        Ok(Some(acc)) => {
+            if let Err(status) = ensure_same_company(&acc.company_id, &company_id) {
+                return status.into_response();
+            }
+        }
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
 
     match delete_account(&state, &object_id).await {
         Ok(_) => Redirect::to("/admin/accounts").into_response(),
@@ -686,13 +787,14 @@ pub async fn categories_index(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<Html<String>, StatusCode> {
-    if !session_user.is_admin() {
-        return Err(StatusCode::FORBIDDEN);
-    }
+    let active_company = require_admin_active(&session_user)?;
 
     let categories = list_categories(&state)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .into_iter()
+        .filter(|c| c.company_id == active_company)
+        .collect::<Vec<_>>();
     let category_map = build_lookup_map(
         categories
             .iter()
@@ -726,12 +828,10 @@ pub async fn categories_new(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<Html<String>, StatusCode> {
-    if !session_user.is_admin() {
-        return Err(StatusCode::FORBIDDEN);
-    }
+    let active_company = require_admin_active(&session_user)?;
 
-    let companies = company_options(&state, session_user.active_company_id()).await?;
-    let parents = category_parent_options(&state, None).await?;
+    let companies = company_options(&state, &active_company).await?;
+    let parents = category_parent_options(&state, None, &active_company).await?;
 
     render(CategoryFormTemplate {
         action: "/admin/categories".into(),
@@ -751,18 +851,15 @@ pub async fn categories_create(
     State(state): State<Arc<AppState>>,
     Form(form): Form<CategoryFormData>,
 ) -> impl IntoResponse {
-    if !session_user.is_admin() {
-        return StatusCode::FORBIDDEN.into_response();
-    }
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
 
-    let companies = company_options(&state, session_user.active_company_id())
+    let companies = company_options(&state, &company_id).await.unwrap_or_default();
+    let parents = category_parent_options(&state, None, &company_id)
         .await
         .unwrap_or_default();
-    let parents = category_parent_options(&state, None)
-        .await
-        .unwrap_or_default();
-
-    let company_id = session_user.active_company_id().clone();
 
     let flow_type = match parse_flow_type(&form.flow_type) {
         Ok(f) => f,
@@ -774,7 +871,7 @@ pub async fn categories_create(
                 parent_id: form.parent_id.clone(),
                 companies,
                 flow_options: flow_options(&form.flow_type),
-                parent_options: category_parent_options(&state, None)
+                        parent_options: category_parent_options(&state, None, &company_id)
                     .await
                     .unwrap_or_default(),
                 is_edit: false,
@@ -821,6 +918,18 @@ pub async fn categories_create(
         None => None,
     };
 
+    if let Some(pid) = parent_id {
+        match get_category_by_id(&state, &pid).await {
+            Ok(Some(cat)) => {
+                if let Err(status) = ensure_same_company(&cat.company_id, &company_id) {
+                    return status.into_response();
+                }
+            }
+            Ok(None) => return StatusCode::BAD_REQUEST.into_response(),
+            Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        }
+    }
+
     match create_category(
         &state,
         &company_id,
@@ -841,18 +950,18 @@ pub async fn categories_edit(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Html<String>, StatusCode> {
-    if !session_user.is_admin() {
-        return Err(StatusCode::FORBIDDEN);
-    }
+    let active_company = require_admin_active(&session_user)?;
 
     let object_id = ObjectId::from_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
     let category = get_category_by_id(&state, &object_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
+    ensure_same_company(&category.company_id, &active_company)?;
 
-    let companies = company_options(&state, session_user.active_company_id()).await?;
-    let parents = category_parent_options(&state, category.parent_id.as_ref()).await?;
+    let companies = company_options(&state, &active_company).await?;
+    let parents =
+        category_parent_options(&state, category.parent_id.as_ref(), &active_company).await?;
 
     render(CategoryFormTemplate {
         action: format!("/admin/categories/{}/update", id),
@@ -873,24 +982,33 @@ pub async fn categories_update(
     Path(id): Path<String>,
     Form(form): Form<CategoryFormData>,
 ) -> impl IntoResponse {
-    if !session_user.is_admin() {
-        return StatusCode::FORBIDDEN.into_response();
-    }
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
 
     let object_id = match ObjectId::from_str(&id) {
         Ok(id) => id,
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
 
-    let company_id = session_user.active_company_id().clone();
+    match get_category_by_id(&state, &object_id).await {
+        Ok(Some(cat)) => {
+            if let Err(status) = ensure_same_company(&cat.company_id, &company_id) {
+                return status.into_response();
+            }
+        }
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
 
     let flow_type = match parse_flow_type(&form.flow_type) {
         Ok(f) => f,
         Err(msg) => {
-            let companies = company_options(&state, session_user.active_company_id())
+            let companies = company_options(&state, &company_id)
                 .await
                 .unwrap_or_default();
-            let parents = category_parent_options(&state, None)
+            let parents = category_parent_options(&state, None, &company_id)
                 .await
                 .unwrap_or_default();
             return render(CategoryFormTemplate {
@@ -924,6 +1042,18 @@ pub async fn categories_update(
         None => None,
     };
 
+    if let Some(pid) = parent_id {
+        match get_category_by_id(&state, &pid).await {
+            Ok(Some(cat)) => {
+                if let Err(status) = ensure_same_company(&cat.company_id, &company_id) {
+                    return status.into_response();
+                }
+            }
+            Ok(None) => return StatusCode::BAD_REQUEST.into_response(),
+            Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        }
+    }
+
     match update_category(
         &state,
         &object_id,
@@ -945,14 +1075,25 @@ pub async fn categories_delete(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
-    if !session_user.is_admin() {
-        return StatusCode::FORBIDDEN.into_response();
-    }
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
 
     let object_id = match ObjectId::from_str(&id) {
         Ok(id) => id,
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
+
+    match get_category_by_id(&state, &object_id).await {
+        Ok(Some(cat)) => {
+            if let Err(status) = ensure_same_company(&cat.company_id, &company_id) {
+                return status.into_response();
+            }
+        }
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
 
     match delete_category(&state, &object_id).await {
         Ok(_) => Redirect::to("/admin/categories").into_response(),
@@ -963,10 +1104,14 @@ pub async fn categories_delete(
 async fn category_parent_options(
     state: &AppState,
     selected: Option<&ObjectId>,
+    company_id: &ObjectId,
 ) -> Result<Vec<SimpleOption>, StatusCode> {
     let categories = list_categories(state)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .into_iter()
+        .filter(|c| c.company_id == *company_id)
+        .collect::<Vec<_>>();
     let mut options = Vec::new();
     options.push(SimpleOption {
         value: "".into(),
@@ -1031,14 +1176,14 @@ pub async fn contacts_index(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<Html<String>, StatusCode> {
-    if !session_user.is_admin() {
-        return Err(StatusCode::FORBIDDEN);
-    }
+    let active_company = require_admin_active(&session_user)?;
 
     let contacts = list_contacts(&state)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let active_company = session_user.active_company_id().clone();
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .into_iter()
+        .filter(|c| c.company_id == active_company)
+        .collect::<Vec<_>>();
     let active_name = session_user.user().company_name.clone();
 
     let rows = contacts
@@ -1062,11 +1207,8 @@ pub async fn contacts_new(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<Html<String>, StatusCode> {
-    if !session_user.is_admin() {
-        return Err(StatusCode::FORBIDDEN);
-    }
-
-    let companies = company_options(&state, session_user.active_company_id()).await?;
+    let active_company = require_admin_active(&session_user)?;
+    let companies = company_options(&state, &active_company).await?;
 
     render(ContactFormTemplate {
         action: "/admin/contacts".into(),
@@ -1087,15 +1229,12 @@ pub async fn contacts_create(
     State(state): State<Arc<AppState>>,
     Form(form): Form<ContactFormData>,
 ) -> impl IntoResponse {
-    if !session_user.is_admin() {
-        return StatusCode::FORBIDDEN.into_response();
-    }
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
 
-    let companies = company_options(&state, session_user.active_company_id())
-        .await
-        .unwrap_or_default();
-
-    let company_id = session_user.active_company_id().clone();
+    let companies = company_options(&state, &company_id).await.unwrap_or_default();
 
     let contact_type = match parse_contact_type(&form.contact_type) {
         Ok(c) => c,
@@ -1142,17 +1281,16 @@ pub async fn contacts_edit(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Html<String>, StatusCode> {
-    if !session_user.is_admin() {
-        return Err(StatusCode::FORBIDDEN);
-    }
+    let active_company = require_admin_active(&session_user)?;
 
     let object_id = ObjectId::from_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
     let contact = get_contact_by_id(&state, &object_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
+    ensure_same_company(&contact.company_id, &active_company)?;
 
-    let companies = company_options(&state, session_user.active_company_id()).await?;
+    let companies = company_options(&state, &active_company).await?;
 
     render(ContactFormTemplate {
         action: format!("/admin/contacts/{}/update", id),
@@ -1174,16 +1312,25 @@ pub async fn contacts_update(
     Path(id): Path<String>,
     Form(form): Form<ContactFormData>,
 ) -> impl IntoResponse {
-    if !session_user.is_admin() {
-        return StatusCode::FORBIDDEN.into_response();
-    }
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
 
     let object_id = match ObjectId::from_str(&id) {
         Ok(id) => id,
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
 
-    let company_id = session_user.active_company_id().clone();
+    match get_contact_by_id(&state, &object_id).await {
+        Ok(Some(contact)) => {
+            if let Err(status) = ensure_same_company(&contact.company_id, &company_id) {
+                return status.into_response();
+            }
+        }
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
 
     let contact_type = match parse_contact_type(&form.contact_type) {
         Ok(c) => c,
@@ -1234,14 +1381,25 @@ pub async fn contacts_delete(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
-    if !session_user.is_admin() {
-        return StatusCode::FORBIDDEN.into_response();
-    }
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
 
     let object_id = match ObjectId::from_str(&id) {
         Ok(id) => id,
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
+
+    match get_contact_by_id(&state, &object_id).await {
+        Ok(Some(contact)) => {
+            if let Err(status) = ensure_same_company(&contact.company_id, &company_id) {
+                return status.into_response();
+            }
+        }
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
 
     match delete_contact(&state, &object_id).await {
         Ok(_) => Redirect::to("/admin/contacts").into_response(),
@@ -1316,19 +1474,18 @@ pub async fn recurring_plans_index(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<Html<String>, StatusCode> {
-    if !session_user.is_admin() {
-        return Err(StatusCode::FORBIDDEN);
-    }
+    let active_company = require_admin_active(&session_user)?;
 
     let plans = list_recurring_plans(&state)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let active_company = session_user.active_company_id().clone();
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .into_iter()
+        .filter(|p| p.company_id == active_company)
+        .collect::<Vec<_>>();
     let active_name = session_user.user().company_name.clone();
 
     let rows = plans
         .into_iter()
-        .filter(|p| p.company_id == active_company)
         .filter_map(|p| {
             p.id.map(|id| RecurringPlanRow {
                 id: id.to_hex(),
@@ -1348,14 +1505,12 @@ pub async fn recurring_plans_new(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<Html<String>, StatusCode> {
-    if !session_user.is_admin() {
-        return Err(StatusCode::FORBIDDEN);
-    }
+    let active_company = require_admin_active(&session_user)?;
 
-    let companies = company_options(&state, session_user.active_company_id()).await?;
-    let categories = category_options(&state, None, session_user.active_company_id()).await?;
-    let accounts = account_options(&state, None, session_user.active_company_id()).await?;
-    let contacts = contact_options(&state, None, session_user.active_company_id()).await?;
+    let companies = company_options(&state, &active_company).await?;
+    let categories = category_options(&state, None, &active_company).await?;
+    let accounts = account_options(&state, None, &active_company).await?;
+    let contacts = contact_options(&state, None, &active_company).await?;
 
     render(RecurringPlanFormTemplate {
         action: "/admin/recurring_plans".into(),
@@ -1384,24 +1539,21 @@ pub async fn recurring_plans_create(
     State(state): State<Arc<AppState>>,
     Form(form): Form<RecurringPlanFormData>,
 ) -> impl IntoResponse {
-    if !session_user.is_admin() {
-        return StatusCode::FORBIDDEN.into_response();
-    }
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
 
-    let companies = company_options(&state, session_user.active_company_id())
+    let companies = company_options(&state, &company_id).await.unwrap_or_default();
+    let categories = category_options(&state, None, &company_id)
         .await
         .unwrap_or_default();
-    let categories = category_options(&state, None, session_user.active_company_id())
+    let accounts = account_options(&state, None, &company_id)
         .await
         .unwrap_or_default();
-    let accounts = account_options(&state, None, session_user.active_company_id())
+    let contacts = contact_options(&state, None, &company_id)
         .await
         .unwrap_or_default();
-    let contacts = contact_options(&state, None, session_user.active_company_id())
-        .await
-        .unwrap_or_default();
-
-    let company_id = session_user.active_company_id().clone();
 
     let flow_type = match parse_flow_type(&form.flow_type) {
         Ok(f) => f,
@@ -1527,6 +1679,14 @@ pub async fn recurring_plans_create(
         Some(Err(resp)) => return resp,
         None => None,
     };
+
+    // Validate related entities belong to the active company
+    if let Err(status) =
+        validate_company_refs(&state, &company_id, Some(&category_id), Some(&account_expected_id), contact_id.as_ref())
+            .await
+    {
+        return status.into_response();
+    }
 
     let amount_estimated = match parse_f64_field(&form.amount_estimated, "Monto estimado") {
         Ok(v) => v,
@@ -1670,6 +1830,18 @@ pub async fn recurring_plans_create(
 
     let notes = clean_opt(form.notes);
 
+    if let Err(status) = validate_company_refs(
+        &state,
+        &company_id,
+        Some(&category_id),
+        Some(&account_expected_id),
+        contact_id.as_ref(),
+    )
+    .await
+    {
+        return status.into_response();
+    }
+
     match create_recurring_plan(
         &state,
         &company_id,
@@ -1699,35 +1871,22 @@ pub async fn recurring_plans_edit(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Html<String>, StatusCode> {
-    if !session_user.is_admin() {
-        return Err(StatusCode::FORBIDDEN);
-    }
+    let active_company = require_admin_active(&session_user)?;
 
     let object_id = ObjectId::from_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
     let plan = get_recurring_plan_by_id(&state, &object_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
+    ensure_same_company(&plan.company_id, &active_company)?;
 
-    let companies = company_options(&state, session_user.active_company_id()).await?;
-    let categories = category_options(
-        &state,
-        Some(&plan.category_id),
-        session_user.active_company_id(),
-    )
-    .await?;
-    let accounts = account_options(
-        &state,
-        Some(&plan.account_expected_id),
-        session_user.active_company_id(),
-    )
-    .await?;
-    let contacts = contact_options(
-        &state,
-        plan.contact_id.as_ref(),
-        session_user.active_company_id(),
-    )
-    .await?;
+    let companies = company_options(&state, &active_company).await?;
+    let categories = category_options(&state, Some(&plan.category_id), &active_company).await?;
+    let accounts =
+        account_options(&state, Some(&plan.account_expected_id), session_user.active_company_id())
+            .await?;
+    let contacts =
+        contact_options(&state, plan.contact_id.as_ref(), session_user.active_company_id()).await?;
 
     render(RecurringPlanFormTemplate {
         action: format!("/admin/recurring_plans/{}/update", id),
@@ -1760,16 +1919,23 @@ pub async fn recurring_plans_update(
     Path(id): Path<String>,
     Form(form): Form<RecurringPlanFormData>,
 ) -> impl IntoResponse {
-    if !session_user.is_admin() {
-        return StatusCode::FORBIDDEN.into_response();
-    }
+    let active_company = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
 
     let object_id = match ObjectId::from_str(&id) {
         Ok(id) => id,
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
 
-    let company_id = session_user.active_company_id().clone();
+    if let Err(status) = match get_recurring_plan_by_id(&state, &object_id).await {
+        Ok(Some(plan)) => ensure_same_company(&plan.company_id, &active_company),
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    } {
+        return status.into_response();
+    }
 
     let flow_type = match parse_flow_type(&form.flow_type) {
         Ok(f) => f,
@@ -1830,10 +1996,22 @@ pub async fn recurring_plans_update(
 
     let notes = clean_opt(form.notes);
 
+    if let Err(status) = validate_company_refs(
+        &state,
+        &active_company,
+        Some(&category_id),
+        Some(&account_expected_id),
+        contact_id.as_ref(),
+    )
+    .await
+    {
+        return status.into_response();
+    }
+
     match update_recurring_plan(
         &state,
         &object_id,
-        &company_id,
+        &active_company,
         form.name.trim(),
         flow_type,
         &category_id,
@@ -1860,14 +2038,23 @@ pub async fn recurring_plans_delete(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
-    if !session_user.is_admin() {
-        return StatusCode::FORBIDDEN.into_response();
-    }
+    let active_company = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
 
     let object_id = match ObjectId::from_str(&id) {
         Ok(id) => id,
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
+
+    if let Err(status) = match get_recurring_plan_by_id(&state, &object_id).await {
+        Ok(Some(plan)) => ensure_same_company(&plan.company_id, &active_company),
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    } {
+        return status.into_response();
+    }
 
     match delete_recurring_plan(&state, &object_id).await {
         Ok(_) => Redirect::to("/admin/recurring_plans").into_response(),
@@ -1880,14 +2067,23 @@ pub async fn recurring_plans_generate(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
-    if !session_user.is_admin() {
-        return StatusCode::FORBIDDEN.into_response();
-    }
+    let active_company = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
 
     let object_id = match ObjectId::from_str(&id) {
         Ok(id) => id,
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
+
+    if let Err(status) = match get_recurring_plan_by_id(&state, &object_id).await {
+        Ok(Some(plan)) => ensure_same_company(&plan.company_id, &active_company),
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    } {
+        return status.into_response();
+    }
 
     match regenerate_planned_entries_for_plan_id(&state, &object_id).await {
         Ok(_) => Redirect::to("/admin/recurring_plans").into_response(),
@@ -1958,14 +2154,10 @@ pub async fn planned_entries_index(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<Html<String>, StatusCode> {
-    if !session_user.is_admin() {
-        return Err(StatusCode::FORBIDDEN);
-    }
-
+    let active_company = require_admin_active(&session_user)?;
     let entries = list_planned_entries(&state)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let active_company = session_user.active_company_id().clone();
     let active_name = session_user.user().company_name.clone();
 
     let rows = entries
@@ -1990,16 +2182,13 @@ pub async fn planned_entries_new(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<Html<String>, StatusCode> {
-    if !session_user.is_admin() {
-        return Err(StatusCode::FORBIDDEN);
-    }
+    let active_company = require_admin_active(&session_user)?;
 
-    let companies = company_options(&state, session_user.active_company_id()).await?;
-    let categories = category_options(&state, None, session_user.active_company_id()).await?;
-    let accounts = account_options(&state, None, session_user.active_company_id()).await?;
-    let contacts = contact_options(&state, None, session_user.active_company_id()).await?;
-    let recurring_plans =
-        recurring_plan_options(&state, None, session_user.active_company_id()).await?;
+    let companies = company_options(&state, &active_company).await?;
+    let categories = category_options(&state, None, &active_company).await?;
+    let accounts = account_options(&state, None, &active_company).await?;
+    let contacts = contact_options(&state, None, &active_company).await?;
+    let recurring_plans = recurring_plan_options(&state, None, &active_company).await?;
 
     render(PlannedEntryFormTemplate {
         action: "/admin/planned_entries".into(),
@@ -2027,11 +2216,10 @@ pub async fn planned_entries_create(
     State(state): State<Arc<AppState>>,
     Form(form): Form<PlannedEntryFormData>,
 ) -> impl IntoResponse {
-    if !session_user.is_admin() {
-        return StatusCode::FORBIDDEN.into_response();
-    }
-
-    let company_id = session_user.active_company_id().clone();
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
 
     let flow_type = match parse_flow_type(&form.flow_type) {
         Ok(f) => f,
@@ -2104,6 +2292,26 @@ pub async fn planned_entries_create(
     };
     let notes = clean_opt(form.notes);
 
+    if let Err(status) = validate_company_refs(
+        &state,
+        &company_id,
+        Some(&category_id),
+        Some(&account_expected_id),
+        contact_id.as_ref(),
+    )
+    .await
+    {
+        return status.into_response();
+    }
+
+    if let Some(ref plan_id) = recurring_plan_id {
+        if let Err(status) =
+            validate_recurring_plan_company(&state, plan_id, &company_id).await
+        {
+            return status.into_response();
+        }
+    }
+
     match create_planned_entry(
         &state,
         &company_id,
@@ -2131,41 +2339,24 @@ pub async fn planned_entries_edit(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Html<String>, StatusCode> {
-    if !session_user.is_admin() {
-        return Err(StatusCode::FORBIDDEN);
-    }
+    let active_company = require_admin_active(&session_user)?;
 
     let object_id = ObjectId::from_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
     let entry = get_planned_entry_by_id(&state, &object_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
+    ensure_same_company(&entry.company_id, &active_company)?;
 
-    let companies = company_options(&state, session_user.active_company_id()).await?;
-    let categories = category_options(
-        &state,
-        Some(&entry.category_id),
-        session_user.active_company_id(),
-    )
-    .await?;
-    let accounts = account_options(
-        &state,
-        Some(&entry.account_expected_id),
-        session_user.active_company_id(),
-    )
-    .await?;
-    let contacts = contact_options(
-        &state,
-        entry.contact_id.as_ref(),
-        session_user.active_company_id(),
-    )
-    .await?;
-    let recurring_plans = recurring_plan_options(
-        &state,
-        entry.recurring_plan_id.as_ref(),
-        session_user.active_company_id(),
-    )
-    .await?;
+    let companies = company_options(&state, &active_company).await?;
+    let categories =
+        category_options(&state, Some(&entry.category_id), &active_company).await?;
+    let accounts =
+        account_options(&state, Some(&entry.account_expected_id), &active_company).await?;
+    let contacts =
+        contact_options(&state, entry.contact_id.as_ref(), &active_company).await?;
+    let recurring_plans =
+        recurring_plan_options(&state, entry.recurring_plan_id.as_ref(), &active_company).await?;
 
     render(PlannedEntryFormTemplate {
         action: format!("/admin/planned_entries/{}/update", id),
@@ -2197,16 +2388,23 @@ pub async fn planned_entries_update(
     Path(id): Path<String>,
     Form(form): Form<PlannedEntryFormData>,
 ) -> impl IntoResponse {
-    if !session_user.is_admin() {
-        return StatusCode::FORBIDDEN.into_response();
-    }
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
 
     let object_id = match ObjectId::from_str(&id) {
         Ok(id) => id,
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
 
-    let company_id = session_user.active_company_id().clone();
+    if let Err(status) = match get_planned_entry_by_id(&state, &object_id).await {
+        Ok(Some(entry)) => ensure_same_company(&entry.company_id, &company_id),
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    } {
+        return status.into_response();
+    }
     let flow_type = match parse_flow_type(&form.flow_type) {
         Ok(v) => v,
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
@@ -2276,6 +2474,24 @@ pub async fn planned_entries_update(
     };
     let notes = clean_opt(form.notes);
 
+    if let Err(status) = validate_company_refs(
+        &state,
+        &company_id,
+        Some(&category_id),
+        Some(&account_expected_id),
+        contact_id.as_ref(),
+    )
+    .await
+    {
+        return status.into_response();
+    }
+
+    if let Some(ref plan_id) = recurring_plan_id {
+        if let Err(status) = validate_recurring_plan_company(&state, plan_id, &company_id).await {
+            return status.into_response();
+        }
+    }
+
     match update_planned_entry(
         &state,
         &object_id,
@@ -2304,14 +2520,23 @@ pub async fn planned_entries_delete(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
-    if !session_user.is_admin() {
-        return StatusCode::FORBIDDEN.into_response();
-    }
+    let active_company = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
 
     let object_id = match ObjectId::from_str(&id) {
         Ok(id) => id,
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
+
+    if let Err(status) = match get_planned_entry_by_id(&state, &object_id).await {
+        Ok(Some(entry)) => ensure_same_company(&entry.company_id, &active_company),
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    } {
+        return status.into_response();
+    }
 
     match delete_planned_entry(&state, &object_id).await {
         Ok(_) => Redirect::to("/admin/planned_entries").into_response(),
@@ -2379,14 +2604,11 @@ pub async fn transactions_index(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<Html<String>, StatusCode> {
-    if !session_user.is_admin() {
-        return Err(StatusCode::FORBIDDEN);
-    }
+    let active_company = require_admin_active(&session_user)?;
 
     let transactions = list_transactions(&state)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let active_company = session_user.active_company_id().clone();
     let active_name = session_user.user().company_name.clone();
 
     let rows = transactions
@@ -2410,15 +2632,12 @@ pub async fn transactions_new(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<Html<String>, StatusCode> {
-    if !session_user.is_admin() {
-        return Err(StatusCode::FORBIDDEN);
-    }
+    let active_company = require_admin_active(&session_user)?;
 
-    let companies = company_options(&state, session_user.active_company_id()).await?;
-    let categories = category_options(&state, None, session_user.active_company_id()).await?;
-    let accounts = account_options(&state, None, session_user.active_company_id()).await?;
-    let planned_entries =
-        planned_entry_options(&state, None, session_user.active_company_id()).await?;
+    let companies = company_options(&state, &active_company).await?;
+    let categories = category_options(&state, None, &active_company).await?;
+    let accounts = account_options(&state, None, &active_company).await?;
+    let planned_entries = planned_entry_options(&state, None, &active_company).await?;
 
     render(TransactionFormTemplate {
         action: "/admin/transactions".into(),
@@ -2443,11 +2662,10 @@ pub async fn transactions_create(
     State(state): State<Arc<AppState>>,
     Form(form): Form<TransactionFormData>,
 ) -> impl IntoResponse {
-    if !session_user.is_admin() {
-        return StatusCode::FORBIDDEN.into_response();
-    }
-
-    let company_id = session_user.active_company_id().clone();
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
 
     let transaction_type = match parse_transaction_type(&form.transaction_type) {
         Ok(t) => t,
@@ -2516,6 +2734,28 @@ pub async fn transactions_create(
 
     let notes = clean_opt(form.notes);
 
+    if let Err(status) =
+        validate_company_refs(&state, &company_id, Some(&category_id), account_from_id.as_ref(), None)
+            .await
+    {
+        return status.into_response();
+    }
+
+    if let Some(ref account_to) = account_to_id {
+        if let Err(status) =
+            validate_company_refs(&state, &company_id, Some(&category_id), Some(account_to), None)
+                .await
+        {
+            return status.into_response();
+        }
+    }
+
+    if let Some(ref entry_id) = planned_entry_id {
+        if let Err(status) = validate_planned_entry_company(&state, entry_id, &company_id).await {
+            return status.into_response();
+        }
+    }
+
     match create_transaction(
         &state,
         &company_id,
@@ -2542,36 +2782,31 @@ pub async fn transactions_edit(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Html<String>, StatusCode> {
-    if !session_user.is_admin() {
-        return Err(StatusCode::FORBIDDEN);
-    }
+    let active_company = require_admin_active(&session_user)?;
 
     let object_id = ObjectId::from_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
     let transaction = get_transaction_by_id(&state, &object_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
+    ensure_same_company(&transaction.company_id, &active_company)?;
 
-    let companies = company_options(&state, session_user.active_company_id()).await?;
-    let categories = category_options(
-        &state,
-        Some(&transaction.category_id),
-        session_user.active_company_id(),
-    )
-    .await?;
+    let companies = company_options(&state, &active_company).await?;
+    let categories =
+        category_options(&state, Some(&transaction.category_id), &active_company).await?;
     let accounts = account_options(
         &state,
         transaction
             .account_from_id
             .as_ref()
             .or(transaction.account_to_id.as_ref()),
-        session_user.active_company_id(),
+        &active_company,
     )
     .await?;
     let planned_entries = planned_entry_options(
         &state,
         transaction.planned_entry_id.as_ref(),
-        session_user.active_company_id(),
+        &active_company,
     )
     .await?;
 
@@ -2601,16 +2836,23 @@ pub async fn transactions_update(
     Path(id): Path<String>,
     Form(form): Form<TransactionFormData>,
 ) -> impl IntoResponse {
-    if !session_user.is_admin() {
-        return StatusCode::FORBIDDEN.into_response();
-    }
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
 
     let object_id = match ObjectId::from_str(&id) {
         Ok(id) => id,
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
 
-    let company_id = session_user.active_company_id().clone();
+    if let Err(status) = match get_transaction_by_id(&state, &object_id).await {
+        Ok(Some(tx)) => ensure_same_company(&tx.company_id, &company_id),
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    } {
+        return status.into_response();
+    }
 
     let transaction_type = match parse_transaction_type(&form.transaction_type) {
         Ok(t) => t,
@@ -2679,6 +2921,28 @@ pub async fn transactions_update(
 
     let notes = clean_opt(form.notes);
 
+    if let Err(status) =
+        validate_company_refs(&state, &company_id, Some(&category_id), account_from_id.as_ref(), None)
+            .await
+    {
+        return status.into_response();
+    }
+
+    if let Some(ref account_to) = account_to_id {
+        if let Err(status) =
+            validate_company_refs(&state, &company_id, Some(&category_id), Some(account_to), None)
+                .await
+        {
+            return status.into_response();
+        }
+    }
+
+    if let Some(ref entry_id) = planned_entry_id {
+        if let Err(status) = validate_planned_entry_company(&state, entry_id, &company_id).await {
+            return status.into_response();
+        }
+    }
+
     match update_transaction(
         &state,
         &object_id,
@@ -2706,14 +2970,23 @@ pub async fn transactions_delete(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
-    if !session_user.is_admin() {
-        return StatusCode::FORBIDDEN.into_response();
-    }
+    let active_company = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
 
     let object_id = match ObjectId::from_str(&id) {
         Ok(id) => id,
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
+
+    if let Err(status) = match get_transaction_by_id(&state, &object_id).await {
+        Ok(Some(tx)) => ensure_same_company(&tx.company_id, &active_company),
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    } {
+        return status.into_response();
+    }
 
     match delete_transaction(&state, &object_id).await {
         Ok(_) => Redirect::to("/admin/transactions").into_response(),
@@ -2787,14 +3060,11 @@ pub async fn forecasts_index(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<Html<String>, StatusCode> {
-    if !session_user.is_admin() {
-        return Err(StatusCode::FORBIDDEN);
-    }
+    let active_company = require_admin_active(&session_user)?;
 
     let forecasts = list_forecasts(&state)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let active_company = session_user.active_company_id().clone();
     let active_name = session_user.user().company_name.clone();
 
     let rows = forecasts
@@ -2817,12 +3087,10 @@ pub async fn forecasts_new(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<Html<String>, StatusCode> {
-    if !session_user.is_admin() {
-        return Err(StatusCode::FORBIDDEN);
-    }
+    let active_company = require_admin_active(&session_user)?;
 
-    let companies = company_options(&state, session_user.active_company_id()).await?;
-    let users = user_options(&state, None, session_user.active_company_id()).await?;
+    let companies = company_options(&state, &active_company).await?;
+    let users = user_options(&state, None, &active_company).await?;
 
     render(ForecastFormTemplate {
         action: "/admin/forecasts".into(),
@@ -2851,11 +3119,10 @@ pub async fn forecasts_create(
     State(state): State<Arc<AppState>>,
     Form(form): Form<ForecastFormData>,
 ) -> impl IntoResponse {
-    if !session_user.is_admin() {
-        return StatusCode::FORBIDDEN.into_response();
-    }
-
-    let company_id = session_user.active_company_id().clone();
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
 
     let projected_income_total =
         match parse_f64_field(&form.projected_income_total, "Ingreso proyectado") {
@@ -2911,6 +3178,12 @@ pub async fn forecasts_create(
     let scenario_name = clean_opt(form.scenario_name);
     let notes = clean_opt(form.notes);
 
+    if let Some(ref uid) = generated_by_user_id {
+        if let Err(status) = validate_user_in_company(&state, uid, &company_id).await {
+            return status.into_response();
+        }
+    }
+
     match create_forecast(
         &state,
         &company_id,
@@ -2940,23 +3213,18 @@ pub async fn forecasts_edit(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Html<String>, StatusCode> {
-    if !session_user.is_admin() {
-        return Err(StatusCode::FORBIDDEN);
-    }
+    let active_company = require_admin_active(&session_user)?;
 
     let object_id = ObjectId::from_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
     let forecast = get_forecast_by_id(&state, &object_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
+    ensure_same_company(&forecast.company_id, &active_company)?;
 
-    let companies = company_options(&state, session_user.active_company_id()).await?;
-    let users = user_options(
-        &state,
-        forecast.generated_by_user_id.as_ref(),
-        session_user.active_company_id(),
-    )
-    .await?;
+    let companies = company_options(&state, &active_company).await?;
+    let users =
+        user_options(&state, forecast.generated_by_user_id.as_ref(), &active_company).await?;
 
     render(ForecastFormTemplate {
         action: format!("/admin/forecasts/{}/update", id),
@@ -2995,16 +3263,23 @@ pub async fn forecasts_update(
     Path(id): Path<String>,
     Form(form): Form<ForecastFormData>,
 ) -> impl IntoResponse {
-    if !session_user.is_admin() {
-        return StatusCode::FORBIDDEN.into_response();
-    }
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
 
     let object_id = match ObjectId::from_str(&id) {
         Ok(id) => id,
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
 
-    let company_id = session_user.active_company_id().clone();
+    if let Err(status) = match get_forecast_by_id(&state, &object_id).await {
+        Ok(Some(forecast)) => ensure_same_company(&forecast.company_id, &company_id),
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    } {
+        return status.into_response();
+    }
 
     let projected_income_total =
         match parse_f64_field(&form.projected_income_total, "Ingreso proyectado") {
@@ -3060,6 +3335,12 @@ pub async fn forecasts_update(
     let scenario_name = clean_opt(form.scenario_name);
     let notes = clean_opt(form.notes);
 
+    if let Some(ref uid) = generated_by_user_id {
+        if let Err(status) = validate_user_in_company(&state, uid, &company_id).await {
+            return status.into_response();
+        }
+    }
+
     match update_forecast(
         &state,
         &object_id,
@@ -3090,14 +3371,23 @@ pub async fn forecasts_delete(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
-    if !session_user.is_admin() {
-        return StatusCode::FORBIDDEN.into_response();
-    }
+    let active_company = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
 
     let object_id = match ObjectId::from_str(&id) {
         Ok(id) => id,
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
+
+    if let Err(status) = match get_forecast_by_id(&state, &object_id).await {
+        Ok(Some(forecast)) => ensure_same_company(&forecast.company_id, &active_company),
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    } {
+        return status.into_response();
+    }
 
     match delete_forecast(&state, &object_id).await {
         Ok(_) => Redirect::to("/admin/forecasts").into_response(),

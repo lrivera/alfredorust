@@ -65,6 +65,15 @@ pub(crate) struct CompanyFormData {
     notes: Option<String>,
 }
 
+fn has_admin_role_for(session_user: &SessionUser, company_id: &ObjectId) -> bool {
+    session_user
+        .user()
+        .company_ids
+        .iter()
+        .zip(session_user.user().company_roles.iter())
+        .any(|(cid, role)| cid == company_id && role.is_admin())
+}
+
 pub async fn companies_index(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -94,7 +103,7 @@ pub async fn companies_index(
 }
 
 pub async fn companies_new(
-    session_user: SessionUser,
+    _session_user: SessionUser,
     State(_state): State<Arc<AppState>>,
 ) -> Result<Html<String>, StatusCode> {
     render(CompanyFormTemplate {
@@ -179,24 +188,16 @@ pub async fn companies_edit(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Html<String>, StatusCode> {
-    if !session_user.is_admin() {
+    let object_id = ObjectId::from_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    if !has_admin_role_for(&session_user, &object_id) {
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let object_id = ObjectId::from_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
     let company = get_company_by_id(&state, &object_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
-
-    if !session_user
-        .user()
-        .company_ids
-        .iter()
-        .any(|cid| cid == &object_id)
-    {
-        return Err(StatusCode::FORBIDDEN);
-    }
 
     render(CompanyFormTemplate {
         action: format!("/admin/companies/{}/update", id),
@@ -216,21 +217,12 @@ pub async fn companies_update(
     Path(id): Path<String>,
     Form(form): Form<CompanyFormData>,
 ) -> impl IntoResponse {
-    if !session_user.is_admin() {
-        return StatusCode::FORBIDDEN.into_response();
-    }
-
     let object_id = match ObjectId::from_str(&id) {
         Ok(id) => id,
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
 
-    if !session_user
-        .user()
-        .company_ids
-        .iter()
-        .any(|cid| cid == &object_id)
-    {
+    if !has_admin_role_for(&session_user, &object_id) {
         return StatusCode::FORBIDDEN.into_response();
     }
 
@@ -297,21 +289,12 @@ pub async fn companies_delete(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
-    if !session_user.is_admin() {
-        return StatusCode::FORBIDDEN.into_response();
-    }
-
     let object_id = match ObjectId::from_str(&id) {
         Ok(id) => id,
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
 
-    if !session_user
-        .user()
-        .company_ids
-        .iter()
-        .any(|cid| cid == &object_id)
-    {
+    if !has_admin_role_for(&session_user, &object_id) {
         return StatusCode::FORBIDDEN.into_response();
     }
 
