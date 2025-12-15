@@ -6,8 +6,10 @@ use axum::{
     http::StatusCode,
     response::{Html, IntoResponse, Redirect},
 };
+use bson::doc;
 use mongodb::bson::oid::ObjectId;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use slug::slugify;
 
 #[allow(unused_imports)]
 use crate::filters;
@@ -38,6 +40,12 @@ struct CompanyRow {
     name: String,
     default_currency: String,
     is_active: bool,
+    is_current: bool,
+}
+
+#[derive(Serialize)]
+struct CompanyUpdateResponse {
+    slug: String,
 }
 
 #[derive(Template)]
@@ -51,6 +59,7 @@ struct CompanyFormTemplate {
     notes: String,
     is_edit: bool,
     errors: Option<String>,
+    is_current: bool,
 }
 
 #[derive(Deserialize)]
@@ -79,6 +88,7 @@ pub async fn companies_index(
     State(state): State<Arc<AppState>>,
 ) -> Result<Html<String>, StatusCode> {
     let allowed: HashSet<_> = session_user.user().company_ids.iter().cloned().collect();
+    let active_id = session_user.active_company_id().clone();
 
     let companies = list_companies(&state)
         .await
@@ -91,6 +101,7 @@ pub async fn companies_index(
                 }
             }
             company.id.map(|id| CompanyRow {
+                is_current: &id == &active_id,
                 id: id.to_hex(),
                 name: company.name,
                 default_currency: company.default_currency,
@@ -115,6 +126,7 @@ pub async fn companies_new(
         notes: String::new(),
         is_edit: false,
         errors: None,
+        is_current: false,
     })
 }
 
@@ -134,15 +146,16 @@ pub async fn companies_create(
             slug: slug_val.to_string(),
             default_currency: form.default_currency.clone(),
             is_active,
-            notes: form.notes.unwrap_or_default(),
+            notes: form.notes.clone().unwrap_or_default(),
             is_edit: false,
             errors: Some(msg),
+            is_current: false,
         })
         .map(IntoResponse::into_response)
         .unwrap_or_else(|status| status.into_response());
     }
     let default_currency = form.default_currency.trim();
-    let notes = form.notes.and_then(|n| {
+    let notes = form.notes.as_ref().and_then(|n| {
         let trimmed = n.trim();
         if trimmed.is_empty() {
             None
@@ -160,6 +173,7 @@ pub async fn companies_create(
             notes: String::new(),
             is_edit: false,
             errors: Some("El nombre es obligatorio".into()),
+            is_current: false,
         })
         .map(IntoResponse::into_response)
         .unwrap_or_else(|status| status.into_response());
@@ -170,15 +184,47 @@ pub async fn companies_create(
     } else {
         default_currency
     };
+    let final_slug = if slug_val.is_empty() {
+        slugify(name)
+    } else {
+        slug_val.to_string()
+    };
 
-    match create_company(&state, name, slug_val, currency, is_active, notes).await {
-        Ok(company_id) => {
-            // Ensure the creator is linked to the new company
-            let _ =
-                add_user_to_company(&state, session_user.user_id(), &company_id, UserRole::Admin)
-                    .await;
-            Redirect::to("/admin/companies").into_response()
+    // Ensure slug uniqueness
+    if let Ok(Some(existing)) = state
+        .companies
+        .find_one(doc! { "slug": &final_slug })
+        .await
+    {
+        if existing.id.is_some() {
+            return render(CompanyFormTemplate {
+                action: "/admin/companies".into(),
+                name: name.to_string(),
+                slug: slug_val.to_string(),
+                default_currency: form.default_currency.clone(),
+                is_active,
+                notes: form.notes.clone().unwrap_or_default(),
+                is_edit: false,
+                errors: Some("Ya existe una compañía con ese slug.".into()),
+                is_current: false,
+            })
+            .map(IntoResponse::into_response)
+            .unwrap_or_else(|status| status.into_response());
         }
+    }
+
+    match create_company(&state, name, final_slug.as_str(), currency, is_active, notes).await {
+        Ok(company_id) => match add_user_to_company(
+            &state,
+            session_user.user_id(),
+            &company_id,
+            UserRole::Admin,
+        )
+        .await
+        {
+            Ok(_) => Redirect::to("/admin/companies").into_response(),
+            Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        },
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
@@ -208,6 +254,7 @@ pub async fn companies_edit(
         notes: company.notes.unwrap_or_default(),
         is_edit: true,
         errors: None,
+        is_current: company.id.as_ref() == Some(session_user.active_company_id()),
     })
 }
 
@@ -237,15 +284,16 @@ pub async fn companies_update(
             slug: slug_val.to_string(),
             default_currency: form.default_currency.clone(),
             is_active,
-            notes: form.notes.unwrap_or_default(),
+            notes: form.notes.clone().unwrap_or_default(),
             is_edit: true,
             errors: Some(msg),
+            is_current: &object_id == session_user.active_company_id(),
         })
         .map(IntoResponse::into_response)
         .unwrap_or_else(|status| status.into_response());
     }
     let default_currency = form.default_currency.trim();
-    let notes = form.notes.and_then(|n| {
+    let notes = form.notes.as_ref().and_then(|n| {
         let trimmed = n.trim();
         if trimmed.is_empty() {
             None
@@ -263,6 +311,7 @@ pub async fn companies_update(
             notes: String::new(),
             is_edit: true,
             errors: Some("El nombre es obligatorio".into()),
+            is_current: &object_id == session_user.active_company_id(),
         })
         .map(IntoResponse::into_response)
         .unwrap_or_else(|status| status.into_response());
@@ -273,13 +322,46 @@ pub async fn companies_update(
     } else {
         default_currency
     };
+    let final_slug = if slug_val.is_empty() {
+        slugify(name)
+    } else {
+        slug_val.to_string()
+    };
+
+    // Ensure slug uniqueness against other companies
+    if let Ok(Some(existing)) = state
+        .companies
+        .find_one(doc! { "slug": &final_slug })
+        .await
+    {
+        if existing.id != Some(object_id.clone()) {
+            return render(CompanyFormTemplate {
+                action: format!("/admin/companies/{}/update", id),
+                name: name.to_string(),
+                slug: slug_val.to_string(),
+                default_currency: form.default_currency.clone(),
+                is_active,
+                notes: form.notes.clone().unwrap_or_default(),
+                is_edit: true,
+                errors: Some("Ya existe otra compañía con ese slug.".into()),
+                is_current: &object_id == session_user.active_company_id(),
+            })
+            .map(IntoResponse::into_response)
+            .unwrap_or_else(|status| status.into_response());
+        }
+    }
 
     match update_company(
         &state, &object_id, name, slug_val, currency, is_active, notes,
     )
     .await
     {
-        Ok(_) => Redirect::to("/admin/companies").into_response(),
+        Ok(_) => {
+            if &object_id == session_user.active_company_id() {
+                return axum::Json(CompanyUpdateResponse { slug: final_slug }).into_response();
+            }
+            Redirect::to("/admin/companies").into_response()
+        }
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
@@ -293,6 +375,11 @@ pub async fn companies_delete(
         Ok(id) => id,
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
+
+    // Do not allow deleting the currently active company for this session.
+    if &object_id == session_user.active_company_id() {
+        return StatusCode::FORBIDDEN.into_response();
+    }
 
     if !has_admin_role_for(&session_user, &object_id) {
         return StatusCode::FORBIDDEN.into_response();

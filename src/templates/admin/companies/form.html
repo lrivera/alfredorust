@@ -15,7 +15,11 @@
     </div>
     {% endif %}
 
-    <form method="post" action="{{ action }}" class="space-y-5 rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+    <form
+      id="company-form"
+      method="post"
+      {% if is_edit && is_current %}data-action="{{ action }}"{% else %}action="{{ action }}"{% endif %}
+      class="space-y-5 rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
       <div class="space-y-2">
         <label for="name" class="block text-sm font-medium text-slate-600">Nombre</label>
         <input id="name" name="name" value="{{ name }}" required
@@ -56,4 +60,58 @@
       </div>
     </form>
   </div>
+  {% if is_edit && is_current %}
+  <script>
+    (() => {
+      const form = document.getElementById('company-form');
+      if (!form) return;
+      console.log('Setting up AJAX form submission for company edit form');
+      form.addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+        const formData = new FormData(form);
+        const params = new URLSearchParams();
+        for (const [key, value] of formData.entries()) {
+          params.append(key, value.toString());
+        }
+        try {
+          const actionUrl = form.dataset.action || form.getAttribute('action') || '';
+          if (!actionUrl) {
+            alert('No se pudo determinar la URL de guardado.');
+            return;
+          }
+          const resp = await fetch(actionUrl, {
+            method: 'POST',
+            body: params.toString(),
+            credentials: 'include',
+            headers: {
+              'X-Requested-With': 'fetch',
+              'Accept': 'application/json',
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+          });
+          if (!resp.ok) {
+            alert('No se pudo guardar la compañía. Intenta de nuevo.');
+            return;
+          }
+          const json = await resp.json().catch(() => ({}));
+          const slugFromServer = (json.slug || '').toString().trim();
+          const slugInput = (formData.get('slug') || '').toString().trim();
+          const effectiveSlug = slugFromServer || slugInput;
+          const host = window.location.host;
+          const parts = host.split('.');
+          if (parts.length >= 2 && effectiveSlug.length > 0) {
+            const rest = parts.slice(1).join('.');
+            const targetHost = `${effectiveSlug}.${rest}`;
+            window.location.href = `${window.location.protocol}//${targetHost}/admin/companies`;
+          } else {
+            window.location.reload();
+          }
+        } catch (e) {
+          alert('No se pudo guardar la compañía. Intenta de nuevo.');
+        }
+      });
+    })();
+  </script>
+  {% endif %}
 {% endblock %}

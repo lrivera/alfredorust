@@ -1,8 +1,10 @@
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
-use axum::{Json, extract::State, http::StatusCode};
-use mongodb::bson::doc;
+use axum::{extract::State, http::StatusCode, Json};
+use futures::TryStreamExt;
+use mongodb::bson::{doc, oid::ObjectId};
 use serde::Serialize;
+use slug::slugify;
 
 use crate::{session::SessionUser, state::AppState};
 
@@ -16,36 +18,73 @@ pub struct CompanySummary {
 
 pub async fn me_companies(
     session: SessionUser,
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
 ) -> Result<Json<Vec<CompanySummary>>, StatusCode> {
-    let active_slug = session.active_company_slug().to_string();
-    let companies = session
-        .user()
-        .company_ids
-        .iter()
-        .enumerate()
-        .map(|(idx, _)| CompanySummary {
-            id: session.user().company_ids[idx].to_hex(),
-            name: session
-                .user()
-                .company_names
-                .get(idx)
-                .cloned()
-                .unwrap_or_default(),
-            slug: session
-                .user()
-                .company_slugs
-                .get(idx)
-                .cloned()
-                .unwrap_or_default(),
-            active: session
-                .user()
-                .company_slugs
-                .get(idx)
-                .map(|s| s.eq_ignore_ascii_case(&active_slug))
-                .unwrap_or(false),
-        })
-        .collect();
+    let active_company = session.active_company_id().clone();
+
+    // Always fetch fresh memberships to reflect changes done after login.
+    let mut company_ids: HashSet<ObjectId> =
+        session.user().company_ids.iter().cloned().collect();
+
+    // print user_id
+    println!("User ID: {}", session.user_id());
+
+    if let Ok(mut memberships) = state
+        .user_companies
+        .find(doc! { "user_id": session.user_id() })
+        .await
+    {
+        while let Some(m) = memberships
+            .try_next()
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        {
+            company_ids.insert(m.company_id);
+            println!("Found membership for company ID: {}", m.company_id);
+        }
+    }
+
+    if let Some(primary) = session.user().company_ids.first() {
+        company_ids.insert(primary.clone());
+    }
+
+    let ids: Vec<ObjectId> = company_ids.into_iter().collect();
+    if ids.is_empty() {
+        return Ok(Json(vec![]));
+    }
+
+    let mut cursor = state
+        .companies
+        .find(doc! { "_id": { "$in": &ids } })
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let mut companies = Vec::new();
+    while let Some(company) = cursor
+        .try_next()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    {
+        let slug = if company.slug.is_empty() {
+            slugify(&company.name)
+        } else {
+            company.slug.clone()
+        };
+        let active = company
+            .id
+            .as_ref()
+            .map(|cid| cid == &active_company)
+            .unwrap_or(false);
+        companies.push(CompanySummary {
+            id: company.id.unwrap().to_hex(),
+            name: company.name,
+            slug,
+            active,
+        });
+    }
+
+    // Sort by name for stable UX
+    companies.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
 
     Ok(Json(companies))
 }
