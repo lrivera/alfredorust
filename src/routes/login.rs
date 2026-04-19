@@ -7,7 +7,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde::Deserialize;
-use std::{net::IpAddr, sync::Arc};
+use std::{env, net::IpAddr, sync::Arc};
 
 use crate::session::SESSION_COOKIE_NAME;
 use crate::state::{AppState, SESSION_TTL_SECONDS, create_session, find_user};
@@ -140,6 +140,12 @@ fn set_cookies_for_host(response: &mut Response, token: &str, host: &str, slug: 
 }
 
 fn compute_root_domain(base: &str) -> Option<String> {
+    // If BASE_DOMAIN is set, always use it as the root for tenant subdomain routing.
+    if let Ok(base_domain) = env::var("BASE_DOMAIN") {
+        if !base_domain.is_empty() {
+            return Some(base_domain);
+        }
+    }
     if base.eq_ignore_ascii_case("localhost") {
         return Some("localhost".to_string());
     }
