@@ -32,12 +32,13 @@ jobs:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USER: ${{ secrets.SSH_USER }}
         run: |
-          echo "$SSH_PRIVATE_KEY" > /tmp/deploy_key
-          chmod 600 /tmp/deploy_key
-          scp -i /tmp/deploy_key -o StrictHostKeyChecking=no \
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keygen -y -f ~/.ssh/deploy_key > /dev/null  # validate key
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
             target/release/alfredodev \
             $SSH_USER@$SSH_HOST:/home/$SSH_USER/alfredorust/alfredodev
-          ssh -i /tmp/deploy_key -o StrictHostKeyChecking=no \
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
             $SSH_USER@$SSH_HOST \
             "sudo systemctl restart alfredorust"
-          rm /tmp/deploy_key
