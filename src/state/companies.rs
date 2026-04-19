@@ -25,6 +25,8 @@ pub async fn get_company_by_id(state: &AppState, id: &ObjectId) -> Result<Option
         .map_err(Into::into)
 }
 
+const RESERVED_SLUGS: &[&str] = &["app", "www", "api", "admin", "mail", "static"];
+
 pub async fn create_company(
     state: &AppState,
     name: &str,
@@ -38,6 +40,10 @@ pub async fn create_company(
     } else {
         slug.to_string()
     };
+
+    if RESERVED_SLUGS.contains(&slug.to_lowercase().as_str()) {
+        anyhow::bail!("El slug '{}' está reservado y no puede usarse", slug);
+    }
 
     let currency = if default_currency.trim().is_empty() {
         "MXN".to_string()
@@ -78,6 +84,10 @@ pub async fn update_company(
     } else {
         slug.to_string()
     };
+
+    if RESERVED_SLUGS.contains(&slug.to_lowercase().as_str()) {
+        anyhow::bail!("El slug '{}' está reservado y no puede usarse", slug);
+    }
 
     let currency = if default_currency.trim().is_empty() {
         "MXN".to_string()
