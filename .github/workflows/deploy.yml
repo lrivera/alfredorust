@@ -21,9 +21,11 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-x86-64-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build release
+        env:
+          RUSTFLAGS: "-C target-cpu=x86-64"
         run: cargo build --release
 
       - name: Deploy to server
