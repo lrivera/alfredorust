@@ -60,6 +60,44 @@
       </div>
     </form>
   </div>
+  {% if is_edit %}
+  <div class="max-w-xl space-y-4">
+    <div class="flex items-center justify-between">
+      <h2 class="text-lg font-semibold text-slate-800">Configuraciones SAT (e.firma)</h2>
+      <a href="/admin/companies/{{ company_id }}/sat_configs/new"
+        class="inline-flex items-center gap-1 rounded-md bg-sky-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700">
+        + Agregar
+      </a>
+    </div>
+
+    {% if sat_configs.is_empty() %}
+    <p class="text-sm text-slate-500">No hay configuraciones SAT registradas.</p>
+    {% else %}
+    <div class="divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white shadow-sm">
+      {% for cfg in sat_configs %}
+      <div class="flex items-center justify-between px-4 py-3">
+        <div>
+          <p class="text-sm font-medium text-slate-800">
+            {{ cfg.rfc }}
+            {% if !cfg.label.is_empty() %}
+            <span class="ml-2 rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-500">{{ cfg.label }}</span>
+            {% endif %}
+          </p>
+          <p class="mt-0.5 text-xs text-slate-400 font-mono truncate max-w-xs">{{ cfg.cer_path }}</p>
+        </div>
+        <form method="post"
+          action="/admin/companies/{{ company_id }}/sat_configs/{{ cfg.id }}/delete"
+          onsubmit="return confirm('¿Eliminar esta configuración SAT?')">
+          <button type="submit"
+            class="text-xs font-medium text-rose-600 hover:text-rose-800">Eliminar</button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
   {% if is_edit && is_current %}
   <script>
     (() => {

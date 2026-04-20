@@ -487,3 +487,19 @@ pub struct Forecast {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
 }
+
+/// ---------- SAT ----------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SatConfig {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub company_id: ObjectId,
+    pub rfc: String,
+    pub cer_path: String,
+    pub key_path: String,
+    pub key_password: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    pub created_at: DateTime,
+}

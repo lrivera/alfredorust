@@ -22,6 +22,7 @@ use crate::{
         list_companies, update_company,
     },
 };
+use super::sat_configs::{SatConfigRow, load_sat_configs_for_company};
 
 fn render<T: Template>(tpl: T) -> Result<Html<String>, StatusCode> {
     tpl.render()
@@ -60,6 +61,8 @@ struct CompanyFormTemplate {
     is_edit: bool,
     errors: Option<String>,
     is_current: bool,
+    company_id: String,
+    sat_configs: Vec<SatConfigRow>,
 }
 
 #[derive(Deserialize)]
@@ -127,6 +130,8 @@ pub async fn companies_new(
         is_edit: false,
         errors: None,
         is_current: false,
+        company_id: String::new(),
+        sat_configs: vec![],
     })
 }
 
@@ -150,6 +155,8 @@ pub async fn companies_create(
             is_edit: false,
             errors: Some(msg),
             is_current: false,
+            company_id: String::new(),
+            sat_configs: vec![],
         })
         .map(IntoResponse::into_response)
         .unwrap_or_else(|status| status.into_response());
@@ -174,6 +181,8 @@ pub async fn companies_create(
             is_edit: false,
             errors: Some("El nombre es obligatorio".into()),
             is_current: false,
+            company_id: String::new(),
+            sat_configs: vec![],
         })
         .map(IntoResponse::into_response)
         .unwrap_or_else(|status| status.into_response());
@@ -207,6 +216,8 @@ pub async fn companies_create(
                 is_edit: false,
                 errors: Some("Ya existe una compañía con ese slug.".into()),
                 is_current: false,
+                company_id: String::new(),
+                sat_configs: vec![],
             })
             .map(IntoResponse::into_response)
             .unwrap_or_else(|status| status.into_response());
@@ -245,6 +256,8 @@ pub async fn companies_edit(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
 
+    let sat_configs = load_sat_configs_for_company(&state, &object_id).await;
+
     render(CompanyFormTemplate {
         action: format!("/admin/companies/{}/update", id),
         name: company.name,
@@ -255,6 +268,8 @@ pub async fn companies_edit(
         is_edit: true,
         errors: None,
         is_current: company.id.as_ref() == Some(session_user.active_company_id()),
+        company_id: id.clone(),
+        sat_configs,
     })
 }
 
@@ -288,6 +303,8 @@ pub async fn companies_update(
             is_edit: true,
             errors: Some(msg),
             is_current: &object_id == session_user.active_company_id(),
+            company_id: id.clone(),
+            sat_configs: load_sat_configs_for_company(&state, &object_id).await,
         })
         .map(IntoResponse::into_response)
         .unwrap_or_else(|status| status.into_response());
@@ -312,6 +329,8 @@ pub async fn companies_update(
             is_edit: true,
             errors: Some("El nombre es obligatorio".into()),
             is_current: &object_id == session_user.active_company_id(),
+            company_id: id.clone(),
+            sat_configs: load_sat_configs_for_company(&state, &object_id).await,
         })
         .map(IntoResponse::into_response)
         .unwrap_or_else(|status| status.into_response());
@@ -345,6 +364,8 @@ pub async fn companies_update(
                 is_edit: true,
                 errors: Some("Ya existe otra compañía con ese slug.".into()),
                 is_current: &object_id == session_user.active_company_id(),
+                company_id: id.clone(),
+                sat_configs: load_sat_configs_for_company(&state, &object_id).await,
             })
             .map(IntoResponse::into_response)
             .unwrap_or_else(|status| status.into_response());

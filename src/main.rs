@@ -74,6 +74,18 @@ async fn main() {
             post(routes::companies_delete),
         )
         .route(
+            "/admin/companies/{id}/sat_configs",
+            post(routes::sat_configs_create),
+        )
+        .route(
+            "/admin/companies/{id}/sat_configs/new",
+            get(routes::sat_configs_new),
+        )
+        .route(
+            "/admin/companies/{id}/sat_configs/{config_id}/delete",
+            post(routes::sat_configs_delete),
+        )
+        .route(
             "/admin/accounts",
             get(routes::accounts_index).post(routes::accounts_create),
         )
