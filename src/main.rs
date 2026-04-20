@@ -17,8 +17,10 @@ use std::{net::SocketAddr, sync::Arc};
 use tokio::net::TcpListener;
 
 pub mod filters;
+mod cfdi;
 mod models;
 mod routes;
+mod sat;
 mod session;
 mod state;
 mod totp;
@@ -38,6 +40,7 @@ async fn main() {
         .route("/qrcode", get(routes::qrcode))
         .route("/secret", get(routes::secret_generate))
         .route("/api/tiempo", get(routes::tiempo_data))
+        .route("/api/sat/cfdi/download", post(routes::sat_cfdi_download))
         .route("/logout", post(routes::logout))
         .route(
             "/account",

@@ -8,6 +8,7 @@ use crate::models::{
     Account, Category, Company, Contact, Forecast, PlannedEntry, RecurringPlan, Session,
     Transaction, User, UserCompany,
 };
+use bson::Document;
 
 mod seed;
 mod users;
@@ -34,6 +35,7 @@ pub struct AppState {
     pub planned_entries: Collection<PlannedEntry>,
     pub transactions: Collection<Transaction>,
     pub forecasts: Collection<Forecast>,
+    pub cfdis: Collection<Document>,
 }
 
 pub async fn init_state() -> Result<AppState> {
@@ -66,5 +68,6 @@ pub async fn init_state() -> Result<AppState> {
         planned_entries: db.collection::<PlannedEntry>("planned_entries"),
         transactions: db.collection::<Transaction>("transactions"),
         forecasts: db.collection::<Forecast>("forecasts"),
+        cfdis: db.collection::<Document>("cfdis"),
     })
 }
