@@ -183,5 +183,6 @@ fn compute_redirect_url(host: &str, slug: &str) -> Option<String> {
         return None;
     }
     let port = port_part.map(|p| format!(":{}", p)).unwrap_or_default();
-    Some(format!("http://{}{}", target_host, port))
+    let scheme = if port.is_empty() { "https" } else { "http" };
+    Some(format!("{}://{}{}", scheme, target_host, port))
 }
