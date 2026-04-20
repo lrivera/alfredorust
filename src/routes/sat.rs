@@ -23,8 +23,8 @@ pub async fn sat_cfdi_download(
                 match fs::read(&package.path).await {
                     Ok(zip_bytes) => {
                         match cfdi::import_zip(&state.cfdis, &slug, &zip_bytes).await {
-                            Ok(uuids) => {
-                                eprintln!("[cfdi] imported {} CFDIs from {}", uuids.len(), package.package_id);
+                            Ok(imported) => {
+                                eprintln!("[cfdi] imported {} CFDIs from {}", imported.len(), package.package_id);
                             }
                             Err(e) => eprintln!("[cfdi] import error for {}: {e}", package.package_id),
                         }

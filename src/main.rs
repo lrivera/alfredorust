@@ -86,6 +86,10 @@ async fn main() {
             post(routes::sat_configs_delete),
         )
         .route(
+            "/admin/companies/{id}/cfdi/download",
+            post(routes::company_cfdi_download),
+        )
+        .route(
             "/admin/accounts",
             get(routes::accounts_index).post(routes::accounts_create),
         )

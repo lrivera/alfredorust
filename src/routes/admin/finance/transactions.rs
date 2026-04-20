@@ -246,6 +246,7 @@ pub async fn transactions_create(
         planned_entry_id,
         form.is_confirmed,
         notes,
+        None,
     )
     .await
     {

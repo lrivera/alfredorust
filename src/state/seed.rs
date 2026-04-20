@@ -409,6 +409,7 @@ pub(super) async fn seed_sample_finance(db: &Database, company_id: Option<Object
                 is_confirmed: tx.is_confirmed,
                 created_at: tx.created_at,
                 updated_at: tx.updated_at,
+                cfdi_uuid: None,
                 notes: tx.notes,
             })
             .await?;

@@ -443,6 +443,10 @@ pub struct Transaction {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<DateTime>,
 
+    /// UUID of the CFDI/factura that originated this transaction, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cfdi_uuid: Option<String>,
+
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
 }

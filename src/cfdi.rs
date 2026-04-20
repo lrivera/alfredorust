@@ -7,12 +7,26 @@ use roxmltree::{Document, Node};
 use std::io::Read;
 use zip::ZipArchive;
 
-/// Extract and import all CFDI XML files from a ZIP. Returns imported UUIDs.
+/// Key fields extracted from a CFDI, returned after each successful import.
+#[derive(Debug, Clone)]
+pub struct ImportedCfdi {
+    pub uuid: String,
+    /// "I" = Ingreso, "E" = Egreso, "T" = Traslado, "N" = Nómina, "P" = Pago
+    pub tipo_de_comprobante: String,
+    pub total: String,
+    pub fecha: String,
+    pub emisor_rfc: String,
+    pub emisor_nombre: String,
+    pub receptor_rfc: String,
+    pub receptor_nombre: String,
+}
+
+/// Extract and import all CFDI XML files from a ZIP. Returns imported CFDIs.
 pub async fn import_zip(
     collection: &Collection<bson::Document>,
     company_id: &str,
     zip_bytes: &[u8],
-) -> Result<Vec<String>> {
+) -> Result<Vec<ImportedCfdi>> {
     let cursor = std::io::Cursor::new(zip_bytes);
     let mut archive = ZipArchive::new(cursor).context("Opening ZIP")?;
 
@@ -30,15 +44,15 @@ pub async fn import_zip(
         xml_files.push((name, xml));
     }
 
-    let mut uuids = Vec::new();
+    let mut imported = Vec::new();
     for (name, xml) in xml_files {
         match import_xml(collection, company_id, &xml).await {
-            Ok(uuid) => uuids.push(uuid),
+            Ok(cfdi) => imported.push(cfdi),
             Err(e) => eprintln!("[cfdi] skip {name}: {e}"),
         }
     }
 
-    Ok(uuids)
+    Ok(imported)
 }
 
 /// Parse a single CFDI XML string and upsert into MongoDB (keyed by UUID).
@@ -46,10 +60,10 @@ pub async fn import_xml(
     collection: &Collection<bson::Document>,
     company_id: &str,
     xml: &str,
-) -> Result<String> {
+) -> Result<ImportedCfdi> {
     let xml = xml.strip_prefix('\u{FEFF}').unwrap_or(xml);
     let xml_doc = Document::parse(xml).context("Parsing CFDI XML")?;
-    let (uuid, mut bson_doc) = parse_cfdi(&xml_doc)?;
+    let (uuid, mut bson_doc, summary) = parse_cfdi(&xml_doc)?;
 
     bson_doc.insert("company_id", company_id);
 
@@ -59,10 +73,10 @@ pub async fn import_xml(
         .await
         .context("MongoDB upsert")?;
 
-    Ok(uuid)
+    Ok(summary)
 }
 
-fn parse_cfdi(doc: &Document) -> Result<(String, bson::Document)> {
+fn parse_cfdi(doc: &Document) -> Result<(String, bson::Document, ImportedCfdi)> {
     let root = doc.root_element();
     if root.tag_name().name() != "Comprobante" {
         bail!("Root element is not cfdi:Comprobante");
@@ -92,17 +106,25 @@ fn parse_cfdi(doc: &Document) -> Result<(String, bson::Document)> {
         "certificado":       root.attribute("Certificado").unwrap_or(""),
     };
 
+    let tipo = root.attribute("TipoDeComprobante").unwrap_or("").to_string();
+    let total_str = root.attribute("Total").unwrap_or("0").to_string();
+    let fecha_str = root.attribute("Fecha").unwrap_or("").to_string();
+
     let emisor_node = child(root, "Emisor");
+    let emisor_rfc = emisor_node.and_then(|n| n.attribute("Rfc")).unwrap_or("").to_string();
+    let emisor_nombre = emisor_node.and_then(|n| n.attribute("Nombre")).unwrap_or("").to_string();
     let emisor = doc! {
-        "rfc":          emisor_node.and_then(|n| n.attribute("Rfc")).unwrap_or(""),
-        "nombre":       emisor_node.and_then(|n| n.attribute("Nombre")).unwrap_or(""),
+        "rfc":          &emisor_rfc,
+        "nombre":       &emisor_nombre,
         "regimenFiscal":emisor_node.and_then(|n| n.attribute("RegimenFiscal")).unwrap_or(""),
     };
 
     let receptor_node = child(root, "Receptor");
+    let receptor_rfc = receptor_node.and_then(|n| n.attribute("Rfc")).unwrap_or("").to_string();
+    let receptor_nombre = receptor_node.and_then(|n| n.attribute("Nombre")).unwrap_or("").to_string();
     let receptor = doc! {
-        "rfc":           receptor_node.and_then(|n| n.attribute("Rfc")).unwrap_or(""),
-        "nombre":        receptor_node.and_then(|n| n.attribute("Nombre")).unwrap_or(""),
+        "rfc":           &receptor_rfc,
+        "nombre":        &receptor_nombre,
         "domicilioFiscal":receptor_node.and_then(|n| n.attribute("DomicilioFiscalReceptor")).unwrap_or(""),
         "regimenFiscal": receptor_node.and_then(|n| n.attribute("RegimenFiscalReceptor")).unwrap_or(""),
         "usoCFDI":       receptor_node.and_then(|n| n.attribute("UsoCFDI")).unwrap_or(""),
@@ -141,7 +163,18 @@ fn parse_cfdi(doc: &Document) -> Result<(String, bson::Document)> {
         "timbreFiscalDigital":  timbre,
     };
 
-    Ok((uuid, out))
+    let summary = ImportedCfdi {
+        uuid: uuid.clone(),
+        tipo_de_comprobante: tipo,
+        total: total_str,
+        fecha: fecha_str,
+        emisor_rfc,
+        emisor_nombre,
+        receptor_rfc,
+        receptor_nombre,
+    };
+
+    Ok((uuid, out, summary))
 }
 
 fn parse_concepto(node: Node) -> bson::Document {

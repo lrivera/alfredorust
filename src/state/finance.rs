@@ -601,6 +601,7 @@ pub async fn create_transaction(
     planned_entry_id: Option<ObjectId>,
     is_confirmed: bool,
     notes: Option<String>,
+    cfdi_uuid: Option<String>,
 ) -> Result<ObjectId> {
     validate_transaction_links(
         state,
@@ -629,6 +630,7 @@ pub async fn create_transaction(
             is_confirmed,
             created_at: Some(DateTime::from_system_time(SystemTime::now())),
             updated_at: None,
+            cfdi_uuid,
             notes,
         })
         .await?;
@@ -705,6 +707,25 @@ pub async fn update_transaction(
     }
 
     Ok(())
+}
+
+/// Find or create a category named `name` with the given flow_type for a company.
+pub async fn get_or_create_category(
+    state: &AppState,
+    company_id: &ObjectId,
+    name: &str,
+    flow_type: FlowType,
+) -> Result<ObjectId> {
+    if let Some(existing) = state
+        .categories
+        .find_one(doc! { "company_id": company_id, "name": name })
+        .await?
+    {
+        return existing
+            .id
+            .context("category missing _id");
+    }
+    create_category(state, company_id, name, flow_type, None, None).await
 }
 
 pub async fn delete_transaction(state: &AppState, id: &ObjectId) -> Result<()> {
