@@ -1,3 +1,7 @@
 /target
 .env
 /tmp
+.DS_Store
+.secret
+.claude/
+/uploads/
