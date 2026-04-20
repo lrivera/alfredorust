@@ -185,6 +185,7 @@
           if (json.ok) {
             result.innerHTML = `<strong>Listo.</strong> ${json.imported} CFDIs importados, ` +
               `${json.transactions_created} transacciones creadas, ` +
+              `${json.transactions_updated} actualizadas, ` +
               `${json.transactions_skipped} omitidas.` +
               (json.errors.length ? `<br><span class="text-rose-600">Avisos: ${json.errors.join('; ')}</span>` : '');
           } else {

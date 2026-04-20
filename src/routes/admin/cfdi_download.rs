@@ -18,6 +18,9 @@ use crate::{
     state::{AppState, create_transaction, get_or_create_category, get_sat_config},
 };
 
+/// Counter tracking whether a transaction was created or updated.
+enum TxOutcome { Created, Updated }
+
 #[derive(Deserialize)]
 pub struct CfdiDownloadForm {
     pub sat_config_id: String,
@@ -36,6 +39,7 @@ pub struct CfdiDownloadResult {
     pub ok: bool,
     pub imported: usize,
     pub transactions_created: usize,
+    pub transactions_updated: usize,
     pub transactions_skipped: usize,
     pub errors: Vec<String>,
 }
@@ -124,6 +128,7 @@ pub async fn company_cfdi_download(
 
     // Create transactions for imported CFDIs
     let mut tx_created = 0usize;
+    let mut tx_updated = 0usize;
     let mut tx_skipped = 0usize;
 
     // Look up or create default categories once
@@ -144,16 +149,6 @@ pub async fn company_cfdi_download(
     .await;
 
     for cfdi_item in &all_imported {
-        // Skip if transaction already exists for this UUID
-        if let Ok(Some(_)) = state
-            .transactions
-            .find_one(bson::doc! { "cfdi_uuid": &cfdi_item.uuid })
-            .await
-        {
-            tx_skipped += 1;
-            continue;
-        }
-
         let (tx_type, category_result) = match cfdi_item.tipo_de_comprobante.as_str() {
             "I" => (TransactionType::Income, &income_category),
             "E" => (TransactionType::Expense, &expense_category),
@@ -173,36 +168,75 @@ pub async fn company_cfdi_download(
         };
 
         let amount: f64 = cfdi_item.total.parse().unwrap_or(0.0);
-
         let date = parse_cfdi_date(&cfdi_item.fecha);
-
         let description = match cfdi_item.tipo_de_comprobante.as_str() {
             "I" => format!("{} — {}", cfdi_item.emisor_nombre, cfdi_item.uuid),
             _ => format!("{} — {}", cfdi_item.receptor_nombre, cfdi_item.uuid),
         };
 
-        match create_transaction(
-            &state,
-            &company_object_id,
-            date,
-            &description,
-            tx_type,
-            category_id,
-            None,
-            None,
-            amount,
-            None,
-            true,
-            None,
-            Some(cfdi_item.uuid.clone()),
-        )
-        .await
-        {
-            Ok(_) => tx_created += 1,
-            Err(e) => {
-                errors.push(format!("Error transacción {}: {e}", cfdi_item.uuid));
-                tx_skipped += 1;
+        // Check if a transaction already exists for this UUID
+        let existing = state
+            .transactions
+            .find_one(bson::doc! { "cfdi_uuid": &cfdi_item.uuid })
+            .await
+            .ok()
+            .flatten();
+
+        let outcome = if let Some(existing_tx) = existing {
+            // Update the existing transaction (amount, date, description may have changed in SAT)
+            let update_result = state
+                .transactions
+                .update_one(
+                    bson::doc! { "_id": &existing_tx.id },
+                    bson::doc! { "$set": {
+                        "amount": amount,
+                        "date": date,
+                        "description": &description,
+                        "transaction_type": tx_type.as_str(),
+                        "category_id": category_id,
+                        "updated_at": bson::DateTime::now(),
+                    }},
+                )
+                .await;
+            match update_result {
+                Ok(_) => TxOutcome::Updated,
+                Err(e) => {
+                    errors.push(format!("Error actualizando {}: {e}", cfdi_item.uuid));
+                    tx_skipped += 1;
+                    continue;
+                }
             }
+        } else {
+            // Create new transaction
+            match create_transaction(
+                &state,
+                &company_object_id,
+                date,
+                &description,
+                tx_type,
+                category_id,
+                None,
+                None,
+                amount,
+                None,
+                true,
+                None,
+                Some(cfdi_item.uuid.clone()),
+            )
+            .await
+            {
+                Ok(_) => TxOutcome::Created,
+                Err(e) => {
+                    errors.push(format!("Error transacción {}: {e}", cfdi_item.uuid));
+                    tx_skipped += 1;
+                    continue;
+                }
+            }
+        };
+
+        match outcome {
+            TxOutcome::Created => tx_created += 1,
+            TxOutcome::Updated => tx_updated += 1,
         }
     }
 
@@ -212,6 +246,7 @@ pub async fn company_cfdi_download(
             ok: true,
             imported: all_imported.len(),
             transactions_created: tx_created,
+            transactions_updated: tx_updated,
             transactions_skipped: tx_skipped,
             errors,
         }),
@@ -233,6 +268,7 @@ fn err(msg: &str) -> CfdiDownloadResult {
         ok: false,
         imported: 0,
         transactions_created: 0,
+        transactions_updated: 0,
         transactions_skipped: 0,
         errors: vec![msg.to_string()],
     }
