@@ -56,7 +56,7 @@ pub enum DownloadType {
 }
 
 impl DownloadType {
-    fn env_value(self) -> &'static str {
+    pub fn env_value(self) -> &'static str {
         match self {
             DownloadType::Issued => "issued",
             DownloadType::Received => "received",

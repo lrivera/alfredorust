@@ -69,59 +69,58 @@ pub async fn company_cfdi_download(
         }
     };
 
-    let dl_type = if form.download_type == "received" {
-        DownloadType::Received
-    } else {
-        DownloadType::Issued
-    };
-
-    let request = CfdiDownloadRequest {
-        cer_path: Some(config.cer_path.clone()),
-        key_path: Some(config.key_path.clone()),
-        key_password: Some(config.key_password.clone()),
-        rfc: Some(config.rfc.clone()),
-        download_type: dl_type,
-        request_type: crate::sat::RequestType::Xml,
-        start: Some(form.start.clone()),
-        end: Some(form.end.clone()),
-        output_dir: None,
-        poll_seconds: None,
-        max_attempts: None,
-    };
-
-    let download_result = match download_cfdis(&company_id, request).await {
-        Ok(r) => r,
-        Err(e) => {
-            return (
-                StatusCode::BAD_GATEWAY,
-                Json(err(&format!("Error SAT: {}", e))),
-            )
-                .into_response();
-        }
+    let dl_types: &[DownloadType] = match form.download_type.as_str() {
+        "received" => &[DownloadType::Received],
+        "both" => &[DownloadType::Issued, DownloadType::Received],
+        _ => &[DownloadType::Issued],
     };
 
     let mut all_imported = Vec::new();
     let mut errors = Vec::new();
 
-    for package in &download_result.packages {
-        match fs::read(&package.path).await {
-            Ok(zip_bytes) => {
-                match cfdi::import_zip(&state.cfdis, &company_id, &zip_bytes).await {
-                    Ok(imported) => {
-                        eprintln!(
-                            "[cfdi_download] imported {} from {}",
-                            imported.len(),
-                            package.package_id
-                        );
-                        all_imported.extend(imported);
-                    }
-                    Err(e) => {
-                        errors.push(format!("Error importando {}: {e}", package.package_id));
+    for &dl_type in dl_types {
+        let request = CfdiDownloadRequest {
+            cer_path: Some(config.cer_path.clone()),
+            key_path: Some(config.key_path.clone()),
+            key_password: Some(config.key_password.clone()),
+            rfc: Some(config.rfc.clone()),
+            download_type: dl_type,
+            request_type: crate::sat::RequestType::Xml,
+            start: Some(form.start.clone()),
+            end: Some(form.end.clone()),
+            output_dir: None,
+            poll_seconds: None,
+            max_attempts: None,
+        };
+
+        let download_result = match download_cfdis(&company_id, request).await {
+            Ok(r) => r,
+            Err(e) => {
+                errors.push(format!("Error SAT ({}): {e}", dl_type.env_value()));
+                continue;
+            }
+        };
+
+        for package in &download_result.packages {
+            match fs::read(&package.path).await {
+                Ok(zip_bytes) => {
+                    match cfdi::import_zip(&state.cfdis, &company_id, &zip_bytes).await {
+                        Ok(imported) => {
+                            eprintln!(
+                                "[cfdi_download] imported {} from {}",
+                                imported.len(),
+                                package.package_id
+                            );
+                            all_imported.extend(imported);
+                        }
+                        Err(e) => {
+                            errors.push(format!("Error importando {}: {e}", package.package_id));
+                        }
                     }
                 }
-            }
-            Err(e) => {
-                errors.push(format!("No se pudo leer ZIP {}: {e}", package.path));
+                Err(e) => {
+                    errors.push(format!("No se pudo leer ZIP {}: {e}", package.path));
+                }
             }
         }
     }
