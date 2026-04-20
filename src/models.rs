@@ -296,6 +296,9 @@ pub struct Contact {
     pub contact_type: ContactType,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rfc: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub email: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub phone: Option<String>,
@@ -442,6 +445,10 @@ pub struct Transaction {
     pub created_at: Option<DateTime>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<DateTime>,
+
+    /// Contact (client/supplier) linked to this transaction, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contact_id: Option<ObjectId>,
 
     /// UUID of the CFDI/factura that originated this transaction, if any.
     #[serde(default, skip_serializing_if = "Option::is_none")]

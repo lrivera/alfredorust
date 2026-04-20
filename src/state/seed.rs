@@ -301,6 +301,7 @@ pub(super) async fn seed_sample_finance(db: &Database, company_id: Option<Object
                 company_id: company_id.clone(),
                 name: contact.name,
                 contact_type: contact.contact_type,
+                rfc: None,
                 email: contact.email,
                 phone: contact.phone,
                 created_at: contact.created_at,
@@ -409,6 +410,7 @@ pub(super) async fn seed_sample_finance(db: &Database, company_id: Option<Object
                 is_confirmed: tx.is_confirmed,
                 created_at: tx.created_at,
                 updated_at: tx.updated_at,
+                contact_id: None,
                 cfdi_uuid: None,
                 notes: tx.notes,
             })

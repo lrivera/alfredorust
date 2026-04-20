@@ -220,6 +220,7 @@ pub async fn create_contact(
     company_id: &ObjectId,
     name: &str,
     contact_type: ContactType,
+    rfc: Option<String>,
     email: Option<String>,
     phone: Option<String>,
     notes: Option<String>,
@@ -231,6 +232,7 @@ pub async fn create_contact(
             company_id: company_id.clone(),
             name: name.to_string(),
             contact_type,
+            rfc,
             email,
             phone,
             created_at: Some(DateTime::from_system_time(SystemTime::now())),
@@ -241,6 +243,25 @@ pub async fn create_contact(
     res.inserted_id
         .as_object_id()
         .context("contact insert missing _id")
+}
+
+/// Find a contact by RFC within a company, or create it if it doesn't exist.
+pub async fn get_or_create_contact_by_rfc(
+    state: &AppState,
+    company_id: &ObjectId,
+    rfc: &str,
+    name: &str,
+    contact_type: ContactType,
+) -> Result<ObjectId> {
+    if let Some(existing) = state
+        .contacts
+        .find_one(doc! { "company_id": company_id, "rfc": rfc })
+        .await?
+    {
+        return existing.id.context("contact missing _id");
+    }
+    create_contact(state, company_id, name, contact_type, Some(rfc.to_string()), None, None, None)
+        .await
 }
 
 pub async fn update_contact(
@@ -602,6 +623,7 @@ pub async fn create_transaction(
     is_confirmed: bool,
     notes: Option<String>,
     cfdi_uuid: Option<String>,
+    contact_id: Option<ObjectId>,
 ) -> Result<ObjectId> {
     validate_transaction_links(
         state,
@@ -630,6 +652,7 @@ pub async fn create_transaction(
             is_confirmed,
             created_at: Some(DateTime::from_system_time(SystemTime::now())),
             updated_at: None,
+            contact_id,
             cfdi_uuid,
             notes,
         })

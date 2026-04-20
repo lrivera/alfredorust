@@ -154,6 +154,7 @@ pub async fn contacts_create(
         &company_id,
         form.name.trim(),
         contact_type,
+        None,
         email,
         phone,
         notes,

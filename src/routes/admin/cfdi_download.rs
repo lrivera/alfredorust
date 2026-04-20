@@ -12,10 +12,10 @@ use tokio::fs;
 
 use crate::{
     cfdi,
-    models::{FlowType, TransactionType},
+    models::{ContactType, FlowType, TransactionType},
     sat::{CfdiDownloadRequest, DownloadType, download_cfdis},
     session::SessionUser,
-    state::{AppState, create_transaction, get_or_create_category, get_sat_config},
+    state::{AppState, create_transaction, get_or_create_category, get_or_create_contact_by_rfc, get_sat_config},
 };
 
 /// Counter tracking whether a transaction was created or updated.
@@ -168,6 +168,21 @@ pub async fn company_cfdi_download(
 
         let amount: f64 = cfdi_item.total.parse().unwrap_or(0.0);
         let date = parse_cfdi_date(&cfdi_item.fecha);
+
+        // For Ingresos the client is the Receptor; for Egresos it's the Emisor.
+        let (contact_rfc, contact_name, contact_type) = match cfdi_item.tipo_de_comprobante.as_str() {
+            "I" => (cfdi_item.receptor_rfc.as_str(), cfdi_item.receptor_nombre.as_str(), ContactType::Customer),
+            _   => (cfdi_item.emisor_rfc.as_str(),   cfdi_item.emisor_nombre.as_str(),   ContactType::Supplier),
+        };
+
+        let contact_id = if !contact_rfc.is_empty() {
+            get_or_create_contact_by_rfc(&state, &company_object_id, contact_rfc, contact_name, contact_type)
+                .await
+                .ok()
+        } else {
+            None
+        };
+
         let description = match cfdi_item.tipo_de_comprobante.as_str() {
             "I" => format!("{} — {}", cfdi_item.emisor_nombre, cfdi_item.uuid),
             _ => format!("{} — {}", cfdi_item.receptor_nombre, cfdi_item.uuid),
@@ -193,6 +208,7 @@ pub async fn company_cfdi_download(
                         "description": &description,
                         "transaction_type": tx_type.as_str(),
                         "category_id": category_id,
+                        "contact_id": &contact_id,
                         "updated_at": bson::DateTime::now(),
                     }},
                 )
@@ -221,6 +237,7 @@ pub async fn company_cfdi_download(
                 true,
                 None,
                 Some(cfdi_item.uuid.clone()),
+                contact_id,
             )
             .await
             {
