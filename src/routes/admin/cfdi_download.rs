@@ -17,7 +17,7 @@ use crate::{
     sat::{CfdiDownloadRequest, DownloadType, download_cfdis},
     session::SessionUser,
     state::{
-        AppState, CfdiJobStatus, create_transaction, get_or_create_category,
+        AppState, CfdiJobStatus, create_transaction_from_cfdi, get_or_create_category,
         get_or_create_contact_by_rfc, get_sat_config,
     },
 };
@@ -230,7 +230,7 @@ async fn run_download(
                 Err(e) => { errors.push(format!("Error actualizando {}: {e}", cfdi_item.uuid)); tx_skipped += 1; continue; }
             }
         } else {
-            match create_transaction(state, company_object_id, date, &description, tx_type, category_id, None, None, amount, None, true, None, Some(cfdi_item.uuid.clone()), contact_id).await {
+            match create_transaction_from_cfdi(state, company_object_id, date, &description, tx_type, category_id, amount, None, Some(cfdi_item.uuid.clone()), contact_id).await {
                 Ok(_) => TxOutcome::Created,
                 Err(e) => { errors.push(format!("Error transacción {}: {e}", cfdi_item.uuid)); tx_skipped += 1; continue; }
             }

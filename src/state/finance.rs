@@ -667,6 +667,45 @@ pub async fn create_transaction(
         .context("transaction insert missing _id")
 }
 
+pub async fn create_transaction_from_cfdi(
+    state: &AppState,
+    company_id: &ObjectId,
+    date: DateTime,
+    description: &str,
+    transaction_type: TransactionType,
+    category_id: &ObjectId,
+    amount: f64,
+    notes: Option<String>,
+    cfdi_uuid: Option<String>,
+    contact_id: Option<ObjectId>,
+) -> Result<ObjectId> {
+    let res = state
+        .transactions
+        .insert_one(Transaction {
+            id: None,
+            company_id: company_id.clone(),
+            date,
+            description: description.to_string(),
+            transaction_type,
+            category_id: category_id.clone(),
+            account_from_id: None,
+            account_to_id: None,
+            amount,
+            planned_entry_id: None,
+            is_confirmed: true,
+            created_at: Some(DateTime::from_system_time(SystemTime::now())),
+            updated_at: None,
+            contact_id,
+            cfdi_uuid,
+            notes,
+        })
+        .await?;
+
+    res.inserted_id
+        .as_object_id()
+        .context("transaction insert missing _id")
+}
+
 pub async fn update_transaction(
     state: &AppState,
     id: &ObjectId,
