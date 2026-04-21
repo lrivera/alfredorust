@@ -282,14 +282,15 @@ pub async fn get_or_create_contact_by_rfc(
     name: &str,
     contact_type: ContactType,
 ) -> Result<ObjectId> {
+    let rfc_upper = rfc.trim().to_uppercase();
     if let Some(existing) = state
         .contacts
-        .find_one(doc! { "company_id": company_id, "rfc": rfc })
+        .find_one(doc! { "company_id": company_id, "rfc": &rfc_upper })
         .await?
     {
         return existing.id.context("contact missing _id");
     }
-    create_contact(state, company_id, name, contact_type, Some(rfc.to_string()), None, None, None)
+    create_contact(state, company_id, name, contact_type, Some(rfc_upper), None, None, None)
         .await
 }
 
