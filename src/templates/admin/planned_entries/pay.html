@@ -1,0 +1,62 @@
+{% extends "layouts/base.html" %}
+{% block title %}Registrar pago — {{ entry_name }}{% endblock %}
+{% block content %}
+  <div class="max-w-lg space-y-6">
+    <div>
+      <h1 class="text-2xl font-semibold text-slate-800">Registrar pago</h1>
+      <p class="mt-1 text-sm text-slate-500">{{ entry_name }}</p>
+    </div>
+
+    {% if errors.is_some() %}
+    <div class="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+      {{ errors.as_ref().unwrap() }}
+    </div>
+    {% endif %}
+
+    <form method="post" action="/admin/planned_entries/{{ entry_id }}/pay"
+          class="space-y-5 rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div class="space-y-2">
+          <label for="paid_at" class="block text-sm font-medium text-slate-600">Fecha de pago</label>
+          <input id="paid_at" name="paid_at" type="date" value="{{ paid_at }}" required
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40" />
+        </div>
+
+        <div class="space-y-2">
+          <label for="amount" class="block text-sm font-medium text-slate-600">Monto real pagado</label>
+          <input id="amount" name="amount" type="number" step="0.01" min="0" value="{{ amount }}" required
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40" />
+          {% if original_amount > 0.0 %}
+          <p class="text-xs text-slate-400">Estimado original: ${{ original_amount }}</p>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="space-y-2">
+        <label for="account_id" class="block text-sm font-medium text-slate-600">Cuenta</label>
+        <select id="account_id" name="account_id" required
+          class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40">
+          <option value="">— Selecciona una cuenta —</option>
+          {% for a in accounts %}
+          <option value="{{ a.value }}" {% if a.selected %}selected{% endif %}>{{ a.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="space-y-2">
+        <label for="notes" class="block text-sm font-medium text-slate-600">Notas <span class="text-slate-400 font-normal">(opcional)</span></label>
+        <textarea id="notes" name="notes" rows="2"
+          class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40"></textarea>
+      </div>
+
+      <div class="flex items-center justify-end gap-3">
+        <a href="/admin/planned_entries" class="text-sm font-medium text-slate-500 hover:text-slate-700">Cancelar</a>
+        <button type="submit"
+          class="inline-flex items-center rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700">
+          Registrar pago
+        </button>
+      </div>
+    </form>
+  </div>
+{% endblock %}

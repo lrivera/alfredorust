@@ -566,7 +566,9 @@ pub async fn create_planned_entry(
             account_expected_id: account_expected_id.clone(),
             contact_id,
             amount_estimated,
+            original_amount_estimated: None,
             due_date,
+            original_due_date: None,
             status: PlannedStatus::Planned,
             created_at: Some(DateTime::from_system_time(SystemTime::now())),
             updated_at: None,
@@ -621,6 +623,75 @@ pub async fn update_planned_entry(
 
 pub async fn delete_planned_entry(state: &AppState, id: &ObjectId) -> Result<()> {
     state.planned_entries.delete_one(doc! { "_id": id }).await?;
+    Ok(())
+}
+
+/// Pay a planned entry: saves original values (first time only), aligns the entry
+/// to the real amount/date, and creates a linked transaction.
+pub async fn pay_planned_entry(
+    state: &AppState,
+    id: &ObjectId,
+    company_id: &ObjectId,
+    account_id: &ObjectId,
+    paid_amount: f64,
+    paid_date: DateTime,
+    notes: Option<String>,
+) -> Result<()> {
+    let pe = state
+        .planned_entries
+        .find_one(doc! { "_id": id })
+        .await?
+        .context("planned entry not found")?;
+
+    let now = DateTime::from_system_time(SystemTime::now());
+
+    // Snapshot originals only on the first payment
+    let mut set_doc = doc! {
+        "amount_estimated": paid_amount,
+        "due_date": paid_date,
+        "updated_at": now,
+    };
+    if pe.original_amount_estimated.is_none() {
+        set_doc.insert("original_amount_estimated", pe.amount_estimated);
+    }
+    if pe.original_due_date.is_none() {
+        set_doc.insert("original_due_date", pe.due_date);
+    }
+
+    state
+        .planned_entries
+        .update_one(doc! { "_id": id }, doc! { "$set": set_doc })
+        .await?;
+
+    let (account_from_id, account_to_id) = match pe.flow_type {
+        FlowType::Expense => (Some(account_id.clone()), None),
+        FlowType::Income  => (None, Some(account_id.clone())),
+    };
+    let tx_type = match pe.flow_type {
+        FlowType::Expense => TransactionType::Expense,
+        FlowType::Income  => TransactionType::Income,
+    };
+
+    create_transaction(
+        state,
+        company_id,
+        paid_date,
+        &pe.name,
+        tx_type,
+        &pe.category_id,
+        account_from_id,
+        account_to_id,
+        paid_amount,
+        Some(id.clone()),
+        true,
+        notes,
+        None,
+        pe.contact_id,
+        None,
+        None,
+    )
+    .await?;
+
     Ok(())
 }
 
@@ -1206,7 +1277,9 @@ async fn generate_planned_entries_for_plan(
                 account_expected_id: plan.account_expected_id.clone(),
                 contact_id: plan.contact_id.clone(),
                 amount_estimated: plan.amount_estimated,
+                original_amount_estimated: None,
                 due_date: due,
+                original_due_date: None,
                 status: PlannedStatus::Planned,
                 created_at: Some(DateTime::from_system_time(SystemTime::now())),
                 updated_at: None,

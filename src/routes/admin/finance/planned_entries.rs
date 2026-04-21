@@ -16,7 +16,7 @@ use crate::{
     session::SessionUser,
     state::{
         AppState, create_planned_entry, delete_planned_entry, get_planned_entry_by_id,
-        list_planned_entries, update_planned_entry,
+        list_planned_entries, pay_planned_entry, update_planned_entry,
     },
 };
 
@@ -35,7 +35,9 @@ struct PlannedEntryRow {
     company: String,
     flow_type: String,
     amount: f64,
+    original_amount: f64,
     status: String,
+    status_label: String,
 }
 
 #[derive(Template)]
@@ -100,7 +102,9 @@ pub async fn planned_entries_index(
                 company: active_name.clone(),
                 flow_type: flow_type_value(&e.flow_type).to_string(),
                 amount: e.amount_estimated,
+                original_amount: e.original_amount_estimated.unwrap_or(0.0),
                 status: planned_status_value(&e.status).to_string(),
+                status_label: planned_status_label(&e.status).to_string(),
             })
         })
         .collect();
@@ -469,6 +473,97 @@ pub async fn planned_entries_delete(
     }
 
     match delete_planned_entry(&state, &object_id).await {
+        Ok(_) => Redirect::to("/admin/planned_entries").into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+// ── Pay ────────────────────────────────────────────────────────────────────
+
+#[derive(Template)]
+#[template(path = "admin/planned_entries/pay.html")]
+struct PayFormTemplate {
+    entry_id: String,
+    entry_name: String,
+    paid_at: String,
+    amount: String,
+    original_amount: f64,
+    accounts: Vec<SimpleOption>,
+    errors: Option<String>,
+}
+
+pub async fn planned_entries_pay_form(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Html<String>, StatusCode> {
+    let company_id = require_admin_active(&session_user)?;
+    let oid = ObjectId::from_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let entry = get_planned_entry_by_id(&state, &oid)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    ensure_same_company(&entry.company_id, &company_id)?;
+
+    let accounts = account_options(&state, None, &company_id).await?;
+
+    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+
+    render(PayFormTemplate {
+        entry_id: id,
+        entry_name: entry.name,
+        paid_at: today,
+        amount: entry.amount_estimated.to_string(),
+        original_amount: entry.original_amount_estimated.unwrap_or(0.0),
+        accounts,
+        errors: None,
+    })
+}
+
+#[derive(Deserialize)]
+pub struct PayFormData {
+    paid_at: String,
+    amount: String,
+    account_id: String,
+    #[serde(default)]
+    notes: Option<String>,
+}
+
+pub async fn planned_entries_pay(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Form(form): Form<PayFormData>,
+) -> impl IntoResponse {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(s) => return s.into_response(),
+    };
+    let oid = match ObjectId::from_str(&id) {
+        Ok(id) => id,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    match get_planned_entry_by_id(&state, &oid).await {
+        Ok(Some(e)) => { if let Err(s) = ensure_same_company(&e.company_id, &company_id) { return s.into_response(); } }
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+
+    let account_id = match parse_object_id(&form.account_id, "Cuenta") {
+        Ok(id) => id,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    let paid_amount = match parse_f64_field(&form.amount, "Monto") {
+        Ok(v) => v,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    let paid_date = match parse_date_field(&form.paid_at) {
+        Some(d) => d,
+        None => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    let notes = clean_opt(form.notes);
+
+    match pay_planned_entry(&state, &oid, &company_id, &account_id, paid_amount, paid_date, notes).await {
         Ok(_) => Redirect::to("/admin/planned_entries").into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }

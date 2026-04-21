@@ -177,6 +177,10 @@ async fn main() {
             post(routes::planned_entries_delete),
         )
         .route(
+            "/admin/planned_entries/{id}/pay",
+            get(routes::planned_entries_pay_form).post(routes::planned_entries_pay),
+        )
+        .route(
             "/admin/transactions",
             get(routes::transactions_index).post(routes::transactions_create),
         )

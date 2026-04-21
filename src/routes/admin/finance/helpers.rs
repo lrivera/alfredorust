@@ -279,6 +279,16 @@ pub(super) fn planned_status_value(value: &PlannedStatus) -> &'static str {
     }
 }
 
+pub(super) fn planned_status_label(value: &PlannedStatus) -> &'static str {
+    match value {
+        PlannedStatus::Planned => "Planificado",
+        PlannedStatus::PartiallyCovered => "Parcial",
+        PlannedStatus::Covered => "Cubierto",
+        PlannedStatus::Overdue => "Vencido",
+        PlannedStatus::Cancelled => "Cancelado",
+    }
+}
+
 pub(super) fn transaction_type_value(value: &TransactionType) -> &'static str {
     match value {
         TransactionType::Income => "income",
@@ -453,4 +463,14 @@ pub(super) fn opt_to_string(opt: &Option<ObjectId>) -> Option<String> {
 pub(super) fn datetime_to_string(dt: &DateTime) -> String {
     dt.try_to_rfc3339_string()
         .unwrap_or_else(|_| dt.to_string())
+}
+
+/// Parse a `YYYY-MM-DD` date string (from an HTML date input) into a bson DateTime at midnight UTC.
+pub(super) fn parse_date_field(s: &str) -> Option<DateTime> {
+    let s = s.trim();
+    if s.is_empty() { return None; }
+    let nd = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()?;
+    let dt = nd.and_hms_opt(0, 0, 0)?;
+    let utc = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc);
+    Some(DateTime::from_millis(utc.timestamp_millis()))
 }

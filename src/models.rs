@@ -395,8 +395,16 @@ pub struct PlannedEntry {
 
     pub amount_estimated: f64,
 
+    /// Snapshot of amount_estimated before the first real payment aligned it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub original_amount_estimated: Option<f64>,
+
     /// Due date of this specific commitment (e.g. 10th of November).
     pub due_date: DateTime,
+
+    /// Snapshot of due_date before the first real payment aligned it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub original_due_date: Option<DateTime>,
 
     pub status: PlannedStatus,
 
