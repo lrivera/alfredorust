@@ -17,8 +17,8 @@ use crate::{
     sat::{CfdiDownloadRequest, DownloadType, download_cfdis},
     session::SessionUser,
     state::{
-        AppState, CfdiJobStatus, create_transaction_from_cfdi, get_or_create_category,
-        get_or_create_contact_by_rfc, get_sat_config,
+        AppState, CfdiJobStatus, create_transaction, get_or_create_category,
+        get_or_create_contact_by_rfc, get_or_create_sat_account, get_sat_config,
     },
 };
 
@@ -174,6 +174,7 @@ async fn run_download(
 
     let income_category = get_or_create_category(state, company_object_id, "CFDIs Importados (Ingresos)", FlowType::Income).await;
     let expense_category = get_or_create_category(state, company_object_id, "CFDIs Importados (Egresos)", FlowType::Expense).await;
+    let sat_account = get_or_create_sat_account(state, company_object_id).await;
 
     for cfdi_item in &all_imported {
         let (tx_type, category_result) = match cfdi_item.tipo_de_comprobante.as_str() {
@@ -191,8 +192,23 @@ async fn run_download(
             }
         };
 
+        let sat_account_id = match &sat_account {
+            Ok(id) => id.clone(),
+            Err(e) => {
+                errors.push(format!("Error cuenta SAT: {e}"));
+                tx_skipped += 1;
+                continue;
+            }
+        };
+
         let amount: f64 = cfdi_item.total.parse().unwrap_or(0.0);
         let date = parse_cfdi_date(&cfdi_item.fecha);
+
+        let (account_from_id, account_to_id) = match tx_type {
+            TransactionType::Income  => (None, Some(sat_account_id)),
+            TransactionType::Expense => (Some(sat_account_id), None),
+            TransactionType::Transfer => (None, None),
+        };
 
         let (contact_rfc, contact_name, contact_type) = match cfdi_item.tipo_de_comprobante.as_str() {
             "I" => (cfdi_item.receptor_rfc.as_str(), cfdi_item.receptor_nombre.as_str(), ContactType::Customer),
@@ -221,6 +237,8 @@ async fn run_download(
                     "description": &description,
                     "transaction_type": tx_type.as_str(),
                     "category_id": category_id,
+                    "account_from_id": &account_from_id,
+                    "account_to_id": &account_to_id,
                     "contact_id": &contact_id,
                     "updated_at": bson::DateTime::now(),
                 }},
@@ -230,7 +248,7 @@ async fn run_download(
                 Err(e) => { errors.push(format!("Error actualizando {}: {e}", cfdi_item.uuid)); tx_skipped += 1; continue; }
             }
         } else {
-            match create_transaction_from_cfdi(state, company_object_id, date, &description, tx_type, category_id, amount, None, Some(cfdi_item.uuid.clone()), contact_id).await {
+            match create_transaction(state, company_object_id, date, &description, tx_type, category_id, account_from_id, account_to_id, amount, None, true, None, Some(cfdi_item.uuid.clone()), contact_id).await {
                 Ok(_) => TxOutcome::Created,
                 Err(e) => { errors.push(format!("Error transacción {}: {e}", cfdi_item.uuid)); tx_skipped += 1; continue; }
             }

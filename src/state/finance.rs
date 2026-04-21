@@ -62,6 +62,35 @@ pub async fn create_account(
         .context("account insert missing _id")
 }
 
+pub async fn get_or_create_sat_account(
+    state: &AppState,
+    company_id: &ObjectId,
+) -> Result<ObjectId> {
+    if let Some(acc) = state
+        .accounts
+        .find_one(doc! { "company_id": company_id, "name": "SAT" })
+        .await?
+    {
+        return acc.id.context("sat account missing _id");
+    }
+    let currency = company_default_currency(state, company_id).await.unwrap_or_else(|_| "MXN".to_string());
+    let res = state
+        .accounts
+        .insert_one(Account {
+            id: None,
+            company_id: company_id.clone(),
+            name: "SAT".to_string(),
+            account_type: AccountType::Other,
+            currency,
+            is_active: true,
+            created_at: Some(DateTime::from_system_time(SystemTime::now())),
+            updated_at: None,
+            notes: Some("Cuenta automática para CFDIs importados".to_string()),
+        })
+        .await?;
+    res.inserted_id.as_object_id().context("sat account insert missing _id")
+}
+
 pub async fn update_account(
     state: &AppState,
     id: &ObjectId,
