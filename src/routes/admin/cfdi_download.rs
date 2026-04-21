@@ -202,6 +202,7 @@ async fn run_download(
         };
 
         let amount: f64 = cfdi_item.total.parse().unwrap_or(0.0);
+        if amount == 0.0 { tx_skipped += 1; continue; }
         let date = parse_cfdi_date(&cfdi_item.fecha);
 
         let (account_from_id, account_to_id) = match tx_type {
