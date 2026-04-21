@@ -269,13 +269,18 @@
             .join("");
           const plannedItems = bucket.planned_entries
             .map(
-              (pe) =>
-                `<div class="flex items-center justify-between gap-2 rounded border border-dashed border-slate-200 px-2 py-1">
-                  <span class="font-semibold ${pe.flow_type === "income" ? "text-emerald-700" : "text-rose-700"}">
+              (pe) => {
+                const payBtn = (pe.status !== "covered" && pe.status !== "cancelled")
+                  ? `<a href="/admin/planned_entries/${pe.id}/pay" class="ml-2 shrink-0 rounded px-2 py-0.5 text-[11px] font-semibold bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 hover:bg-emerald-100 transition">Pagar</a>`
+                  : "";
+                return `<div class="flex items-center justify-between gap-2 rounded border border-dashed border-slate-200 px-2 py-1">
+                  <span class="font-semibold shrink-0 ${pe.flow_type === "income" ? "text-emerald-700" : "text-rose-700"}">
                     ${pe.flow_type === "income" ? "+" : "-"}${formatter.format(pe.amount_estimated)}
                   </span>
-                  <span class="truncate text-slate-700" title="${pe.name} · ${pe.status}">${pe.name} · ${pe.status}</span>
-                </div>`
+                  <span class="truncate text-slate-700 flex-1" title="${pe.name} · ${pe.status}">${pe.name} · ${pe.status}</span>
+                  ${payBtn}
+                </div>`;
+              }
             )
             .join("");
           const hasContent = txItems || plannedItems;
