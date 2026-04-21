@@ -8,7 +8,7 @@ use tokio::sync::Mutex;
 
 use crate::models::{
     Account, Category, Company, Contact, Forecast, PlannedEntry, RecurringPlan, SatConfig,
-    Session, Transaction, User, UserCompany,
+    ServiceOrder, Session, Transaction, User, UserCompany,
 };
 use bson::Document;
 
@@ -34,11 +34,13 @@ mod seed;
 mod users;
 mod companies;
 mod finance;
+mod orders;
 mod sat_configs;
 
 pub use users::*;
 pub use companies::*;
 pub use finance::*;
+pub use orders::*;
 pub use sat_configs::*;
 
 pub const SESSION_TTL_SECONDS: u64 = 60 * 60 * 24; // 1 day
@@ -60,6 +62,7 @@ pub struct AppState {
     pub forecasts: Collection<Forecast>,
     pub cfdis: Collection<Document>,
     pub sat_configs: Collection<SatConfig>,
+    pub orders: Collection<ServiceOrder>,
 }
 
 pub async fn init_state() -> Result<AppState> {
@@ -95,5 +98,6 @@ pub async fn init_state() -> Result<AppState> {
         forecasts: db.collection::<Forecast>("forecasts"),
         cfdis: db.collection::<Document>("cfdis"),
         sat_configs: db.collection::<SatConfig>("sat_configs"),
+        orders: db.collection::<ServiceOrder>("service_orders"),
     })
 }

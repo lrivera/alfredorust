@@ -466,6 +466,87 @@ pub struct Transaction {
     pub notes: Option<String>,
 }
 
+/// ---------- SERVICE ORDERS ----------
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum OrderStatus {
+    Pending,
+    Confirmed,
+    InProgress,
+    Completed,
+    Cancelled,
+}
+
+impl OrderStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            OrderStatus::Pending    => "pending",
+            OrderStatus::Confirmed  => "confirmed",
+            OrderStatus::InProgress => "in_progress",
+            OrderStatus::Completed  => "completed",
+            OrderStatus::Cancelled  => "cancelled",
+        }
+    }
+    pub fn label(&self) -> &'static str {
+        match self {
+            OrderStatus::Pending    => "Pendiente",
+            OrderStatus::Confirmed  => "Confirmada",
+            OrderStatus::InProgress => "En proceso",
+            OrderStatus::Completed  => "Completada",
+            OrderStatus::Cancelled  => "Cancelada",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrderItem {
+    pub description: String,
+    pub quantity: f64,
+    pub unit_price: f64,
+}
+
+impl OrderItem {
+    pub fn subtotal(&self) -> f64 {
+        self.quantity * self.unit_price
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServiceOrder {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+
+    pub company_id: ObjectId,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contact_id: Option<ObjectId>,
+
+    pub title: String,
+    pub status: OrderStatus,
+    pub amount: f64,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scheduled_at: Option<DateTime>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completed_at: Option<DateTime>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transaction_id: Option<ObjectId>,
+
+    #[serde(default)]
+    pub items: Vec<OrderItem>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<DateTime>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<DateTime>,
+}
+
 /// Forecast: optional snapshot of a projection (3, 6, 12 months, scenarios, etc.).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Forecast {

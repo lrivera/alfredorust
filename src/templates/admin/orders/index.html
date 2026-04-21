@@ -1,0 +1,80 @@
+{% extends "layouts/base.html" %}
+{% block title %}Órdenes de servicio{% endblock %}
+{% block content %}
+  <div class="flex items-center justify-between pb-6">
+    <div>
+      <h1 class="text-2xl font-semibold text-slate-800">Órdenes de servicio</h1>
+      <p class="mt-1 text-sm text-slate-500">Citas, cotizaciones y trabajos para clientes.</p>
+    </div>
+    <a href="/admin/orders/new"
+      class="inline-flex items-center rounded-md bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700">
+      Nueva orden
+    </a>
+  </div>
+
+  <div class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+    <table class="min-w-full divide-y divide-slate-200 text-sm">
+      <thead class="bg-slate-50 text-left font-semibold text-slate-600">
+        <tr>
+          <th class="px-4 py-2">Título</th>
+          <th class="px-4 py-2">Cliente</th>
+          <th class="px-4 py-2">Estado</th>
+          <th class="px-4 py-2">Monto</th>
+          <th class="px-4 py-2">Fecha</th>
+          <th class="px-4 py-2 text-right">Acciones</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for o in orders %}
+        <tr class="transition hover:bg-slate-50">
+          <td class="px-4 py-3 font-medium text-slate-800">{{ o.title }}</td>
+          <td class="px-4 py-3 text-slate-600">{{ o.contact_name }}</td>
+          <td class="px-4 py-3">
+            <span class="rounded-full px-2 py-0.5 text-xs font-medium
+              {% if o.status == "completed" %}bg-emerald-50 text-emerald-700
+              {% elif o.status == "cancelled" %}bg-slate-100 text-slate-500
+              {% elif o.status == "in_progress" %}bg-amber-50 text-amber-700
+              {% elif o.status == "confirmed" %}bg-sky-50 text-sky-700
+              {% else %}bg-slate-50 text-slate-600{% endif %}">
+              {{ o.status_label }}
+            </span>
+          </td>
+          <td class="px-4 py-3 font-medium text-slate-800">${{ o.amount }}</td>
+          <td class="px-4 py-3 text-slate-500">{{ o.scheduled_at }}</td>
+          <td class="px-4 py-3 text-right">
+            <div class="flex justify-end gap-2">
+              {% if o.status != "completed" && o.status != "cancelled" %}
+              <form method="post" action="/admin/orders/{{ o.id }}/complete"
+                onsubmit="return confirm('¿Marcar como completada y registrar el pago?')">
+                <button type="submit"
+                  class="inline-flex items-center rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100">
+                  Completar
+                </button>
+              </form>
+              {% endif %}
+              {% if o.has_transaction %}
+              <span class="inline-flex items-center rounded-md border border-slate-200 px-3 py-1.5 text-xs text-slate-400">Pagada</span>
+              {% endif %}
+              <a href="/admin/orders/{{ o.id }}/edit"
+                class="inline-flex items-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-sky-400 hover:text-sky-600">
+                Editar
+              </a>
+              <form method="post" action="/admin/orders/{{ o.id }}/delete"
+                onsubmit="return confirm('¿Eliminar esta orden?')">
+                <button type="submit"
+                  class="inline-flex items-center rounded-md border border-rose-200 bg-rose-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-rose-600">
+                  Eliminar
+                </button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="6" class="px-4 py-6 text-center text-sm text-slate-500">No hay órdenes registradas.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

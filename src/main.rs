@@ -207,6 +207,12 @@ async fn main() {
             "/admin/forecasts/{id}/delete",
             post(routes::forecasts_delete),
         )
+        .route("/admin/orders", get(routes::orders_index).post(routes::orders_create))
+        .route("/admin/orders/new", get(routes::orders_new))
+        .route("/admin/orders/{id}/edit", get(routes::orders_edit))
+        .route("/admin/orders/{id}/update", post(routes::orders_update))
+        .route("/admin/orders/{id}/delete", post(routes::orders_delete))
+        .route("/admin/orders/{id}/complete", post(routes::orders_complete))
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             session::require_session,
