@@ -126,7 +126,8 @@ async fn run_download(
     start: String,
     end: String,
 ) -> CfdiJobStatus {
-    let mut all_imported = Vec::new();
+    // Store (dl_type, cfdi) so we know whether each cfdi was issued or received
+    let mut all_imported: Vec<(DownloadType, crate::cfdi::ImportedCfdi)> = Vec::new();
     let mut errors = Vec::new();
 
     for dl_type in dl_types {
@@ -158,7 +159,7 @@ async fn run_download(
                     match cfdi::import_zip(&state.cfdis, company_id, &zip_bytes).await {
                         Ok(imported) => {
                             eprintln!("[cfdi] imported {} from {}", imported.len(), package.package_id);
-                            all_imported.extend(imported);
+                            all_imported.extend(imported.into_iter().map(|c| (dl_type, c)));
                         }
                         Err(e) => errors.push(format!("Error importando {}: {e}", package.package_id)),
                     }
@@ -176,11 +177,19 @@ async fn run_download(
     let expense_category = get_or_create_category(state, company_object_id, "CFDIs Importados (Egresos)", FlowType::Expense).await;
     let sat_account = get_or_create_sat_account(state, company_object_id).await;
 
-    for cfdi_item in &all_imported {
-        let (tx_type, category_result) = match cfdi_item.tipo_de_comprobante.as_str() {
-            "I" => (TransactionType::Income, &income_category),
-            "E" => (TransactionType::Expense, &expense_category),
-            _ => { tx_skipped += 1; continue; }
+    for (dl_type, cfdi_item) in &all_imported {
+        // Only process Ingreso/Egreso; skip Pago, Traslado, Nómina, etc.
+        if cfdi_item.tipo_de_comprobante != "I" && cfdi_item.tipo_de_comprobante != "E" {
+            tx_skipped += 1;
+            continue;
+        }
+
+        // Classify based on download direction, not TipoDeComprobante.
+        // Issued = we are the Emisor = Income for us.
+        // Received = we are the Receptor = Expense for us.
+        let (tx_type, category_result) = match dl_type {
+            DownloadType::Issued   => (TransactionType::Income,  &income_category),
+            DownloadType::Received => (TransactionType::Expense, &expense_category),
         };
 
         let category_id = match category_result {
@@ -211,20 +220,26 @@ async fn run_download(
             TransactionType::Transfer => (None, None),
         };
 
-        let (contact_rfc, contact_name, contact_type) = match cfdi_item.tipo_de_comprobante.as_str() {
-            "I" => (cfdi_item.receptor_rfc.as_str(), cfdi_item.receptor_nombre.as_str(), ContactType::Customer),
-            _   => (cfdi_item.emisor_rfc.as_str(),   cfdi_item.emisor_nombre.as_str(),   ContactType::Supplier),
+        // Issued: customer = Receptor (who we billed). Received: supplier = Emisor (who billed us).
+        let (contact_rfc, contact_name, contact_type, description) = match dl_type {
+            DownloadType::Issued => (
+                cfdi_item.receptor_rfc.as_str(),
+                cfdi_item.receptor_nombre.as_str(),
+                ContactType::Customer,
+                format!("{} — {}", cfdi_item.receptor_nombre, cfdi_item.uuid),
+            ),
+            DownloadType::Received => (
+                cfdi_item.emisor_rfc.as_str(),
+                cfdi_item.emisor_nombre.as_str(),
+                ContactType::Supplier,
+                format!("{} — {}", cfdi_item.emisor_nombre, cfdi_item.uuid),
+            ),
         };
 
         let contact_id = if !contact_rfc.is_empty() {
             get_or_create_contact_by_rfc(state, company_object_id, contact_rfc, contact_name, contact_type).await.ok()
         } else {
             None
-        };
-
-        let description = match cfdi_item.tipo_de_comprobante.as_str() {
-            "I" => format!("{} — {}", cfdi_item.emisor_nombre, cfdi_item.uuid),
-            _   => format!("{} — {}", cfdi_item.receptor_nombre, cfdi_item.uuid),
         };
 
         let existing = state.transactions.find_one(bson::doc! { "cfdi_uuid": &cfdi_item.uuid }).await.ok().flatten();
