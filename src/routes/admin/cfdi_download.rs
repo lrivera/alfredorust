@@ -256,6 +256,8 @@ async fn run_download(
                     "account_from_id": &account_from_id,
                     "account_to_id": &account_to_id,
                     "contact_id": &contact_id,
+                    "currency": cfdi_item.moneda.as_str(),
+                    "cfdi_folio": cfdi_item.folio.as_str(),
                     "updated_at": bson::DateTime::now(),
                 }},
             ).await;
@@ -264,7 +266,9 @@ async fn run_download(
                 Err(e) => { errors.push(format!("Error actualizando {}: {e}", cfdi_item.uuid)); tx_skipped += 1; continue; }
             }
         } else {
-            match create_transaction(state, company_object_id, date, &description, tx_type, category_id, account_from_id, account_to_id, amount, None, true, None, Some(cfdi_item.uuid.clone()), contact_id).await {
+            let currency = Some(cfdi_item.moneda.clone()).filter(|s| !s.is_empty());
+            let folio = Some(cfdi_item.folio.clone()).filter(|s| !s.is_empty());
+            match create_transaction(state, company_object_id, date, &description, tx_type, category_id, account_from_id, account_to_id, amount, None, true, None, Some(cfdi_item.uuid.clone()), contact_id, currency, folio).await {
                 Ok(_) => TxOutcome::Created,
                 Err(e) => { errors.push(format!("Error transacción {}: {e}", cfdi_item.uuid)); tx_skipped += 1; continue; }
             }

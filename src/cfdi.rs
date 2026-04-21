@@ -19,6 +19,9 @@ pub struct ImportedCfdi {
     pub emisor_nombre: String,
     pub receptor_rfc: String,
     pub receptor_nombre: String,
+    pub moneda: String,
+    /// Serie-Folio combined, e.g. "REGT-474850" or just "474850" if no serie.
+    pub folio: String,
 }
 
 /// Extract and import all CFDI XML files from a ZIP. Returns imported CFDIs.
@@ -109,6 +112,14 @@ fn parse_cfdi(doc: &Document) -> Result<(String, bson::Document, ImportedCfdi)> 
     let tipo = root.attribute("TipoDeComprobante").unwrap_or("").to_string();
     let total_str = root.attribute("Total").unwrap_or("0").to_string();
     let fecha_str = root.attribute("Fecha").unwrap_or("").to_string();
+    let moneda_str = root.attribute("Moneda").unwrap_or("MXN").to_string();
+    let serie_str = root.attribute("Serie").unwrap_or("").to_string();
+    let folio_str = root.attribute("Folio").unwrap_or("").to_string();
+    let folio_combined = match (serie_str.is_empty(), folio_str.is_empty()) {
+        (false, false) => format!("{serie_str}-{folio_str}"),
+        (true,  false) => folio_str,
+        _              => String::new(),
+    };
 
     let emisor_node = child(root, "Emisor");
     let emisor_rfc = emisor_node.and_then(|n| n.attribute("Rfc")).unwrap_or("").to_string();
@@ -172,6 +183,8 @@ fn parse_cfdi(doc: &Document) -> Result<(String, bson::Document, ImportedCfdi)> 
         emisor_nombre,
         receptor_rfc,
         receptor_nombre,
+        moneda: moneda_str,
+        folio: folio_combined,
     };
 
     Ok((uuid, out, summary))

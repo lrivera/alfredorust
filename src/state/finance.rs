@@ -653,6 +653,8 @@ pub async fn create_transaction(
     notes: Option<String>,
     cfdi_uuid: Option<String>,
     contact_id: Option<ObjectId>,
+    currency: Option<String>,
+    cfdi_folio: Option<String>,
 ) -> Result<ObjectId> {
     validate_transaction_links(
         state,
@@ -683,6 +685,8 @@ pub async fn create_transaction(
             updated_at: None,
             contact_id,
             cfdi_uuid,
+            currency,
+            cfdi_folio,
             notes,
         })
         .await?;
@@ -726,6 +730,8 @@ pub async fn create_transaction_from_cfdi(
             updated_at: None,
             contact_id,
             cfdi_uuid,
+            currency: None,
+            cfdi_folio: None,
             notes,
         })
         .await?;

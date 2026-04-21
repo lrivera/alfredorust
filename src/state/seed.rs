@@ -412,6 +412,8 @@ pub(super) async fn seed_sample_finance(db: &Database, company_id: Option<Object
                 updated_at: tx.updated_at,
                 contact_id: None,
                 cfdi_uuid: None,
+                currency: None,
+                cfdi_folio: None,
                 notes: tx.notes,
             })
             .await?;

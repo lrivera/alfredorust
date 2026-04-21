@@ -454,6 +454,14 @@ pub struct Transaction {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cfdi_uuid: Option<String>,
 
+    /// Currency code from the CFDI (e.g. "MXN", "USD").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub currency: Option<String>,
+
+    /// Serie-Folio of the CFDI (e.g. "REGT-474850").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cfdi_folio: Option<String>,
+
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
 }
