@@ -24,6 +24,15 @@
         </div>
 
         <div class="space-y-2">
+          <label for="rfc" class="block text-sm font-medium text-slate-600">RFC</label>
+          <input id="rfc" name="rfc" value="{{ rfc }}" placeholder="ej. SMN930802FN9"
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-mono shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40" />
+          <p class="text-xs text-slate-400">Se usa para empatar automáticamente con CFDIs importados.</p>
+        </div>
+      </div>
+
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div class="space-y-2">
           <label for="contact_type" class="block text-sm font-medium text-slate-600">Tipo</label>
           <select id="contact_type" name="contact_type" required
             class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40">

@@ -38,6 +38,7 @@ struct ContactRow {
 struct ContactFormTemplate {
     action: String,
     name: String,
+    rfc: String,
     contact_type: String,
     email: String,
     phone: String,
@@ -53,6 +54,8 @@ pub struct ContactFormData {
     name: String,
     company_id: String,
     contact_type: String,
+    #[serde(default)]
+    rfc: Option<String>,
     #[serde(default)]
     email: Option<String>,
     #[serde(default)]
@@ -102,6 +105,7 @@ pub async fn contacts_new(
     render(ContactFormTemplate {
         action: "/admin/contacts".into(),
         name: String::new(),
+        rfc: String::new(),
         contact_type: "customer".into(),
         email: String::new(),
         phone: String::new(),
@@ -131,6 +135,7 @@ pub async fn contacts_create(
             return render(ContactFormTemplate {
                 action: "/admin/contacts".into(),
                 name: form.name.clone(),
+                rfc: form.rfc.clone().unwrap_or_default(),
                 contact_type: form.contact_type.clone(),
                 email: form.email.clone().unwrap_or_default(),
                 phone: form.phone.clone().unwrap_or_default(),
@@ -145,6 +150,7 @@ pub async fn contacts_create(
         }
     };
 
+    let rfc = clean_opt(form.rfc).map(|s| s.trim().to_uppercase());
     let email = clean_opt(form.email);
     let phone = clean_opt(form.phone);
     let notes = clean_opt(form.notes);
@@ -154,7 +160,7 @@ pub async fn contacts_create(
         &company_id,
         form.name.trim(),
         contact_type,
-        None,
+        rfc,
         email,
         phone,
         notes,
@@ -185,6 +191,7 @@ pub async fn contacts_edit(
     render(ContactFormTemplate {
         action: format!("/admin/contacts/{}/update", id),
         name: contact.name,
+        rfc: contact.rfc.unwrap_or_default(),
         contact_type: contact_type_value(&contact.contact_type).to_string(),
         email: contact.email.unwrap_or_default(),
         phone: contact.phone.unwrap_or_default(),
@@ -231,6 +238,7 @@ pub async fn contacts_update(
             return render(ContactFormTemplate {
                 action: format!("/admin/contacts/{}/update", id),
                 name: form.name.clone(),
+                rfc: form.rfc.clone().unwrap_or_default(),
                 contact_type: form.contact_type.clone(),
                 email: form.email.clone().unwrap_or_default(),
                 phone: form.phone.clone().unwrap_or_default(),
@@ -245,6 +253,7 @@ pub async fn contacts_update(
         }
     };
 
+    let rfc = clean_opt(form.rfc).map(|s| s.trim().to_uppercase());
     let email = clean_opt(form.email);
     let phone = clean_opt(form.phone);
     let notes = clean_opt(form.notes);
@@ -255,6 +264,7 @@ pub async fn contacts_update(
         &company_id,
         form.name.trim(),
         contact_type,
+        rfc,
         email,
         phone,
         notes,
