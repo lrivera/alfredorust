@@ -412,6 +412,38 @@ pub async fn companies_delete(
     }
 }
 
+pub async fn companies_delete_all_cfdis(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let object_id = match ObjectId::from_str(&id) {
+        Ok(id) => id,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    if !has_admin_role_for(&session_user, &object_id) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let _ = state.cfdis.delete_many(bson::doc! { "company_id": &id }).await;
+    Redirect::to(&format!("/admin/companies/{id}/edit")).into_response()
+}
+
+pub async fn companies_delete_all_transactions(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let object_id = match ObjectId::from_str(&id) {
+        Ok(id) => id,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    if !has_admin_role_for(&session_user, &object_id) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let _ = state.transactions.delete_many(bson::doc! { "company_id": object_id }).await;
+    Redirect::to(&format!("/admin/companies/{id}/edit")).into_response()
+}
+
 fn validate_slug(slug: &str) -> Result<(), String> {
     if slug.is_empty() {
         return Ok(()); // allow fallback to slugify(name)

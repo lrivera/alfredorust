@@ -74,6 +74,15 @@ async fn main() {
             post(routes::companies_delete),
         )
         .route(
+            "/admin/companies/{id}/cfdis/delete_all",
+            post(routes::companies_delete_all_cfdis),
+        )
+        .route(
+            "/admin/companies/{id}/transactions/delete_all",
+            post(routes::companies_delete_all_transactions),
+        )
+        .route("/admin/cfdis", get(routes::cfdis_index))
+        .route(
             "/admin/companies/{id}/sat_configs",
             post(routes::sat_configs_create),
         )

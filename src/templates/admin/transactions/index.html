@@ -55,4 +55,18 @@
       </tbody>
     </table>
   </div>
+
+  {% if total_pages > 1 %}
+  <div class="mt-4 flex items-center justify-between text-sm text-slate-600">
+    <span>Página {{ page }} de {{ total_pages }} ({{ total }} movimientos)</span>
+    <div class="flex gap-2">
+      {% if page > 1 %}
+      <a href="?page={{ page - 1 }}" class="rounded-md border border-slate-300 px-3 py-1.5 hover:border-sky-400 hover:text-sky-600">← Anterior</a>
+      {% endif %}
+      {% if page < total_pages %}
+      <a href="?page={{ page + 1 }}" class="rounded-md border border-slate-300 px-3 py-1.5 hover:border-sky-400 hover:text-sky-600">Siguiente →</a>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
 {% endblock %}

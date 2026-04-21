@@ -62,6 +62,26 @@
   </div>
   {% if is_edit %}
   <div class="max-w-xl space-y-4">
+    <h2 class="text-lg font-semibold text-slate-800">Zona de pruebas</h2>
+    <div class="flex gap-3">
+      <form method="post" action="/admin/companies/{{ company_id }}/cfdis/delete_all"
+        onsubmit="return confirm('¿Borrar TODOS los CFDIs de esta compañía? Esta acción no se puede deshacer.')">
+        <button type="submit"
+          class="inline-flex items-center rounded-md border border-rose-200 bg-rose-50 px-3 py-1.5 text-sm font-medium text-rose-700 transition hover:bg-rose-100">
+          Borrar todos los CFDIs
+        </button>
+      </form>
+      <form method="post" action="/admin/companies/{{ company_id }}/transactions/delete_all"
+        onsubmit="return confirm('¿Borrar TODAS las transacciones de esta compañía? Esta acción no se puede deshacer.')">
+        <button type="submit"
+          class="inline-flex items-center rounded-md border border-rose-200 bg-rose-50 px-3 py-1.5 text-sm font-medium text-rose-700 transition hover:bg-rose-100">
+          Borrar todas las transacciones
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <div class="max-w-xl space-y-4">
     <div class="flex items-center justify-between">
       <h2 class="text-lg font-semibold text-slate-800">Configuraciones SAT (e.firma)</h2>
       <a href="/admin/companies/{{ company_id }}/sat_configs/new"
@@ -143,6 +163,18 @@
       <div id="cfdi-result" class="hidden rounded-md border px-4 py-3 text-sm"></div>
     </div>
   </div>
+  <script>
+    (() => {
+      const today = new Date();
+      const fiveYearsAgo = new Date(today);
+      fiveYearsAgo.setFullYear(today.getFullYear() - 5);
+      const fmt = d => d.toISOString().slice(0, 10);
+      const startEl = document.getElementById('cfdi-start');
+      const endEl = document.getElementById('cfdi-end');
+      if (startEl && !startEl.value) startEl.value = fmt(fiveYearsAgo);
+      if (endEl && !endEl.value) endEl.value = fmt(today);
+    })();
+  </script>
   <script>
     (() => {
       const btn = document.getElementById('cfdi-download-btn');

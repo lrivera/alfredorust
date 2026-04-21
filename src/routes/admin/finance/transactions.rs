@@ -2,7 +2,7 @@ use std::{str::FromStr, sync::Arc};
 
 use askama::Template;
 use axum::{
-    extract::{Form, Path, State},
+    extract::{Form, Path, Query, State},
     http::StatusCode,
     response::{Html, IntoResponse, Redirect},
 };
@@ -23,10 +23,15 @@ use crate::{
 use super::helpers::*;
 use super::options::{account_options, category_options, planned_entry_options};
 
+const TX_PER_PAGE: usize = 50;
+
 #[derive(Template)]
 #[template(path = "admin/transactions/index.html")]
 struct TransactionsIndexTemplate {
     transactions: Vec<TransactionRow>,
+    page: usize,
+    total_pages: usize,
+    total: usize,
 }
 
 struct TransactionRow {
@@ -77,18 +82,26 @@ pub struct TransactionFormData {
     notes: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct TxPageQuery {
+    #[serde(default = "default_tx_page")]
+    page: usize,
+}
+fn default_tx_page() -> usize { 1 }
+
 pub async fn transactions_index(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
+    Query(q): Query<TxPageQuery>,
 ) -> Result<Html<String>, StatusCode> {
     let active_company = require_admin_active(&session_user)?;
 
-    let transactions = list_transactions(&state)
+    let all = list_transactions(&state)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let active_name = session_user.user().company_name.clone();
 
-    let rows = transactions
+    let mut rows: Vec<TransactionRow> = all
         .into_iter()
         .filter(|t| t.company_id == active_company)
         .filter_map(|t| {
@@ -102,7 +115,13 @@ pub async fn transactions_index(
         })
         .collect();
 
-    render(TransactionsIndexTemplate { transactions: rows })
+    let total = rows.len();
+    let total_pages = (total + TX_PER_PAGE - 1) / TX_PER_PAGE;
+    let page = q.page.max(1).min(total_pages.max(1));
+    let start = (page - 1) * TX_PER_PAGE;
+    let page_rows = rows.drain(start..(start + TX_PER_PAGE).min(total)).collect();
+
+    render(TransactionsIndexTemplate { transactions: page_rows, page, total_pages, total })
 }
 
 pub async fn transactions_new(
