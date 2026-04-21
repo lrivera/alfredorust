@@ -90,6 +90,10 @@ async fn main() {
             post(routes::company_cfdi_download),
         )
         .route(
+            "/admin/companies/{id}/cfdi/jobs/{job_id}",
+            get(routes::company_cfdi_job_status),
+        )
+        .route(
             "/admin/accounts",
             get(routes::accounts_index).post(routes::accounts_create),
         )

@@ -72,6 +72,7 @@ dependencies = [
  "typst",
  "typst-assets",
  "typst-pdf",
+ "uuid",
  "zip",
 ]
 

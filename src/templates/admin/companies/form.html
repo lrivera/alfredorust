@@ -156,14 +156,11 @@
         const configId = document.getElementById('cfdi-config').value;
         const dlType = document.getElementById('cfdi-type').value;
 
-        if (!start || !end) {
-          status.textContent = 'Selecciona fecha inicio y fin.';
-          return;
-        }
+        if (!start || !end) { status.textContent = 'Selecciona fecha inicio y fin.'; return; }
 
         btn.disabled = true;
-        status.textContent = 'Descargando del SAT… esto puede tardar varios minutos.';
         result.className = 'hidden';
+        status.textContent = 'Iniciando descarga…';
 
         try {
           const params = new URLSearchParams({
@@ -172,31 +169,51 @@
             end: end + 'T23:59:59',
             download_type: dlType,
           });
-          const resp = await fetch('/admin/companies/{{ company_id }}/cfdi/download', {
+          const startResp = await fetch('/admin/companies/{{ company_id }}/cfdi/download', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             credentials: 'include',
             body: params.toString(),
           });
-          const json = await resp.json();
-          status.textContent = '';
-          result.className = json.ok
-            ? 'rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800'
-            : 'rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700';
-          if (json.ok) {
-            result.innerHTML = `<strong>Listo.</strong> ${json.imported} CFDIs importados, ` +
-              `${json.transactions_created} transacciones creadas, ` +
-              `${json.transactions_updated} actualizadas, ` +
-              `${json.transactions_skipped} omitidas.` +
-              (json.errors.length ? `<br><span class="text-rose-600">Avisos: ${json.errors.join('; ')}</span>` : '');
-          } else {
-            result.textContent = json.errors.join('; ') || 'Error desconocido.';
+          if (!startResp.ok) {
+            const j = await startResp.json().catch(() => ({}));
+            throw new Error(j.error || 'Error iniciando descarga');
           }
+          const { job_id } = await startResp.json();
+
+          // Poll every 4 seconds
+          let dots = 0;
+          const pollInterval = setInterval(async () => {
+            dots = (dots + 1) % 4;
+            status.textContent = 'Descargando del SAT' + '.'.repeat(dots + 1) + ' (esto puede tardar varios minutos)';
+            try {
+              const pollResp = await fetch(`/admin/companies/{{ company_id }}/cfdi/jobs/${job_id}`, {
+                credentials: 'include',
+              });
+              const job = await pollResp.json();
+              if (job.status === 'done') {
+                clearInterval(pollInterval);
+                status.textContent = '';
+                result.className = 'rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800';
+                result.innerHTML = `<strong>Listo.</strong> ${job.imported} CFDIs importados, ` +
+                  `${job.transactions_created} transacciones creadas, ` +
+                  `${job.transactions_updated} actualizadas, ` +
+                  `${job.transactions_skipped} omitidas.` +
+                  (job.errors.length ? `<br><span class="text-rose-600">Avisos: ${job.errors.join('; ')}</span>` : '');
+                btn.disabled = false;
+              } else if (job.status === 'failed') {
+                clearInterval(pollInterval);
+                status.textContent = '';
+                result.className = 'rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700';
+                result.textContent = job.error || 'Error desconocido.';
+                btn.disabled = false;
+              }
+            } catch (_) {}
+          }, 4000);
         } catch (e) {
           status.textContent = '';
           result.className = 'rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700';
-          result.textContent = 'No se pudo conectar con el servidor.';
-        } finally {
+          result.textContent = e.message || 'No se pudo conectar con el servidor.';
           btn.disabled = false;
         }
       });

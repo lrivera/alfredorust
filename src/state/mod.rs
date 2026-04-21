@@ -2,13 +2,33 @@
 
 use anyhow::Result;
 use mongodb::{Client, Collection};
-use std::env;
+use serde::Serialize;
+use std::{collections::HashMap, env, sync::Arc};
+use tokio::sync::Mutex;
 
 use crate::models::{
     Account, Category, Company, Contact, Forecast, PlannedEntry, RecurringPlan, SatConfig,
     Session, Transaction, User, UserCompany,
 };
 use bson::Document;
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "status", rename_all = "lowercase")]
+pub enum CfdiJobStatus {
+    Running,
+    Done {
+        imported: usize,
+        transactions_created: usize,
+        transactions_updated: usize,
+        transactions_skipped: usize,
+        errors: Vec<String>,
+    },
+    Failed {
+        error: String,
+    },
+}
+
+pub type JobStore = Arc<Mutex<HashMap<String, CfdiJobStatus>>>;
 
 mod seed;
 mod users;
@@ -26,6 +46,7 @@ pub const PLANNED_MONTHS_AHEAD: u32 = 24;
 
 #[derive(Clone)]
 pub struct AppState {
+    pub jobs: JobStore,
     pub users: Collection<User>,
     pub user_companies: Collection<UserCompany>,
     pub companies: Collection<Company>,
@@ -60,6 +81,7 @@ pub async fn init_state() -> Result<AppState> {
     }
 
     Ok(AppState {
+        jobs: Arc::new(Mutex::new(HashMap::new())),
         users: db.collection::<User>("users"),
         user_companies: db.collection::<UserCompany>("user_companies"),
         companies: db.collection::<Company>("company"),
