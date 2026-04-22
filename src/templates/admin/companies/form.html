@@ -61,7 +61,7 @@
     </form>
   </div>
   {% if is_edit %}
-  <div class="max-w-xl space-y-4">
+  <div class="max-w-2xl mx-auto space-y-4">
     <h2 class="text-lg font-semibold text-slate-800">Zona de pruebas</h2>
     <div class="flex gap-3">
       <form method="post" action="/admin/companies/{{ company_id }}/cfdis/delete_all"
@@ -81,7 +81,7 @@
     </div>
   </div>
 
-  <div class="max-w-xl space-y-4">
+  <div class="max-w-2xl mx-auto space-y-4">
     <div class="flex items-center justify-between">
       <h2 class="text-lg font-semibold text-slate-800">Configuraciones SAT (e.firma)</h2>
       <a href="/admin/companies/{{ company_id }}/sat_configs/new"
