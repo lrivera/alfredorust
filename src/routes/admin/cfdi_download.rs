@@ -1,4 +1,4 @@
-use std::{str::FromStr, sync::Arc};
+use std::{str::FromStr, sync::Arc, time::Duration};
 
 use axum::{
     Json,
@@ -9,7 +9,7 @@ use axum::{
 use bson::oid::ObjectId;
 use chrono::{Datelike, NaiveDate};
 use serde::{Deserialize, Serialize};
-use tokio::fs;
+use tokio::{fs, sync::Semaphore, time::sleep};
 use uuid::Uuid;
 
 use crate::{
@@ -81,6 +81,9 @@ pub async fn company_cfdi_download(
     let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
     let mut started = Vec::new();
 
+    // Max 3 concurrent SAT requests; shared across all monthly jobs.
+    let semaphore = Arc::new(Semaphore::new(3));
+
     for (label, chunk_start, chunk_end) in chunks {
         let job_id = Uuid::new_v4().to_string();
 
@@ -101,21 +104,28 @@ pub async fn company_cfdi_download(
         let key = config.key_path.clone();
         let pwd = config.key_password.clone();
         let rfc = config.rfc.clone();
+        let sem = semaphore.clone();
 
         tokio::spawn(async move {
+            let _permit = sem.acquire().await.unwrap();
+
             let result = run_download(
-                &state_bg,
-                &company_id_bg,
-                &company_oid_bg,
-                cer,
-                key,
-                pwd,
-                rfc,
-                dl_types_bg,
-                chunk_start,
-                chunk_end,
-            )
-            .await;
+                &state_bg, &company_id_bg, &company_oid_bg,
+                cer.clone(), key.clone(), pwd.clone(), rfc.clone(),
+                dl_types_bg.clone(), chunk_start.clone(), chunk_end.clone(),
+            ).await;
+
+            // 1 retry after 10s if the download failed completely.
+            let result = if should_retry(&result) {
+                sleep(Duration::from_secs(10)).await;
+                run_download(
+                    &state_bg, &company_id_bg, &company_oid_bg,
+                    cer, key, pwd, rfc,
+                    dl_types_bg, chunk_start, chunk_end,
+                ).await
+            } else {
+                result
+            };
 
             let mut jobs = state_bg.jobs.lock().await;
             if let Some(job) = jobs.get_mut(&job_id_bg) {
@@ -410,5 +420,14 @@ fn month_name_es(month: u32) -> &'static str {
         5 => "May", 6 => "Jun", 7 => "Jul", 8 => "Ago",
         9 => "Sep", 10 => "Oct", 11 => "Nov", 12 => "Dic",
         _ => "???",
+    }
+}
+
+/// Retry if the download failed completely: no CFDIs imported and at least one error.
+fn should_retry(status: &CfdiJobStatus) -> bool {
+    match status {
+        CfdiJobStatus::Done { imported, errors, .. } => *imported == 0 && !errors.is_empty(),
+        CfdiJobStatus::Failed { .. } => true,
+        CfdiJobStatus::Running => false,
     }
 }
