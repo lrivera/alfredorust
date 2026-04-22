@@ -45,15 +45,22 @@
             <div class="flex justify-end gap-2">
               {% if o.status != "completed" && o.status != "cancelled" %}
               <form method="post" action="/admin/orders/{{ o.id }}/complete"
-                onsubmit="return confirm('¿Marcar como completada y registrar el pago?')">
+                onsubmit="return confirm('¿Marcar como completada?')">
                 <button type="submit"
                   class="inline-flex items-center rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100">
                   Completar
                 </button>
               </form>
               {% endif %}
-              {% if o.has_transaction %}
-              <span class="inline-flex items-center rounded-md border border-slate-200 px-3 py-1.5 text-xs text-slate-400">Pagada</span>
+              {% if o.planned_entry_id != "" %}
+                {% if o.planned_entry_paid %}
+                <span class="inline-flex items-center rounded-md border border-slate-200 px-3 py-1.5 text-xs text-slate-400">Pagada</span>
+                {% else %}
+                <a href="/admin/planned_entries/{{ o.planned_entry_id }}/pay"
+                  class="inline-flex items-center rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-100">
+                  Pagar
+                </a>
+                {% endif %}
               {% endif %}
               <a href="/admin/orders/{{ o.id }}/edit"
                 class="inline-flex items-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-sky-400 hover:text-sky-600">

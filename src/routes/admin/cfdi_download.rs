@@ -7,6 +7,7 @@ use axum::{
     response::IntoResponse,
 };
 use bson::oid::ObjectId;
+use chrono::{Datelike, NaiveDate};
 use serde::{Deserialize, Serialize};
 use tokio::fs;
 use uuid::Uuid;
@@ -17,7 +18,7 @@ use crate::{
     sat::{CfdiDownloadRequest, DownloadType, download_cfdis},
     session::SessionUser,
     state::{
-        AppState, CfdiJobStatus, create_transaction, get_or_create_category,
+        AppState, CfdiJob, CfdiJobStatus, create_transaction, get_or_create_category,
         get_or_create_contact_by_rfc, get_or_create_sat_account, get_sat_config,
     },
 };
@@ -36,11 +37,18 @@ pub struct CfdiDownloadForm {
 fn default_both() -> String { "both".to_string() }
 
 #[derive(Serialize)]
-pub struct StartedJob {
+pub struct StartedJobInfo {
     pub job_id: String,
+    pub label: String,
 }
 
-/// POST — starts the download in the background and returns a job_id immediately.
+#[derive(Serialize)]
+pub struct StartedJobs {
+    pub jobs: Vec<StartedJobInfo>,
+}
+
+// ── POST: start download (one job per monthly chunk) ───────────────────────
+
 pub async fn company_cfdi_download(
     _session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -69,39 +77,76 @@ pub async fn company_cfdi_download(
         _          => vec![DownloadType::Issued],
     };
 
-    let job_id = Uuid::new_v4().to_string();
+    let chunks = monthly_chunks(&form.start, &form.end);
+    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    let mut started = Vec::new();
 
-    // Register the job as Running
-    state.jobs.lock().await.insert(job_id.clone(), CfdiJobStatus::Running);
+    for (label, chunk_start, chunk_end) in chunks {
+        let job_id = Uuid::new_v4().to_string();
 
-    // Spawn background task
-    let state_bg = state.clone();
-    let job_id_bg = job_id.clone();
-    let start = form.start.clone();
-    let end = form.end.clone();
+        state.jobs.lock().await.insert(job_id.clone(), CfdiJob {
+            job_id: job_id.clone(),
+            company_id: company_id.clone(),
+            label: label.clone(),
+            started_at: today.clone(),
+            status: CfdiJobStatus::Running,
+        });
 
-    tokio::spawn(async move {
-        let result = run_download(
-            &state_bg,
-            &company_id,
-            &company_object_id,
-            config.cer_path,
-            config.key_path,
-            config.key_password,
-            config.rfc,
-            dl_types,
-            start,
-            end,
-        )
-        .await;
+        let state_bg = state.clone();
+        let job_id_bg = job_id.clone();
+        let company_id_bg = company_id.clone();
+        let company_oid_bg = company_object_id.clone();
+        let dl_types_bg = dl_types.clone();
+        let cer = config.cer_path.clone();
+        let key = config.key_path.clone();
+        let pwd = config.key_password.clone();
+        let rfc = config.rfc.clone();
 
-        state_bg.jobs.lock().await.insert(job_id_bg, result);
-    });
+        tokio::spawn(async move {
+            let result = run_download(
+                &state_bg,
+                &company_id_bg,
+                &company_oid_bg,
+                cer,
+                key,
+                pwd,
+                rfc,
+                dl_types_bg,
+                chunk_start,
+                chunk_end,
+            )
+            .await;
 
-    (StatusCode::ACCEPTED, Json(StartedJob { job_id })).into_response()
+            let mut jobs = state_bg.jobs.lock().await;
+            if let Some(job) = jobs.get_mut(&job_id_bg) {
+                job.status = result;
+            }
+        });
+
+        started.push(StartedJobInfo { job_id, label });
+    }
+
+    (StatusCode::ACCEPTED, Json(StartedJobs { jobs: started })).into_response()
 }
 
-/// GET — poll job status.
+// ── GET: list all jobs for a company ───────────────────────────────────────
+
+pub async fn company_cfdi_jobs_list(
+    _session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(company_id): Path<String>,
+) -> impl IntoResponse {
+    let jobs = state.jobs.lock().await;
+    let mut result: Vec<&CfdiJob> = jobs
+        .values()
+        .filter(|j| j.company_id == company_id)
+        .collect();
+    result.sort_by(|a, b| a.started_at.cmp(&b.started_at).then(a.label.cmp(&b.label)));
+    (StatusCode::OK, Json(result)).into_response()
+}
+
+// ── GET: single job status ─────────────────────────────────────────────────
+
 pub async fn company_cfdi_job_status(
     _session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -109,10 +154,12 @@ pub async fn company_cfdi_job_status(
 ) -> impl IntoResponse {
     let jobs = state.jobs.lock().await;
     match jobs.get(&job_id) {
-        Some(status) => (StatusCode::OK, Json(status.clone())).into_response(),
+        Some(job) => (StatusCode::OK, Json(job.clone())).into_response(),
         None => (StatusCode::NOT_FOUND, Json(serde_json::json!({"error":"job no encontrado"}))).into_response(),
     }
 }
+
+// ── Background download logic ──────────────────────────────────────────────
 
 async fn run_download(
     state: &AppState,
@@ -126,7 +173,6 @@ async fn run_download(
     start: String,
     end: String,
 ) -> CfdiJobStatus {
-    // Store (dl_type, cfdi) so we know whether each cfdi was issued or received
     let mut all_imported: Vec<(DownloadType, crate::cfdi::ImportedCfdi)> = Vec::new();
     let mut errors = Vec::new();
 
@@ -178,15 +224,11 @@ async fn run_download(
     let sat_account = get_or_create_sat_account(state, company_object_id).await;
 
     for (dl_type, cfdi_item) in &all_imported {
-        // Only process Ingreso/Egreso; skip Pago, Traslado, Nómina, etc.
         if cfdi_item.tipo_de_comprobante != "I" && cfdi_item.tipo_de_comprobante != "E" {
             tx_skipped += 1;
             continue;
         }
 
-        // Classify based on download direction, not TipoDeComprobante.
-        // Issued = we are the Emisor = Income for us.
-        // Received = we are the Receptor = Expense for us.
         let (tx_type, category_result) = match dl_type {
             DownloadType::Issued   => (TransactionType::Income,  &income_category),
             DownloadType::Received => (TransactionType::Expense, &expense_category),
@@ -220,7 +262,6 @@ async fn run_download(
             TransactionType::Transfer => (None, None),
         };
 
-        // Issued: customer = Receptor (who we billed). Received: supplier = Emisor (who billed us).
         let (contact_rfc, contact_name, contact_type, description) = match dl_type {
             DownloadType::Issued => (
                 cfdi_item.receptor_rfc.as_str(),
@@ -295,4 +336,79 @@ fn parse_cfdi_date(fecha: &str) -> bson::DateTime {
         return bson::DateTime::from_millis(utc.timestamp_millis());
     }
     bson::DateTime::now()
+}
+
+// ── Monthly chunking ───────────────────────────────────────────────────────
+
+fn monthly_chunks(start_iso: &str, end_iso: &str) -> Vec<(String, String, String)> {
+    let start_str = &start_iso[..start_iso.len().min(10)];
+    let end_str = &end_iso[..end_iso.len().min(10)];
+
+    let start = match NaiveDate::parse_from_str(start_str, "%Y-%m-%d") {
+        Ok(d) => d,
+        Err(_) => return vec![(
+            "Descarga".into(),
+            start_iso.to_string(),
+            end_iso.to_string(),
+        )],
+    };
+    let end = match NaiveDate::parse_from_str(end_str, "%Y-%m-%d") {
+        Ok(d) => d,
+        Err(_) => return vec![(
+            "Descarga".into(),
+            start_iso.to_string(),
+            end_iso.to_string(),
+        )],
+    };
+
+    if start > end {
+        return vec![];
+    }
+
+    let mut chunks = Vec::new();
+    let mut month_cursor = NaiveDate::from_ymd_opt(start.year(), start.month(), 1).unwrap();
+
+    loop {
+        let chunk_from = if month_cursor.year() == start.year() && month_cursor.month() == start.month() {
+            start
+        } else {
+            month_cursor
+        };
+
+        let next_month = next_month_start(month_cursor);
+        let month_last = next_month.pred_opt().unwrap();
+        let chunk_to = month_last.min(end);
+
+        let label = format!("{} {}", month_name_es(month_cursor.month()), month_cursor.year());
+        chunks.push((
+            label,
+            format!("{}T00:00:00", chunk_from),
+            format!("{}T23:59:59", chunk_to),
+        ));
+
+        if month_last >= end {
+            break;
+        }
+        month_cursor = next_month;
+    }
+
+    chunks
+}
+
+fn next_month_start(date: NaiveDate) -> NaiveDate {
+    let (year, month) = if date.month() == 12 {
+        (date.year() + 1, 1)
+    } else {
+        (date.year(), date.month() + 1)
+    };
+    NaiveDate::from_ymd_opt(year, month, 1).unwrap()
+}
+
+fn month_name_es(month: u32) -> &'static str {
+    match month {
+        1 => "Ene", 2 => "Feb", 3 => "Mar", 4 => "Abr",
+        5 => "May", 6 => "Jun", 7 => "Jul", 8 => "Ago",
+        9 => "Sep", 10 => "Oct", 11 => "Nov", 12 => "Dic",
+        _ => "???",
+    }
 }

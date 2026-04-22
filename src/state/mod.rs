@@ -28,7 +28,16 @@ pub enum CfdiJobStatus {
     },
 }
 
-pub type JobStore = Arc<Mutex<HashMap<String, CfdiJobStatus>>>;
+#[derive(Debug, Clone, Serialize)]
+pub struct CfdiJob {
+    pub job_id: String,
+    pub company_id: String,
+    pub label: String,
+    pub started_at: String,
+    pub status: CfdiJobStatus,
+}
+
+pub type JobStore = Arc<Mutex<HashMap<String, CfdiJob>>>;
 
 mod seed;
 mod users;

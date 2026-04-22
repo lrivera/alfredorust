@@ -45,6 +45,30 @@
 
       <div class="grid gap-4 sm:grid-cols-2">
         <div class="space-y-2">
+          <label for="category_id" class="block text-sm font-medium text-slate-600">Categoría</label>
+          <select id="category_id" name="category_id"
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40">
+            <option value="">— Sin categoría —</option>
+            {% for c in categories %}
+            <option value="{{ c.value }}" {% if c.selected %}selected{% endif %}>{{ c.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="space-y-2">
+          <label for="account_id" class="block text-sm font-medium text-slate-600">Cuenta destino del pago</label>
+          <select id="account_id" name="account_id"
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40">
+            <option value="">— Sin cuenta —</option>
+            {% for a in accounts %}
+            <option value="{{ a.value }}" {% if a.selected %}selected{% endif %}>{{ a.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div class="space-y-2">
           <label for="amount" class="block text-sm font-medium text-slate-600">Monto total</label>
           <input id="amount" name="amount" value="{{ amount }}" type="number" step="0.01" min="0" placeholder="0.00"
             class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40" />

@@ -384,6 +384,10 @@ pub struct PlannedEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recurring_plan_version: Option<i32>,
 
+    /// Optional link to the service order that generated this entry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service_order_id: Option<ObjectId>,
+
     pub name: String,
     pub flow_type: FlowType,
 
@@ -529,6 +533,15 @@ pub struct ServiceOrder {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contact_id: Option<ObjectId>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category_id: Option<ObjectId>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<ObjectId>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub planned_entry_id: Option<ObjectId>,
 
     pub title: String,
     pub status: OrderStatus,

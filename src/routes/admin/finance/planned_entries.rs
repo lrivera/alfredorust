@@ -251,6 +251,7 @@ pub async fn planned_entries_create(
         &company_id,
         recurring_plan_id,
         recurring_plan_version,
+        None,
         form.name.trim(),
         flow_type,
         &category_id,

@@ -365,6 +365,7 @@ pub(super) async fn seed_sample_finance(db: &Database, company_id: Option<Object
                 company_id: company_id.clone(),
                 recurring_plan_id,
                 recurring_plan_version: pe.recurring_plan_version,
+                service_order_id: None,
                 name: pe.name,
                 flow_type: pe.flow_type,
                 category_id,
