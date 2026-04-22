@@ -376,9 +376,9 @@ fn monthly_chunks(start_iso: &str, end_iso: &str) -> Vec<(String, String, String
         return vec![];
     }
 
-    // The SAT rejects future dates — cap end to today.
-    let today = chrono::Utc::now().date_naive();
-    let end = end.min(today);
+    // The SAT rejects dates >= today (T23:59:59 counts as future) — cap to yesterday.
+    let yesterday = chrono::Utc::now().date_naive().pred_opt().unwrap_or_else(|| chrono::Utc::now().date_naive());
+    let end = end.min(yesterday);
 
     if start > end {
         return vec![];
