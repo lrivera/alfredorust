@@ -2,18 +2,20 @@ use std::sync::Arc;
 
 use askama::Template;
 use axum::{
+    Json,
     extract::{Query, State},
     http::StatusCode,
     response::{Html, IntoResponse},
 };
 use futures::stream::TryStreamExt;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[allow(unused_imports)]
 use crate::filters;
 use crate::{session::SessionUser, state::AppState};
 
 const PER_PAGE: u64 = 50;
+const API_LIMIT: i64 = 5000;
 
 #[derive(Template)]
 #[template(path = "admin/cfdis/index.html")]
@@ -107,4 +109,101 @@ pub async fn cfdis_index(
         .render()
         .map(Html)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+// ── JSON API for the React dashboard ──────────────────────────────────────
+
+#[derive(Serialize)]
+pub struct CfdiApiItem {
+    pub uuid: String,
+    pub folio: String,
+    pub tipo: String,
+    pub fecha: String,
+    pub subtotal: f64,
+    pub iva: f64,
+    pub total: f64,
+    pub moneda: String,
+    pub forma_pago: String,
+    pub metodo_pago: String,
+    pub emisor_rfc: String,
+    pub emisor_nombre: String,
+    pub receptor_rfc: String,
+    pub receptor_nombre: String,
+    pub concepto: String,
+}
+
+fn parse_f64(s: &str) -> f64 {
+    s.trim().parse().unwrap_or(0.0)
+}
+
+pub async fn cfdis_data_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<CfdiApiItem>>, StatusCode> {
+    let active_company = session_user.active_company_id();
+    let filter = bson::doc! { "company_id": active_company.to_hex() };
+
+    let opts = mongodb::options::FindOptions::builder()
+        .sort(bson::doc! { "comprobante.fecha": -1 })
+        .limit(API_LIMIT)
+        .build();
+
+    let mut cursor = state
+        .cfdis
+        .find(filter)
+        .with_options(opts)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let mut items: Vec<CfdiApiItem> = Vec::new();
+
+    while let Some(doc) = cursor.try_next().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)? {
+        let (folio, tipo, fecha, subtotal, iva, total, moneda, forma_pago, metodo_pago, concepto) =
+            if let Ok(comp) = doc.get_document("comprobante") {
+                let folio = str_field(comp, "folio");
+                let tipo  = str_field(comp, "tipoDeComprobante");
+                let fecha = str_field(comp, "fecha");
+                let subtotal = parse_f64(comp.get_str("subTotal").unwrap_or("0"));
+                let total    = parse_f64(comp.get_str("total").unwrap_or("0"));
+                let moneda   = str_field(comp, "moneda");
+                let forma_pago  = str_field(comp, "formaPago");
+                let metodo_pago = str_field(comp, "metodoPago");
+
+                let iva = doc.get_document("impuestos").ok()
+                    .and_then(|imp| imp.get_str("totalImpuestosTrasladados").ok())
+                    .map(parse_f64)
+                    .unwrap_or(0.0);
+
+                let concepto = doc.get_array("conceptos").ok()
+                    .and_then(|arr| arr.first())
+                    .and_then(|v| v.as_document())
+                    .and_then(|d| d.get_str("descripcion").ok())
+                    .unwrap_or("")
+                    .to_string();
+
+                (folio, tipo, fecha, subtotal, iva, total, moneda, forma_pago, metodo_pago, concepto)
+            } else {
+                Default::default()
+            };
+
+        items.push(CfdiApiItem {
+            uuid: str_field(&doc, "uuid"),
+            folio,
+            tipo,
+            fecha,
+            subtotal,
+            iva,
+            total,
+            moneda,
+            forma_pago,
+            metodo_pago,
+            emisor_rfc:    nested_str(&doc, "emisor", "rfc"),
+            emisor_nombre: nested_str(&doc, "emisor", "nombre"),
+            receptor_rfc:    nested_str(&doc, "receptor", "rfc"),
+            receptor_nombre: nested_str(&doc, "receptor", "nombre"),
+            concepto,
+        });
+    }
+
+    Ok(Json(items))
 }

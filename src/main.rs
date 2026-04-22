@@ -82,6 +82,7 @@ async fn main() {
             post(routes::companies_delete_all_transactions),
         )
         .route("/admin/cfdis", get(routes::cfdis_index))
+        .route("/api/admin/cfdis/data", get(routes::cfdis_data_api))
         .route(
             "/admin/companies/{id}/sat_configs",
             post(routes::sat_configs_create),
