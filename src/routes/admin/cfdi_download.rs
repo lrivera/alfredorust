@@ -375,6 +375,14 @@ fn monthly_chunks(start_iso: &str, end_iso: &str) -> Vec<(String, String, String
         return vec![];
     }
 
+    // The SAT rejects future dates — cap end to today.
+    let today = chrono::Utc::now().date_naive();
+    let end = end.min(today);
+
+    if start > end {
+        return vec![];
+    }
+
     let mut chunks = Vec::new();
     let mut month_cursor = NaiveDate::from_ymd_opt(start.year(), start.month(), 1).unwrap();
 
