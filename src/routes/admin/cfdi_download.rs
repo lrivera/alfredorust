@@ -384,9 +384,10 @@ fn monthly_chunks(start_iso: &str, end_iso: &str) -> Vec<(String, String, String
         return vec![];
     }
 
-    // The SAT rejects dates >= today (T23:59:59 counts as future) — cap to yesterday.
-    let yesterday = chrono::Utc::now().date_naive().pred_opt().unwrap_or_else(|| chrono::Utc::now().date_naive());
-    let end = end.min(yesterday);
+    // Cap end to today. For the current month's last chunk we use the current
+    // datetime (not T23:59:59) so the SAT doesn't reject it as a future date.
+    let now = chrono::Utc::now();
+    let end = end.min(now.date_naive());
 
     if start > end {
         return vec![];
@@ -407,10 +408,16 @@ fn monthly_chunks(start_iso: &str, end_iso: &str) -> Vec<(String, String, String
         let chunk_to = month_last.min(end);
 
         let label = format!("{} {}", month_name_es(month_cursor.month()), month_cursor.year());
+        // Use current time for today's chunk so we don't send a future timestamp.
+        let end_time = if chunk_to == now.date_naive() {
+            format!("{}T{}", chunk_to, now.format("%H:%M:%S"))
+        } else {
+            format!("{}T23:59:59", chunk_to)
+        };
         chunks.push((
             label,
             format!("{}T00:00:00", chunk_from),
-            format!("{}T23:59:59", chunk_to),
+            end_time,
         ));
 
         if month_last >= end {
