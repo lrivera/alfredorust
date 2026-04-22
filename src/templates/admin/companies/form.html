@@ -175,6 +175,7 @@
               <th class="px-4 py-2 text-right">Creadas</th>
               <th class="px-4 py-2 text-right">Actualizadas</th>
               <th class="px-4 py-2 text-right">Omitidas</th>
+              <th class="px-4 py-2 text-right">Errores</th>
             </tr>
           </thead>
           <tbody id="cfdi-jobs-body" class="divide-y divide-slate-100"></tbody>
@@ -228,38 +229,63 @@
         return s;
       }
 
-      function errorsCell(statusObj) {
-        if (!statusObj || statusObj.status !== 'done') return '<td class="px-4 py-2 text-right text-slate-400">—</td>';
-        const n = statusObj.errors ? statusObj.errors.length : 0;
-        if (n === 0) return '<td class="px-4 py-2 text-right text-slate-500">0</td>';
-        const title = statusObj.errors.join('\n');
-        return `<td class="px-4 py-2 text-right text-rose-600 cursor-help" title="${title.replace(/"/g,'&quot;')}">${n} ⚠</td>`;
-      }
-
       function renderRow(job) {
         const s = job.status;
         const isDone = s && s.status === 'done';
         const tr = document.createElement('tr');
         tr.className = 'transition hover:bg-slate-50';
+
+        // Errors column: show count + expandable list below the row on click
+        let errorsHtml = '<td class="px-4 py-2 text-right text-slate-400">—</td>';
+        if (isDone) {
+          const errs = s.errors || [];
+          if (errs.length === 0) {
+            errorsHtml = '<td class="px-4 py-2 text-right text-slate-500">0</td>';
+          } else {
+            const listId = 'errs-' + job.job_id;
+            errorsHtml =
+              `<td class="px-4 py-2 text-right">` +
+              `<button onclick="document.getElementById('${listId}').classList.toggle('hidden')" ` +
+              `class="text-rose-600 font-medium hover:underline">${errs.length} ⚠</button></td>`;
+            // We'll append the error detail row after building the main row
+            tr.dataset.errorsHtml =
+              `<tr id="${listId}" class="hidden bg-rose-50"><td colspan="7" class="px-4 py-2 text-xs text-rose-700 space-y-0.5">` +
+              errs.map(e => `<div>${e}</div>`).join('') +
+              `</td></tr>`;
+          }
+        }
+
         tr.innerHTML =
           `<td class="px-4 py-2 font-medium text-slate-800">${job.label}</td>` +
           `<td class="px-4 py-2">${statusBadge(s)}</td>` +
           `<td class="px-4 py-2 text-right text-slate-600">${isDone ? s.imported : '—'}</td>` +
           `<td class="px-4 py-2 text-right text-slate-600">${isDone ? s.transactions_created : '—'}</td>` +
           `<td class="px-4 py-2 text-right text-slate-600">${isDone ? s.transactions_updated : '—'}</td>` +
-          errorsCell(s);
+          `<td class="px-4 py-2 text-right text-slate-600">${isDone ? s.transactions_skipped : '—'}</td>` +
+          errorsHtml;
         return tr;
       }
 
       function upsertRow(job) {
         const existing = jobRows[job.job_id];
         const tr = renderRow(job);
+
+        // Remove old error detail row if present
+        const oldDetail = document.getElementById('errs-' + job.job_id);
+        if (oldDetail) oldDetail.parentElement && oldDetail.parentElement.removeChild(oldDetail);
+
         if (existing) {
           existing.replaceWith(tr);
         } else {
           jobsBody.appendChild(tr);
         }
         jobRows[job.job_id] = tr;
+
+        // Append error detail row right after the job row
+        if (tr.dataset.errorsHtml) {
+          tr.insertAdjacentHTML('afterend', tr.dataset.errorsHtml);
+        }
+
         showSection();
       }
 
