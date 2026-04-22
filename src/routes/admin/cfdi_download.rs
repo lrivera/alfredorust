@@ -384,10 +384,11 @@ fn monthly_chunks(start_iso: &str, end_iso: &str) -> Vec<(String, String, String
         return vec![];
     }
 
-    // Cap end to today. For the current month's last chunk we use the current
-    // datetime (not T23:59:59) so the SAT doesn't reject it as a future date.
-    let now = chrono::Utc::now();
-    let end = end.min(now.date_naive());
+    // The SAT interprets dates in Mexico City time (UTC-6 CST / UTC-5 CDT).
+    // Subtracting 6h from UTC gives a safe approximation that's always in the
+    // past from the SAT's perspective, even during CDT (+1h buffer).
+    let mexico_now = chrono::Utc::now() - chrono::Duration::hours(6);
+    let end = end.min(mexico_now.date_naive());
 
     if start > end {
         return vec![];
@@ -408,9 +409,9 @@ fn monthly_chunks(start_iso: &str, end_iso: &str) -> Vec<(String, String, String
         let chunk_to = month_last.min(end);
 
         let label = format!("{} {}", month_name_es(month_cursor.month()), month_cursor.year());
-        // Use current time for today's chunk so we don't send a future timestamp.
-        let end_time = if chunk_to == now.date_naive() {
-            format!("{}T{}", chunk_to, now.format("%H:%M:%S"))
+        // Use current Mexico City time for today's chunk so we don't send a future timestamp.
+        let end_time = if chunk_to == mexico_now.date_naive() {
+            format!("{}T{}", chunk_to, mexico_now.format("%H:%M:%S"))
         } else {
             format!("{}T23:59:59", chunk_to)
         };
