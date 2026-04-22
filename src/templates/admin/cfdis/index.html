@@ -415,13 +415,33 @@ function App() {
       nEmitidos: emitidos.length, nRecibidos: recibidos.length };
   }, [filtered]);
 
-  // monthly chart: aggregate using direction (es_emitido), skip tipo P (total=0)
+  // chartFiltered: all filters except periodo (chart shows full time range per year/client)
+  const chartFiltered = useMemo(() => {
+    const yearMode = yearFil !== 'todos';
+    const q = search.toLowerCase().trim();
+    return all.filter(f => {
+      if (yearMode && (f.fecha || '').slice(0, 4) !== yearFil) return false;
+      if (dirFil === 'emitidos'  && !f.es_emitido) return false;
+      if (dirFil === 'recibidos' &&  f.es_emitido) return false;
+      if (tipoFil !== 'todos' && f.tipo !== tipoFil) return false;
+      if (clientFil) {
+        const other = f.es_emitido
+          ? (f.receptor_rfc || f.receptor_nombre)
+          : (f.emisor_rfc   || f.emisor_nombre);
+        if (other !== clientFil) return false;
+      }
+      if (q) {
+        const haystack = `${f.uuid} ${f.folio} ${f.emisor_rfc} ${f.emisor_nombre} ${f.receptor_rfc} ${f.receptor_nombre} ${f.concepto}`.toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [all, yearFil, dirFil, tipoFil, clientFil, search]);
+
+  // monthly chart: based on chartFiltered so client/direction/tipo filters apply
   const monthly = useMemo(() => {
     const yearMode = yearFil !== 'todos';
-    const source = all.filter(f =>
-      f.tipo !== 'P' && f.total > 0 &&
-      (!yearMode || (f.fecha || '').slice(0, 4) === yearFil)
-    );
+    const source = chartFiltered.filter(f => f.tipo !== 'P' && f.total > 0);
     const map = {};
     source.forEach(f => {
       const m = (f.fecha || '').slice(0, 7);
@@ -432,7 +452,7 @@ function App() {
     });
     const sorted = Object.values(map).sort((a, b) => a.month.localeCompare(b.month));
     return yearMode ? sorted : sorted.slice(-12);
-  }, [all, yearFil]);
+  }, [chartFiltered, yearFil]);
 
   // Donut: direction breakdown (not tipo)
   const donutSegs = useMemo(() => {
@@ -491,39 +511,43 @@ function App() {
 
       {/* ── Charts ── */}
       {all.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 200px 280px', gap: 14, marginBottom: 24 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 24 }}>
+          {/* Row 1: line chart full width */}
           <div className="kpi-card">
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
               <p style={{ fontSize: 12, fontWeight: 600, color: '#475569' }}>
-                Ingresos vs. Egresos {yearFil !== 'todos' ? yearFil : '(últimos 12 meses)'}
+                Emitidas vs. Recibidas{clientFil ? ` · ${clientFil}` : ''} {yearFil !== 'todos' ? yearFil : '(últimos 12 meses)'}
               </p>
               <div style={{ display: 'flex', gap: 12, fontSize: 11, color: '#64748b' }}>
                 <span><span style={{ display:'inline-block', width:10, height:10, borderRadius:2, background:'#10b981', marginRight:4 }}></span>Emitidas</span>
                 <span><span style={{ display:'inline-block', width:10, height:10, borderRadius:2, background:'#f43f5e', marginRight:4 }}></span>Recibidas</span>
               </div>
             </div>
-            <div style={{ height: 158 }}>
+            <div style={{ height: 160 }}>
               <LineChart data={monthly} />
             </div>
           </div>
-          <div className="kpi-card" style={{ display: 'flex', flexDirection: 'column' }}>
-            <p style={{ fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 8 }}>Emitidas vs. Recibidas</p>
-            <div style={{ flex: 1 }}>
-              <DonutChart segments={donutSegs} total={filtered.length} />
+          {/* Row 2: donut (narrow) + top clients (flexible) */}
+          <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: 14 }}>
+            <div className="kpi-card" style={{ display: 'flex', flexDirection: 'column' }}>
+              <p style={{ fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 8 }}>Distribución</p>
+              <div style={{ flex: 1, minHeight: 150 }}>
+                <DonutChart segments={donutSegs} total={filtered.length} />
+              </div>
+              <div style={{ marginTop: 8 }}>
+                {donutSegs.map(s => (
+                  <div key={s.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#64748b' }}>
+                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: s.color, display: 'inline-block' }}></span>
+                      {s.label}
+                    </span>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: '#334155' }}>{fmtN(s.value)}</span>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div style={{ marginTop: 8 }}>
-              {donutSegs.map(s => (
-                <div key={s.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#64748b' }}>
-                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: s.color, display: 'inline-block' }}></span>
-                    {s.label}
-                  </span>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: '#334155' }}>{fmtN(s.value)}</span>
-                </div>
-              ))}
-            </div>
+            <TopClients facturas={filtered} onClientClick={rfc => setClientFil(rfc)} activeClient={clientFil} />
           </div>
-          <TopClients facturas={filtered} onClientClick={rfc => setClientFil(rfc)} activeClient={clientFil} />
         </div>
       )}
 
