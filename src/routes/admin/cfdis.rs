@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use askama::Template;
 use axum::{
@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 #[allow(unused_imports)]
 use crate::filters;
-use crate::{session::SessionUser, state::AppState};
+use crate::{session::SessionUser, state::{AppState, list_sat_configs}};
 
 const PER_PAGE: u64 = 50;
 const API_LIMIT: i64 = 5000;
@@ -130,6 +130,14 @@ pub struct CfdiApiItem {
     pub receptor_rfc: String,
     pub receptor_nombre: String,
     pub concepto: String,
+    /// true if the company is the emisor (issued = income), false if receptor (received = expense)
+    pub es_emitido: bool,
+}
+
+#[derive(Serialize)]
+pub struct CfdiDataResponse {
+    pub company_rfcs: Vec<String>,
+    pub items: Vec<CfdiApiItem>,
 }
 
 fn parse_f64(s: &str) -> f64 {
@@ -139,10 +147,18 @@ fn parse_f64(s: &str) -> f64 {
 pub async fn cfdis_data_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
-) -> Result<Json<Vec<CfdiApiItem>>, StatusCode> {
+) -> Result<Json<CfdiDataResponse>, StatusCode> {
     let active_company = session_user.active_company_id();
-    let filter = bson::doc! { "company_id": active_company.to_hex() };
 
+    // Get known RFCs for this company from SAT configs
+    let sat_configs = list_sat_configs(&state, &active_company).await.unwrap_or_default();
+    let company_rfcs: HashSet<String> = sat_configs
+        .into_iter()
+        .map(|c| c.rfc.to_uppercase())
+        .collect();
+    let company_rfcs_vec: Vec<String> = company_rfcs.iter().cloned().collect();
+
+    let filter = bson::doc! { "company_id": active_company.to_hex() };
     let opts = mongodb::options::FindOptions::builder()
         .sort(bson::doc! { "comprobante.fecha": -1 })
         .limit(API_LIMIT)
@@ -186,6 +202,19 @@ pub async fn cfdis_data_api(
                 Default::default()
             };
 
+        let emisor_rfc    = nested_str(&doc, "emisor", "rfc");
+        let emisor_nombre = nested_str(&doc, "emisor", "nombre");
+        let receptor_rfc    = nested_str(&doc, "receptor", "rfc");
+        let receptor_nombre = nested_str(&doc, "receptor", "nombre");
+
+        // Determine direction: company is emisor → issued (income-side), else received (expense-side)
+        let es_emitido = if company_rfcs.is_empty() {
+            // No SAT config: fall back to tipo heuristic
+            tipo == "I" || tipo == "N"
+        } else {
+            company_rfcs.contains(&emisor_rfc.to_uppercase())
+        };
+
         items.push(CfdiApiItem {
             uuid: str_field(&doc, "uuid"),
             folio,
@@ -197,13 +226,14 @@ pub async fn cfdis_data_api(
             moneda,
             forma_pago,
             metodo_pago,
-            emisor_rfc:    nested_str(&doc, "emisor", "rfc"),
-            emisor_nombre: nested_str(&doc, "emisor", "nombre"),
-            receptor_rfc:    nested_str(&doc, "receptor", "rfc"),
-            receptor_nombre: nested_str(&doc, "receptor", "nombre"),
+            emisor_rfc,
+            emisor_nombre,
+            receptor_rfc,
+            receptor_nombre,
             concepto,
+            es_emitido,
         });
     }
 
-    Ok(Json(items))
+    Ok(Json(CfdiDataResponse { company_rfcs: company_rfcs_vec, items }))
 }

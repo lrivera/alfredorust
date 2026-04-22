@@ -288,15 +288,79 @@ function Pager({ page, total, onChange }) {
   );
 }
 
+// ── Top Clients Component ─────────────────────────────────────────────────
+function TopClients({ facturas, onClientClick, activeClient }) {
+  const tops = useMemo(() => {
+    const map = {};
+    facturas.forEach(f => {
+      // The "other party" (not the company): if emitido, receptor is client; if recibido, emisor is provider
+      const rfc    = f.es_emitido ? f.receptor_rfc    : f.emisor_rfc;
+      const nombre = f.es_emitido ? f.receptor_nombre : f.emisor_nombre;
+      const key = rfc || nombre || '?';
+      if (!map[key]) map[key] = { rfc, nombre, ingreso: 0, egreso: 0, count: 0 };
+      if (f.es_emitido) map[key].ingreso += f.total;
+      else               map[key].egreso  += f.total;
+      map[key].count++;
+    });
+    return Object.values(map)
+      .sort((a, b) => (b.ingreso + b.egreso) - (a.ingreso + a.egreso))
+      .slice(0, 12);
+  }, [facturas]);
+
+  if (!tops.length) return null;
+  const maxTotal = Math.max(...tops.map(c => c.ingreso + c.egreso), 1);
+
+  return (
+    <div className="kpi-card">
+      <p style={{ fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 14 }}>Top clientes / proveedores</p>
+      {tops.map((c, i) => {
+        const total = c.ingreso + c.egreso;
+        const isActive = activeClient === (c.rfc || c.nombre);
+        return (
+          <div key={c.rfc || i}
+            onClick={() => onClientClick(isActive ? null : (c.rfc || c.nombre))}
+            style={{ marginBottom: 12, cursor: 'pointer', padding: '6px 8px', borderRadius: 8,
+              background: isActive ? '#f0f9ff' : 'transparent', transition: 'background .15s' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+              <div style={{ minWidth: 0, flex: 1, marginRight: 8 }}>
+                <p style={{ fontSize: 12, fontWeight: 600, color: isActive ? '#0369a1' : '#334155',
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>
+                  {c.nombre || c.rfc || 'Sin nombre'}
+                </p>
+                <p style={{ fontSize: 10, color: '#94a3b8', margin: 0, fontFamily: 'monospace' }}>{c.rfc}</p>
+              </div>
+              <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                <p style={{ fontSize: 12, fontWeight: 700, color: '#1e293b', margin: 0 }}>{fmt(total)}</p>
+                <p style={{ fontSize: 10, color: '#94a3b8', margin: 0 }}>{c.count} fact.</p>
+              </div>
+            </div>
+            <div style={{ height: 4, borderRadius: 2, background: '#f1f5f9', overflow: 'hidden', display: 'flex' }}>
+              {c.ingreso > 0 && (
+                <div style={{ height: '100%', width: `${(c.ingreso / total) * (total / maxTotal) * 100}%`, background: '#10b981' }} />
+              )}
+              {c.egreso > 0 && (
+                <div style={{ height: '100%', width: `${(c.egreso / total) * (total / maxTotal) * 100}%`, background: '#f43f5e' }} />
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Main App ──────────────────────────────────────────────────────────────
 function App() {
   const [all, setAll] = useState([]);
+  const [companyRfcs, setCompanyRfcs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
   const [periodo, setPeriodo] = useState('mes');
+  const [dirFil, setDirFil] = useState('todos');   // 'todos' | 'emitidos' | 'recibidos'
   const [tipoFil, setTipoFil] = useState('todos');
   const [yearFil, setYearFil] = useState('todos');
+  const [clientFil, setClientFil] = useState(null); // RFC or nombre string
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState(null);
 
@@ -308,7 +372,11 @@ function App() {
   useEffect(() => {
     fetch('/api/admin/cfdis/data', { credentials: 'same-origin' })
       .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
-      .then(d => { setAll(d); setLoading(false); })
+      .then(d => {
+        setCompanyRfcs(d.company_rfcs || []);
+        setAll(d.items || []);
+        setLoading(false);
+      })
       .catch(e => { setError(e.message); setLoading(false); });
   }, []);
 
@@ -319,27 +387,39 @@ function App() {
     return all.filter(f => {
       if (yearMode && (f.fecha || '').slice(0, 4) !== yearFil) return false;
       if (!yearMode && cutoff && new Date(f.fecha) < cutoff) return false;
+      if (dirFil === 'emitidos'  && !f.es_emitido)  return false;
+      if (dirFil === 'recibidos' &&  f.es_emitido)  return false;
       if (tipoFil !== 'todos' && f.tipo !== tipoFil) return false;
+      if (clientFil) {
+        const other = f.es_emitido
+          ? (f.receptor_rfc || f.receptor_nombre)
+          : (f.emisor_rfc   || f.emisor_nombre);
+        if (other !== clientFil) return false;
+      }
       if (q) {
         const haystack = `${f.uuid} ${f.folio} ${f.emisor_rfc} ${f.emisor_nombre} ${f.receptor_rfc} ${f.receptor_nombre} ${f.concepto}`.toLowerCase();
         if (!haystack.includes(q)) return false;
       }
       return true;
     });
-  }, [all, search, periodo, tipoFil, yearFil]);
+  }, [all, search, periodo, dirFil, tipoFil, yearFil, clientFil]);
 
+  // KPIs: ingresos = emitidos tipo I, egresos = recibidos tipo I (real expenses)
   const kpis = useMemo(() => {
-    const ingresos = filtered.filter(f => f.tipo === 'I').reduce((s, f) => s + f.total, 0);
-    const gastos   = filtered.filter(f => f.tipo === 'E').reduce((s, f) => s + f.total, 0);
-    const iva      = filtered.reduce((s, f) => s + f.iva, 0);
-    return { ingresos, gastos, utilidad: ingresos - gastos, iva, count: filtered.length };
+    const emitidos  = filtered.filter(f => f.es_emitido  && f.tipo === 'I');
+    const recibidos = filtered.filter(f => !f.es_emitido && f.tipo === 'I');
+    const ingresos  = emitidos.reduce((s, f)  => s + f.total, 0);
+    const egresos   = recibidos.reduce((s, f) => s + f.total, 0);
+    const iva       = filtered.reduce((s, f)  => s + f.iva,   0);
+    return { ingresos, egresos, utilidad: ingresos - egresos, iva, count: filtered.length,
+      nEmitidos: emitidos.length, nRecibidos: recibidos.length };
   }, [filtered]);
 
-  // monthly chart: when a year is selected show that year, otherwise last 12 months
+  // monthly chart: aggregate using direction (es_emitido), skip tipo P (total=0)
   const monthly = useMemo(() => {
     const yearMode = yearFil !== 'todos';
     const source = all.filter(f =>
-      (f.tipo === 'I' || f.tipo === 'E') &&
+      f.tipo !== 'P' && f.total > 0 &&
       (!yearMode || (f.fecha || '').slice(0, 4) === yearFil)
     );
     const map = {};
@@ -347,25 +427,30 @@ function App() {
       const m = (f.fecha || '').slice(0, 7);
       if (!m) return;
       if (!map[m]) map[m] = { month: m, ingresos: 0, gastos: 0 };
-      if (f.tipo === 'I') map[m].ingresos += f.total;
-      else map[m].gastos += f.total;
+      if (f.es_emitido) map[m].ingresos += f.total;
+      else              map[m].gastos   += f.total;
     });
     const sorted = Object.values(map).sort((a, b) => a.month.localeCompare(b.month));
     return yearMode ? sorted : sorted.slice(-12);
   }, [all, yearFil]);
 
+  // Donut: direction breakdown (not tipo)
   const donutSegs = useMemo(() => {
-    const counts = {};
-    filtered.forEach(f => { counts[f.tipo] = (counts[f.tipo] || 0) + 1; });
-    return Object.entries(counts)
-      .filter(([, v]) => v > 0)
-      .map(([k, v]) => ({ label: TIPO_LABEL[k] || k, value: v, color: TIPO_COLOR_HEX[k] || '#94a3b8' }));
+    const counts = { Emitidas: 0, Recibidas: 0 };
+    filtered.forEach(f => {
+      if (f.es_emitido) counts['Emitidas']++;
+      else              counts['Recibidas']++;
+    });
+    return [
+      { label: 'Emitidas',  value: counts['Emitidas'],  color: '#10b981' },
+      { label: 'Recibidas', value: counts['Recibidas'], color: '#f43f5e' },
+    ].filter(s => s.value > 0);
   }, [filtered]);
 
   const totalPages = Math.ceil(filtered.length / PER_PAGE);
   const pageItems  = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
-  useEffect(() => { setPage(1); }, [search, periodo, tipoFil, yearFil]);
+  useEffect(() => { setPage(1); }, [search, periodo, dirFil, tipoFil, yearFil, clientFil]);
 
   // ── Loading / Error ──
   if (loading) {
@@ -398,23 +483,23 @@ function App() {
 
       {/* ── KPI Cards ── */}
       <div style={{ display: 'flex', gap: 14, marginBottom: 24, flexWrap: 'wrap' }}>
-        <KpiCard label="Ingresos (I)" value={fmt(kpis.ingresos)} sub={`${fmtN(filtered.filter(f=>f.tipo==='I').length)} facturas`} accent="#059669" />
-        <KpiCard label="Egresos (E)" value={fmt(kpis.gastos)} sub={`${fmtN(filtered.filter(f=>f.tipo==='E').length)} facturas`} accent="#e11d48" />
+        <KpiCard label="Ingresos (emitidas)" value={fmt(kpis.ingresos)} sub={`${fmtN(kpis.nEmitidos)} facturas emitidas`} accent="#059669" />
+        <KpiCard label="Egresos (recibidas)" value={fmt(kpis.egresos)} sub={`${fmtN(kpis.nRecibidos)} facturas recibidas`} accent="#e11d48" />
         <KpiCard label="Utilidad neta" value={fmt(kpis.utilidad)} accent={kpis.utilidad >= 0 ? '#059669' : '#e11d48'} sub="Ingresos − Egresos" />
         <KpiCard label="IVA trasladado" value={fmt(kpis.iva)} sub={`${fmtN(kpis.count)} facturas total`} accent="#0ea5e9" />
       </div>
 
       {/* ── Charts ── */}
       {all.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 200px', gap: 14, marginBottom: 24 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 200px 280px', gap: 14, marginBottom: 24 }}>
           <div className="kpi-card">
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
               <p style={{ fontSize: 12, fontWeight: 600, color: '#475569' }}>
                 Ingresos vs. Egresos {yearFil !== 'todos' ? yearFil : '(últimos 12 meses)'}
               </p>
               <div style={{ display: 'flex', gap: 12, fontSize: 11, color: '#64748b' }}>
-                <span><span style={{ display:'inline-block', width:10, height:10, borderRadius:2, background:'#10b981', marginRight:4 }}></span>Ingresos</span>
-                <span><span style={{ display:'inline-block', width:10, height:10, borderRadius:2, background:'#f43f5e', marginRight:4 }}></span>Egresos</span>
+                <span><span style={{ display:'inline-block', width:10, height:10, borderRadius:2, background:'#10b981', marginRight:4 }}></span>Emitidas</span>
+                <span><span style={{ display:'inline-block', width:10, height:10, borderRadius:2, background:'#f43f5e', marginRight:4 }}></span>Recibidas</span>
               </div>
             </div>
             <div style={{ height: 158 }}>
@@ -422,7 +507,7 @@ function App() {
             </div>
           </div>
           <div className="kpi-card" style={{ display: 'flex', flexDirection: 'column' }}>
-            <p style={{ fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 8 }}>Por tipo</p>
+            <p style={{ fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 8 }}>Emitidas vs. Recibidas</p>
             <div style={{ flex: 1 }}>
               <DonutChart segments={donutSegs} total={filtered.length} />
             </div>
@@ -438,6 +523,7 @@ function App() {
               ))}
             </div>
           </div>
+          <TopClients facturas={filtered} onClientClick={rfc => setClientFil(rfc)} activeClient={clientFil} />
         </div>
       )}
 
@@ -460,6 +546,13 @@ function App() {
             {years.map(y => <option key={y} value={y}>{y}</option>)}
           </select>
         )}
+        {/* direction chips */}
+        <div style={{ display: 'flex', gap: 6 }}>
+          {[['todos','Todas'],['emitidos','Emitidas'],['recibidos','Recibidas']].map(([k, label]) => (
+            <button key={k} className={`chip-btn${dirFil === k ? ' active' : ''}`}
+              onClick={() => setDirFil(k)}>{label}</button>
+          ))}
+        </div>
         {/* period chips — disabled when a specific year is selected */}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', opacity: yearFil !== 'todos' ? 0.35 : 1, pointerEvents: yearFil !== 'todos' ? 'none' : 'auto', transition: 'opacity .2s' }}>
           {Object.keys(PERIODO_DAYS).map(k => (
@@ -475,6 +568,13 @@ function App() {
           <option value="todos">Todos los tipos</option>
           {Object.entries(TIPO_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
+        {/* active client indicator */}
+        {clientFil && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8, padding: '4px 10px', fontSize: 12, color: '#0369a1' }}>
+            <span>Cliente: <strong>{clientFil}</strong></span>
+            <button onClick={() => setClientFil(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#0369a1', fontSize: 14, lineHeight: 1, padding: 0 }}>✕</button>
+          </div>
+        )}
       </div>
 
       {/* ── Table ── */}
@@ -500,6 +600,9 @@ function App() {
                 <td style={{ padding: '10px 14px', color: '#475569', whiteSpace: 'nowrap' }}>{(f.fecha||'').slice(0,10)}</td>
                 <td style={{ padding: '10px 14px' }}>
                   <span className={`cfdi-badge cfdi-badge-${f.tipo}`}>{TIPO_LABEL[f.tipo] || f.tipo}</span>
+                  <span style={{ display: 'block', fontSize: 10, color: f.es_emitido ? '#059669' : '#e11d48', marginTop: 2 }}>
+                    {f.es_emitido ? '↑ emitida' : '↓ recibida'}
+                  </span>
                 </td>
                 <td style={{ padding: '10px 14px', maxWidth: 180 }}>
                   <span style={{ fontFamily: 'monospace', fontSize: 11, color: '#64748b', display:'block' }}>{f.emisor_rfc}</span>
@@ -513,8 +616,8 @@ function App() {
                   <span style={{ display:'block', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={f.concepto}>{f.concepto || <em style={{color:'#cbd5e1'}}>—</em>}</span>
                   {f.folio && <span style={{ fontSize: 11, color: '#94a3b8' }}>Folio {f.folio}</span>}
                 </td>
-                <td style={{ padding: '10px 14px', fontWeight: 600, color: f.tipo==='I' ? '#059669' : f.tipo==='E' ? '#e11d48' : '#334155', whiteSpace:'nowrap' }}>
-                  {fmt(f.total)}
+                <td style={{ padding: '10px 14px', fontWeight: 600, color: f.total > 0 ? (f.es_emitido ? '#059669' : '#e11d48') : '#94a3b8', whiteSpace:'nowrap' }}>
+                  {f.total > 0 ? fmt(f.total) : <span style={{ color: '#94a3b8', fontWeight: 400, fontSize: 11 }}>— (compl.)</span>}
                 </td>
                 <td style={{ padding: '10px 14px', color: '#94a3b8', fontSize: 12 }}>{f.moneda}</td>
               </tr>
