@@ -91,6 +91,7 @@ pub async fn company_cfdi_download(
             job_id: job_id.clone(),
             company_id: company_id.clone(),
             label: label.clone(),
+            chunk_start: chunk_start.clone(),
             started_at: today.clone(),
             status: CfdiJobStatus::Running,
         });
@@ -151,7 +152,7 @@ pub async fn company_cfdi_jobs_list(
         .values()
         .filter(|j| j.company_id == company_id)
         .collect();
-    result.sort_by(|a, b| a.started_at.cmp(&b.started_at).then(a.label.cmp(&b.label)));
+    result.sort_by(|a, b| a.chunk_start.cmp(&b.chunk_start));
     (StatusCode::OK, Json(result)).into_response()
 }
 

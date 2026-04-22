@@ -33,6 +33,7 @@ pub struct CfdiJob {
     pub job_id: String,
     pub company_id: String,
     pub label: String,
+    pub chunk_start: String,
     pub started_at: String,
     pub status: CfdiJobStatus,
 }
