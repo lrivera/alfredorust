@@ -1,13 +1,15 @@
-use std::{str::FromStr, sync::Arc};
+use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use askama::Template;
 use axum::{
+    Json,
     extract::{Form, Path, Query, State},
     http::StatusCode,
     response::{Html, IntoResponse, Redirect},
 };
+use futures::TryStreamExt;
 use mongodb::bson::oid::ObjectId;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[allow(unused_imports)]
 use crate::filters;
@@ -492,4 +494,101 @@ pub async fn transactions_delete(
         Ok(_) => Redirect::to("/admin/transactions").into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
+}
+
+// ── JSON API for the dashboard ────────────────────────────────────────────
+
+#[derive(Serialize)]
+pub struct TxApiItem {
+    pub id: String,
+    pub date: String,
+    pub description: String,
+    pub tx_type: String,
+    pub amount: f64,
+    pub category: String,
+    pub account_from: String,
+    pub account_to: String,
+    pub contact: String,
+    pub is_confirmed: bool,
+    pub cfdi_folio: String,
+    pub currency: String,
+    pub notes: String,
+}
+
+pub async fn transactions_data_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<TxApiItem>>, StatusCode> {
+    let active_company = require_admin_active(&session_user)?;
+    let filter = bson::doc! { "company_id": active_company };
+
+    // Parallel lookup fetches
+    let (accs, cats, contacts, txs) = tokio::try_join!(
+        async {
+            state.accounts.find(filter.clone()).await
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+                .try_collect::<Vec<_>>().await
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+        },
+        async {
+            state.categories.find(filter.clone()).await
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+                .try_collect::<Vec<_>>().await
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+        },
+        async {
+            state.contacts.find(filter.clone()).await
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+                .try_collect::<Vec<_>>().await
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+        },
+        async {
+            let opts = mongodb::options::FindOptions::builder()
+                .sort(bson::doc! { "date": -1 })
+                .limit(5000_i64)
+                .build();
+            state.transactions.find(filter.clone()).with_options(opts).await
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+                .try_collect::<Vec<_>>().await
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+        },
+    )?;
+
+    // Build O(1) lookup maps
+    let acc_map: HashMap<String, String> = accs.into_iter()
+        .filter_map(|a| a.id.map(|id| (id.to_hex(), a.name)))
+        .collect();
+    let cat_map: HashMap<String, String> = cats.into_iter()
+        .filter_map(|c| c.id.map(|id| (id.to_hex(), c.name)))
+        .collect();
+    let con_map: HashMap<String, String> = contacts.into_iter()
+        .filter_map(|c| c.id.map(|id| (id.to_hex(), c.name)))
+        .collect();
+
+    let items = txs.into_iter().filter_map(|tx| {
+        let id = tx.id?;
+        let date = tx.date.to_chrono().format("%Y-%m-%d").to_string();
+        let tx_type = match tx.transaction_type {
+            crate::models::TransactionType::Income   => "income",
+            crate::models::TransactionType::Expense  => "expense",
+            crate::models::TransactionType::Transfer => "transfer",
+        }.to_string();
+        Some(TxApiItem {
+            id: id.to_hex(),
+            date,
+            description: tx.description,
+            tx_type,
+            amount: tx.amount,
+            category:     cat_map.get(&tx.category_id.to_hex()).cloned().unwrap_or_default(),
+            account_from: tx.account_from_id.as_ref().and_then(|id| acc_map.get(&id.to_hex())).cloned().unwrap_or_default(),
+            account_to:   tx.account_to_id.as_ref().and_then(|id|  acc_map.get(&id.to_hex())).cloned().unwrap_or_default(),
+            contact:      tx.contact_id.as_ref().and_then(|id|      con_map.get(&id.to_hex())).cloned().unwrap_or_default(),
+            is_confirmed: tx.is_confirmed,
+            cfdi_folio:   tx.cfdi_folio.unwrap_or_default(),
+            currency:     tx.currency.unwrap_or_else(|| "MXN".into()),
+            notes:        tx.notes.unwrap_or_default(),
+        })
+    }).collect();
+
+    Ok(Json(items))
 }

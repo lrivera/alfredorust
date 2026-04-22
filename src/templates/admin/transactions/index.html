@@ -2,71 +2,527 @@
 
 {% block title %}Movimientos{% endblock %}
 
+{% block head %}
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  .tx-badge { display:inline-flex; align-items:center; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:600; letter-spacing:.02em; }
+  .tx-income   { background:#ecfdf5; color:#059669; }
+  .tx-expense  { background:#fff1f2; color:#e11d48; }
+  .tx-transfer { background:#eff6ff; color:#2563eb; }
+
+  .tx-card { background:white; border-radius:12px; border:1px solid #e2e8f0; padding:20px 24px; box-shadow:0 1px 3px rgba(15,23,42,.06); }
+
+  .chip-btn { padding:4px 12px; border-radius:20px; font-size:12px; font-weight:500; border:1px solid #e2e8f0; background:white; color:#64748b; cursor:pointer; transition:all .15s; }
+  .chip-btn:hover { border-color:#94a3b8; color:#1e293b; }
+  .chip-btn.active { background:#0ea5e9; border-color:#0ea5e9; color:white; }
+  .chip-btn.income.active  { background:#059669; border-color:#059669; }
+  .chip-btn.expense.active { background:#e11d48; border-color:#e11d48; }
+  .chip-btn.transfer.active{ background:#2563eb; border-color:#2563eb; }
+
+  .tx-tr { cursor:pointer; transition:background .1s; }
+  .tx-tr:hover { background:#f8fafc; }
+  .tx-tr.sel    { background:#f0f9ff; }
+
+  .detail-panel { position:fixed; top:0; right:0; bottom:0; width:min(460px,100vw); background:white; box-shadow:-8px 0 30px -8px rgba(15,23,42,.18); z-index:50; display:flex; flex-direction:column; transform:translateX(100%); transition:transform .22s cubic-bezier(.4,0,.2,1); }
+  .detail-panel.open { transform:translateX(0); }
+  .overlay { position:fixed; inset:0; background:rgba(15,23,42,.25); z-index:49; opacity:0; pointer-events:none; transition:opacity .22s; }
+  .overlay.vis { opacity:1; pointer-events:auto; }
+</style>
+{% endblock %}
+
 {% block content %}
-  <div class="flex items-center justify-between pb-6">
-    <div>
-      <h1 class="text-2xl font-semibold text-slate-800">Movimientos</h1>
-      <p class="mt-1 text-sm text-slate-500">Ingresos, gastos o transferencias registradas.</p>
-    </div>
-    <a href="/admin/transactions/new"
-      class="inline-flex items-center rounded-md bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2">
-      Nuevo movimiento
-    </a>
-  </div>
+<div id="tx-root" style="min-height:50vh;"></div>
+{% endblock %}
 
-  <div class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-    <table class="min-w-full divide-y divide-slate-200 text-sm">
-      <thead class="bg-slate-50 text-left font-semibold text-slate-600">
-        <tr>
-          <th class="px-4 py-2">Descripción</th>
-          <th class="px-4 py-2">Compañía</th>
-          <th class="px-4 py-2">Tipo</th>
-          <th class="px-4 py-2">Monto</th>
-          <th class="px-4 py-2 text-right">Acciones</th>
-        </tr>
-      </thead>
-      <tbody class="divide-y divide-slate-100">
-        {% for tx in transactions %}
-        <tr class="transition hover:bg-slate-50">
-          <td class="px-4 py-3 font-medium text-slate-800">{{ tx.description }}</td>
-          <td class="px-4 py-3 text-slate-600">{{ tx.company }}</td>
-          <td class="px-4 py-3 text-slate-600">{{ tx.transaction_type }}</td>
-          <td class="px-4 py-3 text-slate-600">{{ tx.amount }}</td>
-          <td class="px-4 py-3 text-right">
-            <div class="flex justify-end gap-2">
-              <a href="/admin/transactions/{{ tx.id }}/edit"
-                 class="inline-flex items-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-sky-400 hover:text-sky-600">
-                Editar
-              </a>
-              <form method="post" action="/admin/transactions/{{ tx.id }}/delete" onsubmit="return confirm('¿Eliminar este movimiento?');">
-                <button type="submit"
-                    class="inline-flex items-center rounded-md border border-rose-200 bg-rose-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-rose-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2">
-                  Eliminar
-                </button>
-              </form>
+{% block scripts %}
+{% raw %}
+<script type="text/babel">
+const { useState, useEffect, useMemo } = React;
+
+const fmtMXN = new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN',maximumFractionDigits:0});
+const fmtNum = new Intl.NumberFormat('es-MX',{maximumFractionDigits:0});
+const fmt  = n => fmtMXN.format(n);
+const fmtN = n => fmtNum.format(n);
+
+const TYPE_LABEL = { income:'Ingreso', expense:'Gasto', transfer:'Transferencia' };
+const TYPE_COLOR = { income:'#059669', expense:'#e11d48', transfer:'#2563eb' };
+const PERIODO_DAYS = { hoy:1, semana:7, mes:30, trimestre:90, año:365, todo:null };
+const PER_PAGE = 50;
+
+function periodCutoff(k) {
+  if (!PERIODO_DAYS[k]) return null;
+  const d = new Date(); d.setDate(d.getDate() - PERIODO_DAYS[k]); return d;
+}
+
+// ── KPI Card ──────────────────────────────────────────────────────────────
+function KpiCard({ label, value, sub, accent, onClick, active }) {
+  return (
+    <div onClick={onClick} className="tx-card" style={{ flex:'1 1 0', minWidth:0, cursor:onClick?'pointer':'default',
+      outline: active ? `2px solid ${accent||'#0ea5e9'}` : 'none', outlineOffset:2 }}>
+      <p style={{fontSize:11,fontWeight:600,color:'#94a3b8',letterSpacing:'.06em',textTransform:'uppercase'}}>{label}</p>
+      <p style={{fontSize:24,fontWeight:700,color:accent||'#1e293b',marginTop:4,lineHeight:1.2}}>{value}</p>
+      {sub && <p style={{fontSize:12,color:'#94a3b8',marginTop:4}}>{sub}</p>}
+    </div>
+  );
+}
+
+// ── SVG Line Chart ────────────────────────────────────────────────────────
+function LineChart({ data }) {
+  if (!data.length) return <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',color:'#94a3b8',fontSize:13}}>Sin datos</div>;
+  const W=560, H=130, PB=28;
+  const maxVal = Math.max(...data.flatMap(d=>[d.income,d.expense]),1);
+  const n = data.length;
+  const xStep = n>1 ? W/(n-1) : W;
+  const xOf = i => i*xStep;
+  const yOf = v => H-(v/maxVal)*H;
+  const linePath = key => data.map((d,i)=>`${i?'L':'M'}${xOf(i).toFixed(1)},${yOf(d[key]).toFixed(1)}`).join(' ');
+  const areaPath = (key,base) => `${linePath(key)} L${xOf(n-1).toFixed(1)},${yOf(base).toFixed(1)} L0,${yOf(base).toFixed(1)} Z`;
+  const every = Math.max(1,Math.ceil(n/7));
+  const idI='ai'+Math.random().toString(36).slice(2), idE='ae'+Math.random().toString(36).slice(2);
+  return (
+    <svg viewBox={`0 0 ${W} ${H+PB}`} style={{width:'100%',height:'100%'}}>
+      <defs>
+        <linearGradient id={idI} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#10b981" stopOpacity=".15"/><stop offset="100%" stopColor="#10b981" stopOpacity="0"/></linearGradient>
+        <linearGradient id={idE} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#f43f5e" stopOpacity=".12"/><stop offset="100%" stopColor="#f43f5e" stopOpacity="0"/></linearGradient>
+      </defs>
+      {[0,.5,1].map(t=><line key={t} x1={0} x2={W} y1={yOf(maxVal*t)} y2={yOf(maxVal*t)} stroke="#f1f5f9" strokeWidth="1"/>)}
+      <path d={areaPath('expense',0)} fill={`url(#${idE})`}/>
+      <path d={areaPath('income',0)}  fill={`url(#${idI})`}/>
+      <path d={linePath('expense')} fill="none" stroke="#f43f5e" strokeWidth="2" strokeLinejoin="round"/>
+      <path d={linePath('income')}  fill="none" stroke="#10b981" strokeWidth="2" strokeLinejoin="round"/>
+      {data.map((d,i)=> i%every===0||i===n-1 ? (
+        <text key={d.month} x={xOf(i)} y={H+PB-4} textAnchor={i===0?'start':i===n-1?'end':'middle'} fontSize="10" fill="#94a3b8">{d.month.slice(2)}</text>
+      ) : null)}
+    </svg>
+  );
+}
+
+// ── Donut ─────────────────────────────────────────────────────────────────
+function DonutChart({ segments }) {
+  const CX=72,CY=72,R=54,SW=20, C=2*Math.PI*R;
+  let cum=0;
+  const tot=segments.reduce((s,d)=>s+d.value,0)||1;
+  return (
+    <svg viewBox="0 0 144 144" style={{width:'100%',height:'100%'}}>
+      <circle cx={CX} cy={CY} r={R} fill="none" stroke="#f1f5f9" strokeWidth={SW}/>
+      {segments.filter(s=>s.value>0).map(seg=>{
+        const frac=seg.value/tot, dash=frac*C, rot=(cum/tot)*360-90; cum+=seg.value;
+        return <circle key={seg.label} cx={CX} cy={CY} r={R} fill="none" stroke={seg.color} strokeWidth={SW}
+          strokeDasharray={`${dash.toFixed(2)} ${(C-dash).toFixed(2)}`} transform={`rotate(${rot.toFixed(2)} ${CX} ${CY})`}/>;
+      })}
+      <text x={CX} y={CY-7} textAnchor="middle" style={{fontSize:18,fontWeight:700,fill:'#1e293b'}}>{fmtN(tot)}</text>
+      <text x={CX} y={CY+12} textAnchor="middle" style={{fontSize:10,fill:'#94a3b8'}}>movimientos</text>
+    </svg>
+  );
+}
+
+// ── Category Bars ─────────────────────────────────────────────────────────
+function CategoryBars({ items, onCategoryClick, activeCategory }) {
+  const cats = useMemo(()=>{
+    const map={};
+    items.forEach(t=>{
+      const k=t.category||'Sin categoría';
+      if(!map[k]) map[k]={name:k,income:0,expense:0,transfer:0,count:0};
+      map[k][t.tx_type]+=t.amount; map[k].count++;
+    });
+    return Object.values(map).sort((a,b)=>(b.income+b.expense)-(a.income+a.expense)).slice(0,10);
+  },[items]);
+  if(!cats.length) return null;
+  const maxAmt=Math.max(...cats.map(c=>c.income+c.expense+c.transfer),1);
+  return (
+    <div className="tx-card">
+      <p style={{fontSize:12,fontWeight:600,color:'#475569',marginBottom:12}}>Por categoría</p>
+      {cats.map(c=>{
+        const total=c.income+c.expense+c.transfer;
+        const isActive=activeCategory===c.name;
+        return (
+          <div key={c.name} onClick={()=>onCategoryClick(isActive?null:c.name)}
+            style={{marginBottom:10,cursor:'pointer',padding:'4px 6px',borderRadius:6,background:isActive?'#f0f9ff':'transparent',transition:'background .15s'}}>
+            <div style={{display:'flex',justifyContent:'space-between',marginBottom:3}}>
+              <span style={{fontSize:12,color:isActive?'#0369a1':'#334155',fontWeight:isActive?600:400,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:'65%'}}>{c.name}</span>
+              <span style={{fontSize:12,fontWeight:600,color:'#1e293b',flexShrink:0}}>{fmt(total)}</span>
             </div>
-          </td>
-        </tr>
-        {% else %}
-        <tr>
-          <td colspan="5" class="px-4 py-6 text-center text-sm text-slate-500">Aún no hay movimientos registrados.</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-
-  {% if total_pages > 1 %}
-  <div class="mt-4 flex items-center justify-between text-sm text-slate-600">
-    <span>Página {{ page }} de {{ total_pages }} ({{ total }} movimientos)</span>
-    <div class="flex gap-2">
-      {% if page > 1 %}
-      <a href="?page={{ page - 1 }}" class="rounded-md border border-slate-300 px-3 py-1.5 hover:border-sky-400 hover:text-sky-600">← Anterior</a>
-      {% endif %}
-      {% if page < total_pages %}
-      <a href="?page={{ page + 1 }}" class="rounded-md border border-slate-300 px-3 py-1.5 hover:border-sky-400 hover:text-sky-600">Siguiente →</a>
-      {% endif %}
+            <div style={{height:5,borderRadius:3,background:'#f1f5f9',overflow:'hidden',display:'flex'}}>
+              {c.income>0 && <div style={{height:'100%',width:`${(c.income/maxAmt)*100}%`,background:'#10b981'}}/>}
+              {c.expense>0 && <div style={{height:'100%',width:`${(c.expense/maxAmt)*100}%`,background:'#f43f5e'}}/>}
+              {c.transfer>0 && <div style={{height:'100%',width:`${(c.transfer/maxAmt)*100}%`,background:'#2563eb'}}/>}
+            </div>
+            <span style={{fontSize:10,color:'#94a3b8'}}>{c.count} mov.</span>
+          </div>
+        );
+      })}
     </div>
-  </div>
-  {% endif %}
+  );
+}
+
+// ── Detail Panel ──────────────────────────────────────────────────────────
+function DetailPanel({ tx: t, onClose }) {
+  const open=!!t;
+  return (
+    <>
+      <div className={`overlay${open?' vis':''}`} onClick={onClose}/>
+      <div className={`detail-panel${open?' open':''}`}>
+        {t && (
+          <>
+            <div style={{padding:'20px 24px',borderBottom:'1px solid #e2e8f0',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+              <div>
+                <span className={`tx-badge tx-${t.tx_type}`}>{TYPE_LABEL[t.tx_type]||t.tx_type}</span>
+                <p style={{fontSize:15,fontWeight:600,color:'#0f172a',marginTop:6,lineHeight:1.3}}>{t.description}</p>
+              </div>
+              <button onClick={onClose} style={{background:'none',border:'none',cursor:'pointer',color:'#94a3b8',fontSize:20,lineHeight:1}}>✕</button>
+            </div>
+            <div style={{overflowY:'auto',flex:1,padding:'20px 24px'}}>
+              {/* amount */}
+              <div style={{background:'#f8fafc',borderRadius:10,padding:'14px 18px',marginBottom:20,textAlign:'center'}}>
+                <p style={{fontSize:11,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'.06em'}}>Monto</p>
+                <p style={{fontSize:30,fontWeight:700,color:TYPE_COLOR[t.tx_type]||'#1e293b',marginTop:4}}>{fmt(t.amount)}</p>
+                {t.currency && t.currency!=='MXN' && <p style={{fontSize:12,color:'#64748b'}}>{t.currency}</p>}
+              </div>
+              {/* details */}
+              <DSection title="Detalles">
+                <DField label="Fecha" value={t.date}/>
+                <DField label="Categoría" value={t.category}/>
+                {t.account_from && <DField label="Cuenta origen" value={t.account_from}/>}
+                {t.account_to   && <DField label="Cuenta destino" value={t.account_to}/>}
+                {t.contact && <DField label="Contacto" value={t.contact}/>}
+                <DField label="Confirmado" value={t.is_confirmed ? '✓ Sí' : '⏳ Pendiente'}/>
+              </DSection>
+              {(t.cfdi_folio || t.currency) && (
+                <DSection title="CFDI">
+                  {t.cfdi_folio && <DField label="Folio" value={t.cfdi_folio}/>}
+                </DSection>
+              )}
+              {t.notes && (
+                <DSection title="Notas">
+                  <p style={{fontSize:13,color:'#475569',lineHeight:1.5,gridColumn:'1/-1'}}>{t.notes}</p>
+                </DSection>
+              )}
+              <div style={{marginTop:20}}>
+                <a href={`/admin/transactions/${t.id}/edit`}
+                  style={{display:'inline-flex',alignItems:'center',gap:6,background:'#0ea5e9',color:'white',padding:'8px 16px',borderRadius:8,fontSize:13,fontWeight:600,textDecoration:'none'}}>
+                  ✏ Editar movimiento
+                </a>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </>
+  );
+}
+function DSection({title,children}){return(<div style={{marginBottom:18}}><p style={{fontSize:10,fontWeight:700,color:'#94a3b8',letterSpacing:'.08em',textTransform:'uppercase',marginBottom:10}}>{title}</p><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>{children}</div></div>);}
+function DField({label,value}){return(<div><p style={{fontSize:10,color:'#94a3b8',marginBottom:2}}>{label}</p><p style={{fontSize:13,fontWeight:500,color:'#1e293b'}}>{value||'—'}</p></div>);}
+
+// ── Pager ─────────────────────────────────────────────────────────────────
+function Pager({ page, total, onChange }) {
+  if(total<=1) return null;
+  const pages=[]; const s=Math.max(1,page-2), e=Math.min(total,page+2);
+  for(let i=s;i<=e;i++) pages.push(i);
+  const btn=(label,target,disabled)=>(
+    <button key={label} onClick={()=>!disabled&&onChange(target)} disabled={disabled}
+      style={{padding:'4px 10px',borderRadius:6,border:'1px solid #e2e8f0',background:target===page?'#0ea5e9':'white',
+        color:target===page?'white':disabled?'#cbd5e1':'#475569',cursor:disabled?'default':'pointer',fontSize:12,fontWeight:500}}>
+      {label}
+    </button>
+  );
+  return(
+    <div style={{display:'flex',alignItems:'center',gap:6,marginTop:16,justifyContent:'flex-end'}}>
+      {btn('←',page-1,page===1)}
+      {pages.map(p=>btn(p,p,false))}
+      {btn('→',page+1,page===total)}
+      <span style={{fontSize:12,color:'#94a3b8',marginLeft:8}}>Pág. {page}/{total}</span>
+    </div>
+  );
+}
+
+// ── App ───────────────────────────────────────────────────────────────────
+function App() {
+  const [all, setAll]         = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState(null);
+  const [search, setSearch]   = useState('');
+  const [periodo, setPeriodo] = useState('mes');
+  const [yearFil, setYearFil] = useState('todos');
+  const [typeFil, setTypeFil] = useState('todos');
+  const [confirmed, setConfirmed] = useState('todos'); // 'todos'|'yes'|'no'
+  const [catFil, setCatFil]   = useState(null);
+  const [page, setPage]       = useState(1);
+  const [selected, setSelected] = useState(null);
+
+  useEffect(()=>{
+    fetch('/api/admin/transactions/data',{credentials:'same-origin'})
+      .then(r=>{ if(!r.ok) throw new Error(r.status); return r.json(); })
+      .then(d=>{ setAll(d); setLoading(false); })
+      .catch(e=>{ setError(e.message); setLoading(false); });
+  },[]);
+
+  const years = useMemo(()=>{
+    const ys=new Set(all.map(t=>t.date.slice(0,4)).filter(y=>/^\d{4}$/.test(y)));
+    return [...ys].sort((a,b)=>b.localeCompare(a));
+  },[all]);
+
+  // filtered: all active filters
+  const filtered = useMemo(()=>{
+    const yearMode = yearFil!=='todos';
+    const cutoff   = yearMode ? null : periodCutoff(periodo);
+    const q = search.toLowerCase().trim();
+    return all.filter(t=>{
+      if(yearMode && t.date.slice(0,4)!==yearFil) return false;
+      if(!yearMode && cutoff && new Date(t.date)<cutoff) return false;
+      if(typeFil!=='todos' && t.tx_type!==typeFil) return false;
+      if(confirmed==='yes' && !t.is_confirmed)  return false;
+      if(confirmed==='no'  &&  t.is_confirmed)  return false;
+      if(catFil && t.category!==catFil) return false;
+      if(q){
+        const h=`${t.description} ${t.category} ${t.contact} ${t.account_from} ${t.account_to} ${t.cfdi_folio}`.toLowerCase();
+        if(!h.includes(q)) return false;
+      }
+      return true;
+    });
+  },[all,search,periodo,yearFil,typeFil,confirmed,catFil]);
+
+  // chartFiltered: all filters except periodo (for correct monthly chart)
+  const chartFiltered = useMemo(()=>{
+    const yearMode = yearFil!=='todos';
+    const q = search.toLowerCase().trim();
+    return all.filter(t=>{
+      if(yearMode && t.date.slice(0,4)!==yearFil) return false;
+      if(typeFil!=='todos' && t.tx_type!==typeFil) return false;
+      if(confirmed==='yes' && !t.is_confirmed)  return false;
+      if(confirmed==='no'  &&  t.is_confirmed)  return false;
+      if(catFil && t.category!==catFil) return false;
+      if(q){
+        const h=`${t.description} ${t.category} ${t.contact} ${t.account_from} ${t.account_to} ${t.cfdi_folio}`.toLowerCase();
+        if(!h.includes(q)) return false;
+      }
+      return true;
+    });
+  },[all,search,yearFil,typeFil,confirmed,catFil]);
+
+  const kpis = useMemo(()=>{
+    const income   = filtered.filter(t=>t.tx_type==='income').reduce((s,t)=>s+t.amount,0);
+    const expense  = filtered.filter(t=>t.tx_type==='expense').reduce((s,t)=>s+t.amount,0);
+    const transfer = filtered.filter(t=>t.tx_type==='transfer').reduce((s,t)=>s+t.amount,0);
+    const pending  = filtered.filter(t=>!t.is_confirmed).length;
+    return { income, expense, net: income-expense, transfer, pending, count: filtered.length };
+  },[filtered]);
+
+  const monthly = useMemo(()=>{
+    const yearMode = yearFil!=='todos';
+    const map={};
+    chartFiltered.filter(t=>t.tx_type!=='transfer').forEach(t=>{
+      const m=t.date.slice(0,7); if(!m) return;
+      if(!map[m]) map[m]={month:m,income:0,expense:0};
+      if(t.tx_type==='income')  map[m].income+=t.amount;
+      else                       map[m].expense+=t.amount;
+    });
+    const sorted=Object.values(map).sort((a,b)=>a.month.localeCompare(b.month));
+    return yearMode ? sorted : sorted.slice(-12);
+  },[chartFiltered,yearFil]);
+
+  const donutSegs = useMemo(()=>[
+    {label:'Ingreso',    value:filtered.filter(t=>t.tx_type==='income').length,   color:'#10b981'},
+    {label:'Gasto',      value:filtered.filter(t=>t.tx_type==='expense').length,  color:'#f43f5e'},
+    {label:'Transferencia',value:filtered.filter(t=>t.tx_type==='transfer').length,color:'#2563eb'},
+  ].filter(s=>s.value>0),[filtered]);
+
+  const totalPages = Math.ceil(filtered.length/PER_PAGE);
+  const pageItems  = filtered.slice((page-1)*PER_PAGE, page*PER_PAGE);
+
+  useEffect(()=>{ setPage(1); },[search,periodo,yearFil,typeFil,confirmed,catFil]);
+
+  if(loading) return(
+    <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:200,color:'#94a3b8',gap:12,fontSize:14}}>
+      <svg style={{width:24,height:24,animation:'spin 1s linear infinite'}} viewBox="0 0 24 24" fill="none">
+        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity=".25"/>
+        <path d="M22 12a10 10 0 00-10-10" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/>
+      </svg>
+      Cargando movimientos…
+    </div>
+  );
+  if(error) return <div style={{padding:24,color:'#e11d48'}}>Error al cargar datos: {error}</div>;
+
+  return (
+    <div style={{maxWidth:1280,margin:'0 auto'}}>
+      {/* Header */}
+      <div style={{display:'flex',alignItems:'flex-end',justifyContent:'space-between',marginBottom:24}}>
+        <div>
+          <h1 style={{fontSize:22,fontWeight:700,color:'#0f172a'}}>Movimientos</h1>
+          <p style={{fontSize:13,color:'#94a3b8',marginTop:4}}>{fmtN(all.length)} total · {fmtN(filtered.length)} en vista</p>
+        </div>
+        <a href="/admin/transactions/new"
+          style={{display:'inline-flex',alignItems:'center',gap:6,background:'#0ea5e9',color:'white',padding:'8px 16px',borderRadius:8,fontSize:13,fontWeight:600,textDecoration:'none'}}>
+          + Nuevo movimiento
+        </a>
+      </div>
+
+      {/* KPI Cards */}
+      <div style={{display:'flex',gap:14,marginBottom:24,flexWrap:'wrap'}}>
+        <KpiCard label="Ingresos" value={fmt(kpis.income)}
+          sub={`${fmtN(filtered.filter(t=>t.tx_type==='income').length)} movimientos`} accent="#059669"
+          onClick={()=>setTypeFil(typeFil==='income'?'todos':'income')} active={typeFil==='income'}/>
+        <KpiCard label="Gastos" value={fmt(kpis.expense)}
+          sub={`${fmtN(filtered.filter(t=>t.tx_type==='expense').length)} movimientos`} accent="#e11d48"
+          onClick={()=>setTypeFil(typeFil==='expense'?'todos':'expense')} active={typeFil==='expense'}/>
+        <KpiCard label="Flujo neto" value={fmt(kpis.net)}
+          accent={kpis.net>=0?'#059669':'#e11d48'} sub="Ingresos − Gastos"/>
+        <KpiCard label="Sin confirmar" value={fmtN(kpis.pending)}
+          accent={kpis.pending>0?'#d97706':'#94a3b8'} sub="movimientos pendientes"
+          onClick={()=>setConfirmed(confirmed==='no'?'todos':'no')} active={confirmed==='no'}/>
+      </div>
+
+      {/* Charts */}
+      {all.length>0 && (
+        <div style={{display:'flex',flexDirection:'column',gap:14,marginBottom:24}}>
+          {/* Row 1: line chart full width */}
+          <div className="tx-card">
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
+              <p style={{fontSize:12,fontWeight:600,color:'#475569'}}>
+                Ingresos vs. Gastos{catFil?` · ${catFil}`:''} {yearFil!=='todos'?yearFil:'(últimos 12 meses)'}
+              </p>
+              <div style={{display:'flex',gap:12,fontSize:11,color:'#64748b'}}>
+                <span><span style={{display:'inline-block',width:10,height:10,borderRadius:2,background:'#10b981',marginRight:4}}></span>Ingresos</span>
+                <span><span style={{display:'inline-block',width:10,height:10,borderRadius:2,background:'#f43f5e',marginRight:4}}></span>Gastos</span>
+              </div>
+            </div>
+            <div style={{height:160}}>
+              <LineChart data={monthly}/>
+            </div>
+          </div>
+          {/* Row 2: donut + categories */}
+          <div style={{display:'grid',gridTemplateColumns:'220px 1fr',gap:14}}>
+            <div className="tx-card" style={{display:'flex',flexDirection:'column'}}>
+              <p style={{fontSize:12,fontWeight:600,color:'#475569',marginBottom:8}}>Distribución</p>
+              <div style={{flex:1,minHeight:150}}>
+                <DonutChart segments={donutSegs}/>
+              </div>
+              <div style={{marginTop:8}}>
+                {donutSegs.map(s=>(
+                  <div key={s.label} style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:6}}>
+                    <span style={{display:'flex',alignItems:'center',gap:6,fontSize:11,color:'#64748b'}}>
+                      <span style={{width:8,height:8,borderRadius:'50%',background:s.color,display:'inline-block'}}></span>
+                      {s.label}
+                    </span>
+                    <span style={{fontSize:11,fontWeight:600,color:'#334155'}}>{fmtN(s.value)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <CategoryBars items={filtered} onCategoryClick={c=>setCatFil(c)} activeCategory={catFil}/>
+          </div>
+        </div>
+      )}
+
+      {/* Filter Bar */}
+      <div style={{background:'white',border:'1px solid #e2e8f0',borderRadius:12,padding:'14px 18px',marginBottom:16,display:'flex',flexWrap:'wrap',gap:12,alignItems:'center'}}>
+        {/* search */}
+        <div style={{position:'relative',flex:'1 1 200px',minWidth:160}}>
+          <svg style={{position:'absolute',left:10,top:'50%',transform:'translateY(-50%)',width:14,height:14,color:'#94a3b8'}} viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M9 3a6 6 0 100 12A6 6 0 009 3zM1 9a8 8 0 1114.32 4.906l3.387 3.387a1 1 0 01-1.414 1.414l-3.387-3.387A8 8 0 011 9z" clipRule="evenodd"/>
+          </svg>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar descripción, categoría, contacto…"
+            style={{width:'100%',paddingLeft:30,paddingRight:10,paddingTop:6,paddingBottom:6,border:'1px solid #e2e8f0',borderRadius:8,fontSize:13,outline:'none',boxSizing:'border-box',color:'#1e293b'}}/>
+        </div>
+        {/* year */}
+        {years.length>0 && (
+          <select value={yearFil} onChange={e=>setYearFil(e.target.value)}
+            style={{padding:'5px 10px',border:'1px solid #e2e8f0',borderRadius:8,fontSize:13,color:'#475569',background:'white',cursor:'pointer'}}>
+            <option value="todos">Todos los años</option>
+            {years.map(y=><option key={y} value={y}>{y}</option>)}
+          </select>
+        )}
+        {/* period chips */}
+        <div style={{display:'flex',gap:6,flexWrap:'wrap',opacity:yearFil!=='todos'?.35:1,pointerEvents:yearFil!=='todos'?'none':'auto',transition:'opacity .2s'}}>
+          {Object.keys(PERIODO_DAYS).map(k=>(
+            <button key={k} className={`chip-btn${periodo===k?' active':''}`} onClick={()=>setPeriodo(k)}>
+              {k.charAt(0).toUpperCase()+k.slice(1)}
+            </button>
+          ))}
+        </div>
+        {/* type chips */}
+        <div style={{display:'flex',gap:6}}>
+          {[['todos','Todos'],['income','Ingresos'],['expense','Gastos'],['transfer','Transf.']].map(([k,l])=>(
+            <button key={k} className={`chip-btn ${k} ${typeFil===k?'active':''}`} onClick={()=>setTypeFil(k)}>{l}</button>
+          ))}
+        </div>
+        {/* confirmed */}
+        <div style={{display:'flex',gap:6}}>
+          {[['todos','Todos'],['yes','Confirmados'],['no','Pendientes']].map(([k,l])=>(
+            <button key={k} className={`chip-btn${confirmed===k?' active':''}`} onClick={()=>setConfirmed(k)}>{l}</button>
+          ))}
+        </div>
+        {/* active category pill */}
+        {catFil && (
+          <div style={{display:'flex',alignItems:'center',gap:6,background:'#f0f9ff',border:'1px solid #bae6fd',borderRadius:8,padding:'4px 10px',fontSize:12,color:'#0369a1'}}>
+            <span>Cat: <strong>{catFil}</strong></span>
+            <button onClick={()=>setCatFil(null)} style={{background:'none',border:'none',cursor:'pointer',color:'#0369a1',fontSize:14,lineHeight:1,padding:0}}>✕</button>
+          </div>
+        )}
+      </div>
+
+      {/* Table */}
+      <div style={{background:'white',border:'1px solid #e2e8f0',borderRadius:12,overflow:'hidden',boxShadow:'0 1px 3px rgba(15,23,42,.06)'}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+          <thead>
+            <tr style={{background:'#f8fafc',borderBottom:'1px solid #e2e8f0'}}>
+              {['Fecha','Tipo','Descripción','Categoría','Cuenta','Contacto','Monto','✓'].map(h=>(
+                <th key={h} style={{padding:'10px 14px',textAlign:'left',fontWeight:600,fontSize:11,color:'#64748b',letterSpacing:'.04em',textTransform:'uppercase',whiteSpace:'nowrap'}}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {pageItems.length===0 && (
+              <tr><td colSpan={8} style={{padding:'32px 16px',textAlign:'center',color:'#94a3b8',fontSize:13}}>
+                No hay movimientos para los filtros seleccionados.
+              </td></tr>
+            )}
+            {pageItems.map(t=>(
+              <tr key={t.id} className={`tx-tr${selected?.id===t.id?' sel':''}`}
+                onClick={()=>setSelected(selected?.id===t.id?null:t)}
+                style={{borderBottom:'1px solid #f1f5f9'}}>
+                <td style={{padding:'9px 14px',color:'#64748b',whiteSpace:'nowrap',fontSize:12}}>{t.date}</td>
+                <td style={{padding:'9px 14px'}}>
+                  <span className={`tx-badge tx-${t.tx_type}`}>{TYPE_LABEL[t.tx_type]||t.tx_type}</span>
+                </td>
+                <td style={{padding:'9px 14px',color:'#1e293b',maxWidth:200}}>
+                  <span style={{display:'block',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.description}</span>
+                  {t.cfdi_folio && <span style={{fontSize:10,color:'#94a3b8'}}>CFDI {t.cfdi_folio}</span>}
+                </td>
+                <td style={{padding:'9px 14px',color:'#475569',maxWidth:130}}>
+                  <span style={{display:'block',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.category||<em style={{color:'#cbd5e1'}}>—</em>}</span>
+                </td>
+                <td style={{padding:'9px 14px',color:'#475569',maxWidth:120,fontSize:12}}>
+                  <span style={{display:'block',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                    {t.account_from && t.account_to ? `${t.account_from} → ${t.account_to}` : t.account_from||t.account_to||'—'}
+                  </span>
+                </td>
+                <td style={{padding:'9px 14px',color:'#475569',maxWidth:120,fontSize:12}}>
+                  <span style={{display:'block',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.contact||'—'}</span>
+                </td>
+                <td style={{padding:'9px 14px',fontWeight:600,whiteSpace:'nowrap',color:t.tx_type==='income'?'#059669':t.tx_type==='expense'?'#e11d48':'#2563eb'}}>
+                  {fmt(t.amount)}
+                </td>
+                <td style={{padding:'9px 14px',textAlign:'center'}}>
+                  {t.is_confirmed
+                    ? <span style={{color:'#059669',fontSize:14}}>✓</span>
+                    : <span style={{color:'#d97706',fontSize:13}}>⏳</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <Pager page={page} total={totalPages} onChange={setPage}/>
+      <DetailPanel tx={selected} onClose={()=>setSelected(null)}/>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('tx-root')).render(<App/>);
+</script>
+{% endraw %}
 {% endblock %}

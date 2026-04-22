@@ -185,6 +185,7 @@ async fn main() {
             "/admin/planned_entries/{id}/pay",
             get(routes::planned_entries_pay_form).post(routes::planned_entries_pay),
         )
+        .route("/api/admin/transactions/data", get(routes::transactions_data_api))
         .route(
             "/admin/transactions",
             get(routes::transactions_index).post(routes::transactions_create),
