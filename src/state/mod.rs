@@ -15,6 +15,7 @@ use bson::Document;
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "status", rename_all = "lowercase")]
 pub enum CfdiJobStatus {
+    Queued,
     Running,
     Done {
         imported: usize,

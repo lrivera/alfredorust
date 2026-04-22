@@ -93,7 +93,7 @@ pub async fn company_cfdi_download(
             label: label.clone(),
             chunk_start: chunk_start.clone(),
             started_at: today.clone(),
-            status: CfdiJobStatus::Running,
+            status: CfdiJobStatus::Queued,
         });
 
         let state_bg = state.clone();
@@ -109,6 +109,14 @@ pub async fn company_cfdi_download(
 
         tokio::spawn(async move {
             let _permit = sem.acquire().await.unwrap();
+
+            // Mark as actively running now that we have a semaphore slot.
+            {
+                let mut jobs = state_bg.jobs.lock().await;
+                if let Some(job) = jobs.get_mut(&job_id_bg) {
+                    job.status = CfdiJobStatus::Running;
+                }
+            }
 
             let result = run_download(
                 &state_bg, &company_id_bg, &company_oid_bg,
@@ -437,6 +445,6 @@ fn should_retry(status: &CfdiJobStatus) -> bool {
     match status {
         CfdiJobStatus::Done { imported, errors, .. } => *imported == 0 && !errors.is_empty(),
         CfdiJobStatus::Failed { .. } => true,
-        CfdiJobStatus::Running => false,
+        CfdiJobStatus::Running | CfdiJobStatus::Queued => false,
     }
 }

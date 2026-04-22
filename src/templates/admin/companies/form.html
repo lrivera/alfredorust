@@ -216,9 +216,12 @@
       function statusBadge(statusObj) {
         if (!statusObj) return '<span class="text-slate-400">—</span>';
         const s = statusObj.status;
+        if (s === 'queued') {
+          return '<span class="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">En cola</span>';
+        }
         if (s === 'running') {
           return '<span class="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700">' +
-            '<span class="animate-pulse">●</span> Corriendo</span>';
+            '<span class="animate-pulse">●</span> Descargando</span>';
         }
         if (s === 'done') {
           return '<span class="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">✓ Listo</span>';
