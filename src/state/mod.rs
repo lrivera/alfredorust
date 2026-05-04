@@ -80,6 +80,7 @@ pub async fn init_state() -> Result<AppState> {
     let uri = env::var("MONGODB_URI").unwrap_or_else(|_| "mongodb://localhost:27017".to_string());
     let db_name = env::var("MONGODB_DB").unwrap_or_else(|_| "totp".to_string());
 
+    println!("Connecting to MongoDB at {}", uri);
     let client = Client::with_uri_str(uri).await?;
     let db = client.database(&db_name);
 

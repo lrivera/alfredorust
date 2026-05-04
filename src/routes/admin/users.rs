@@ -12,7 +12,10 @@ use axum::{
     response::{Html, IntoResponse, Redirect, Response},
 };
 use mongodb::bson::oid::ObjectId;
+use serde::de::{self, Deserializer, SeqAccess, Visitor};
 use serde::Deserialize;
+
+use std::fmt;
 
 #[allow(unused_imports)]
 use crate::filters;
@@ -78,10 +81,45 @@ struct CompanyOption {
 pub(crate) struct UserFormData {
     email: String,
     secret: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_company_ids")]
     company_ids: Vec<String>,
     #[serde(flatten)]
     role_map: std::collections::HashMap<String, String>,
+}
+
+fn deserialize_company_ids<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct CompanyIdsVisitor;
+
+    impl<'de> Visitor<'de> for CompanyIdsVisitor {
+        type Value = Vec<String>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("a string or a sequence of strings")
+        }
+
+        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(vec![v.to_string()])
+        }
+
+        fn visit_seq<A>(self, seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: SeqAccess<'de>,
+        {
+            let mut ids = Vec::new();
+            while let Some(id) = seq.next_element::<String>()? {
+                ids.push(id);
+            }
+            Ok(ids)
+        }
+    }
+
+    deserializer.deserialize_any(CompanyIdsVisitor)
 }
 
 pub async fn users_index(
