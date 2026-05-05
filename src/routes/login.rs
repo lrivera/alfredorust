@@ -189,3 +189,64 @@ fn compute_redirect_url(host: &str, slug: &str) -> Option<String> {
     let scheme = if port.is_empty() { "https" } else { "http" };
     Some(format!("{}://{}{}", scheme, target_host, port))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Mutex, OnceLock};
+
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+    }
+
+    #[test]
+    fn cookie_domain_handles_common_hosts() {
+        let _guard = env_lock();
+        unsafe {
+            env::remove_var("BASE_DOMAIN");
+        }
+
+        assert_eq!(
+            compute_cookie_domain("acme.miapp.local:8090"),
+            Some("miapp.local".into())
+        );
+        assert_eq!(
+            compute_cookie_domain("localhost:8090"),
+            Some("localhost".into())
+        );
+        assert_eq!(compute_cookie_domain("127.0.0.1:8090"), None);
+    }
+
+    #[test]
+    fn base_domain_overrides_cookie_domain() {
+        let _guard = env_lock();
+        unsafe {
+            env::set_var("BASE_DOMAIN", "example.test");
+        }
+
+        assert_eq!(
+            compute_cookie_domain("anything.local:8090"),
+            Some("example.test".into())
+        );
+
+        unsafe {
+            env::remove_var("BASE_DOMAIN");
+        }
+    }
+
+    #[test]
+    fn redirect_url_targets_company_subdomain() {
+        let _guard = env_lock();
+        unsafe {
+            env::remove_var("BASE_DOMAIN");
+        }
+
+        assert_eq!(
+            compute_redirect_url("miapp.local:8090", "acme"),
+            Some("http://acme.miapp.local:8090".into())
+        );
+        assert_eq!(compute_redirect_url("acme.miapp.local:8090", "acme"), None);
+        assert_eq!(compute_redirect_url("miapp.local:8090", ""), None);
+    }
+}

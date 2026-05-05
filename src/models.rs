@@ -850,3 +850,47 @@ pub struct ResourceLog {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created_at: Option<DateTime>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn user_role_defaults_to_admin_and_maps_strings() {
+        assert_eq!(UserRole::default(), UserRole::Staff);
+        assert!(UserRole::Admin.is_admin());
+        assert!(!UserRole::Staff.is_admin());
+        assert_eq!(UserRole::Admin.as_str(), "admin");
+        assert_eq!(UserRole::Staff.as_str(), "staff");
+    }
+
+    #[test]
+    fn order_item_subtotal_multiplies_quantity_and_price() {
+        let item = OrderItem {
+            description: "Part".into(),
+            quantity: 3.0,
+            unit_price: 12.5,
+        };
+
+        assert_eq!(item.subtotal(), 37.5);
+    }
+
+    #[test]
+    fn project_status_advances_until_terminal_states() {
+        assert_eq!(ProjectStatus::Pedidos.next(), Some(ProjectStatus::Analisis));
+        assert_eq!(
+            ProjectStatus::EsperandoEntrega.next(),
+            Some(ProjectStatus::Entregado)
+        );
+        assert_eq!(ProjectStatus::Entregado.next(), None);
+        assert_eq!(ProjectStatus::Cancelado.next(), None);
+    }
+
+    #[test]
+    fn project_priority_and_resource_type_expose_form_values() {
+        assert_eq!(ProjectPriority::Urgent.as_str(), "urgent");
+        assert_eq!(ProjectPriority::Urgent.label(), "Urgente");
+        assert_eq!(ResourceType::Vehicle.as_str(), "vehicle");
+        assert_eq!(ResourceType::Vehicle.label(), "Vehículo");
+    }
+}

@@ -101,6 +101,29 @@ fn parse_resource_type(s: &str) -> ResourceType {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_resource_type_defaults_to_machinery() {
+        assert_eq!(parse_resource_type("vehicle"), ResourceType::Vehicle);
+        assert_eq!(parse_resource_type("equipment"), ResourceType::Equipment);
+        assert_eq!(parse_resource_type("other"), ResourceType::Other);
+        assert_eq!(parse_resource_type("unknown"), ResourceType::Machinery);
+    }
+
+    #[test]
+    fn resource_type_options_cover_all_form_values() {
+        let values: Vec<_> = resource_type_options()
+            .into_iter()
+            .map(|(value, _)| value)
+            .collect();
+
+        assert_eq!(values, vec!["machinery", "vehicle", "equipment", "other"]);
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct ResourceForm {
     pub name: String,

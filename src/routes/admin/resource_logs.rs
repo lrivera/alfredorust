@@ -420,3 +420,24 @@ fn parse_datetime(s: &str) -> Result<bson::DateTime, ()> {
         .map(|dt| bson::DateTime::from_millis(dt.and_utc().timestamp_millis()))
         .map_err(|_| ())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_datetime_accepts_html_datetime_input() {
+        let parsed = parse_datetime("2026-05-04T10:30").unwrap();
+
+        assert_eq!(parsed.timestamp_millis(), 1_777_890_600_000);
+        assert!(parse_datetime("").is_err());
+        assert!(parse_datetime("2026-05-04").is_err());
+    }
+
+    #[test]
+    fn format_datetime_returns_html_datetime_value() {
+        let dt = bson::DateTime::from_millis(1_777_890_600_000);
+
+        assert_eq!(format_datetime(&dt), "2026-05-04T10:30");
+    }
+}

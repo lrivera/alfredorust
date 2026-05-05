@@ -42,3 +42,36 @@ pub fn generate_base32_secret_n(bytes: usize) -> String {
     rng.fill_bytes(&mut buf);
     BASE32_NOPAD.encode(&buf)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn generated_secret_respects_minimum_length() {
+        let secret = generate_base32_secret_n(1);
+        let decoded = BASE32_NOPAD.decode(secret.as_bytes()).unwrap();
+
+        assert_eq!(decoded.len(), MIN_SECRET_BYTES);
+    }
+
+    #[test]
+    fn build_totp_rejects_short_secret() {
+        let short_secret = BASE32_NOPAD.encode(&[1, 2, 3, 4]);
+
+        let err = build_totp("issuer", "user@example.com", &short_secret)
+            .expect_err("short secrets must fail");
+
+        assert!(err.to_string().contains("Shared secret too short"));
+    }
+
+    #[test]
+    fn build_totp_accepts_generated_secret() {
+        let secret = generate_base32_secret_n(DEFAULT_SECRET_BYTES);
+
+        let totp = build_totp("issuer", "user@example.com", &secret).unwrap();
+
+        assert_eq!(totp.digits, 6);
+        assert_eq!(totp.step, 30);
+    }
+}

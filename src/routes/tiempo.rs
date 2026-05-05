@@ -304,6 +304,73 @@ fn fmt_iso(dt: ChronoDateTime<Utc>) -> String {
     dt.to_rfc3339_opts(SecondsFormat::Millis, true)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    #[test]
+    fn mode_parse_accepts_known_values_only() {
+        assert!(matches!(Mode::parse("day"), Some(Mode::Day)));
+        assert!(matches!(Mode::parse("week"), Some(Mode::Week)));
+        assert!(matches!(Mode::parse("month"), Some(Mode::Month)));
+        assert!(matches!(Mode::parse("year"), Some(Mode::Year)));
+        assert!(Mode::parse("quarter").is_none());
+    }
+
+    #[test]
+    fn bucket_start_aligns_to_period_boundaries() {
+        let dt = Utc.with_ymd_and_hms(2026, 5, 6, 15, 45, 12).unwrap();
+
+        assert_eq!(
+            bucket_start(dt, Mode::Day),
+            Utc.with_ymd_and_hms(2026, 5, 6, 0, 0, 0).unwrap()
+        );
+        assert_eq!(
+            bucket_start(dt, Mode::Week),
+            Utc.with_ymd_and_hms(2026, 5, 4, 0, 0, 0).unwrap()
+        );
+        assert_eq!(
+            bucket_start(dt, Mode::Month),
+            Utc.with_ymd_and_hms(2026, 5, 1, 0, 0, 0).unwrap()
+        );
+        assert_eq!(
+            bucket_start(dt, Mode::Year),
+            Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap()
+        );
+    }
+
+    #[test]
+    fn next_bucket_moves_by_selected_period() {
+        let dt = Utc.with_ymd_and_hms(2026, 1, 31, 0, 0, 0).unwrap();
+
+        assert_eq!(
+            next_bucket(dt, Mode::Day),
+            Utc.with_ymd_and_hms(2026, 2, 1, 0, 0, 0).unwrap()
+        );
+        assert_eq!(
+            next_bucket(dt, Mode::Week),
+            Utc.with_ymd_and_hms(2026, 2, 7, 0, 0, 0).unwrap()
+        );
+        assert_eq!(
+            next_bucket(dt, Mode::Month),
+            Utc.with_ymd_and_hms(2026, 2, 28, 0, 0, 0).unwrap()
+        );
+        assert_eq!(
+            next_bucket(dt, Mode::Year),
+            Utc.with_ymd_and_hms(2027, 1, 31, 0, 0, 0).unwrap()
+        );
+    }
+
+    #[test]
+    fn iso_helpers_parse_and_format_utc_values() {
+        let parsed = parse_iso("2026-05-04T10:15:30Z").unwrap();
+
+        assert_eq!(fmt_iso(parsed), "2026-05-04T10:15:30.000Z");
+        assert!(parse_iso("not-a-date").is_none());
+    }
+}
+
 async fn sum_transactions_before(
     state: &AppState,
     company_id: &ObjectId,

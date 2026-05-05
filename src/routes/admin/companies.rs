@@ -466,3 +466,24 @@ fn validate_slug(slug: &str) -> Result<(), String> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_slug_accepts_empty_or_safe_slugs() {
+        assert!(validate_slug("").is_ok());
+        assert!(validate_slug("acme-123").is_ok());
+        assert!(validate_slug("mi-empresa").is_ok());
+    }
+
+    #[test]
+    fn validate_slug_rejects_unsafe_values() {
+        assert!(validate_slug("Acme").is_err());
+        assert!(validate_slug("-acme").is_err());
+        assert!(validate_slug("acme-").is_err());
+        assert!(validate_slug("acme_test").is_err());
+        assert!(validate_slug(&"a".repeat(65)).is_err());
+    }
+}

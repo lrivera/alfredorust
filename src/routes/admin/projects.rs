@@ -464,3 +464,35 @@ fn parse_datetime(s: &str) -> Option<bson::DateTime> {
             Some(bson::DateTime::from_millis(dt.and_utc().timestamp_millis()))
         })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_priority_defaults_to_medium() {
+        assert_eq!(parse_priority("low"), ProjectPriority::Low);
+        assert_eq!(parse_priority("high"), ProjectPriority::High);
+        assert_eq!(parse_priority("urgent"), ProjectPriority::Urgent);
+        assert_eq!(parse_priority("unknown"), ProjectPriority::Medium);
+    }
+
+    #[test]
+    fn priority_options_cover_all_form_values() {
+        let values: Vec<_> = priority_options()
+            .into_iter()
+            .map(|(value, _)| value)
+            .collect();
+
+        assert_eq!(values, vec!["low", "medium", "high", "urgent"]);
+    }
+
+    #[test]
+    fn parse_datetime_accepts_html_date_input() {
+        let parsed = parse_datetime("2026-05-04").unwrap();
+
+        assert_eq!(parsed.timestamp_millis(), 1_777_852_800_000);
+        assert!(parse_datetime("").is_none());
+        assert!(parse_datetime("2026-05-04T10:00").is_none());
+    }
+}
