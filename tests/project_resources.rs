@@ -164,6 +164,7 @@ async fn project_concepts_statuses_and_quantity_summary_work() {
         Some("amber".into()),
         false,
         false,
+        false,
         true,
     )
     .await
@@ -565,6 +566,7 @@ async fn hourly_resource_grid_all_scope_preserves_previous_status_history() {
         "Entrega Especial",
         60,
         None,
+        false,
         false,
         false,
         true,

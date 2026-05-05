@@ -170,15 +170,18 @@ async fn seed_default_concept_statuses(db: &Database, company_id: &ObjectId) -> 
     }
 
     let defaults = [
-        ("Pedido", "slate", true, false),
-        ("Ingeniería", "sky", false, false),
-        ("CNC", "amber", false, false),
-        ("Calidad", "violet", false, false),
-        ("Entrega", "emerald", false, false),
-        ("Terminado", "green", false, true),
+        ("Pedido", "slate", true, false, false),
+        ("Ingeniería", "sky", false, false, false),
+        ("CNC", "amber", false, false, false),
+        ("Calidad", "violet", false, false, false),
+        ("Entrega", "emerald", false, false, false),
+        ("Terminado", "green", false, true, false),
+        ("Cancelado", "rose", false, false, true),
     ];
 
-    for (idx, (name, color, is_initial, is_terminal)) in defaults.into_iter().enumerate() {
+    for (idx, (name, color, is_initial, is_terminal, is_cancelled)) in
+        defaults.into_iter().enumerate()
+    {
         statuses
             .insert_one(ConceptStatus {
                 id: None,
@@ -188,6 +191,7 @@ async fn seed_default_concept_statuses(db: &Database, company_id: &ObjectId) -> 
                 color: Some(color.to_string()),
                 is_initial,
                 is_terminal,
+                is_cancelled,
                 is_active: true,
                 created_at: None,
                 updated_at: None,

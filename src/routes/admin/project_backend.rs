@@ -52,6 +52,8 @@ pub struct ConceptStatusPayload {
     pub is_initial: bool,
     #[serde(default)]
     pub is_terminal: bool,
+    #[serde(default)]
+    pub is_cancelled: bool,
     #[serde(default = "default_true")]
     pub is_active: bool,
 }
@@ -91,6 +93,7 @@ pub async fn api_concept_statuses_create(
         payload.color,
         payload.is_initial,
         payload.is_terminal,
+        payload.is_cancelled,
         payload.is_active,
     )
     .await
@@ -127,6 +130,7 @@ pub async fn api_concept_statuses_update(
         payload.color,
         payload.is_initial,
         payload.is_terminal,
+        payload.is_cancelled,
         payload.is_active,
     )
     .await
@@ -585,6 +589,7 @@ struct ConceptStatusRow {
     color: String,
     is_initial: bool,
     is_terminal: bool,
+    is_cancelled: bool,
     is_active: bool,
 }
 
@@ -597,6 +602,7 @@ struct ConceptStatusFormTemplate {
     color: String,
     is_initial: bool,
     is_terminal: bool,
+    is_cancelled: bool,
     is_active: bool,
     is_edit: bool,
     errors: Option<String>,
@@ -609,6 +615,7 @@ pub struct ConceptStatusForm {
     pub color: String,
     pub is_initial: Option<String>,
     pub is_terminal: Option<String>,
+    pub is_cancelled: Option<String>,
     pub is_active: Option<String>,
 }
 
@@ -628,6 +635,7 @@ pub async fn concept_statuses_index(
             color: s.color.unwrap_or_default(),
             is_initial: s.is_initial,
             is_terminal: s.is_terminal,
+            is_cancelled: s.is_cancelled,
             is_active: s.is_active,
         })
         .collect();
@@ -643,6 +651,7 @@ pub async fn concept_statuses_new(session_user: SessionUser) -> Result<Html<Stri
         color: "sky".into(),
         is_initial: false,
         is_terminal: false,
+        is_cancelled: false,
         is_active: true,
         is_edit: false,
         errors: None,
@@ -667,6 +676,7 @@ pub async fn concept_statuses_create(
         clean_optional(form.color.clone()),
         form.is_initial.is_some(),
         form.is_terminal.is_some(),
+        form.is_cancelled.is_some(),
         form.is_active.is_some(),
     )
     .await;
@@ -679,6 +689,7 @@ pub async fn concept_statuses_create(
             color: form.color,
             is_initial: form.is_initial.is_some(),
             is_terminal: form.is_terminal.is_some(),
+            is_cancelled: form.is_cancelled.is_some(),
             is_active: form.is_active.is_some(),
             is_edit: false,
             errors: Some(err.to_string()),
@@ -705,6 +716,7 @@ pub async fn concept_statuses_edit(
         color: status.color.unwrap_or_default(),
         is_initial: status.is_initial,
         is_terminal: status.is_terminal,
+        is_cancelled: status.is_cancelled,
         is_active: status.is_active,
         is_edit: true,
         errors: None,
@@ -734,6 +746,7 @@ pub async fn concept_statuses_update_form(
         clean_optional(form.color),
         form.is_initial.is_some(),
         form.is_terminal.is_some(),
+        form.is_cancelled.is_some(),
         form.is_active.is_some(),
     )
     .await;
@@ -1094,6 +1107,8 @@ struct HourHeader {
 
 struct ResourceUsageGridRow {
     concept_id: String,
+    project_id: String,
+    show_project_header: bool,
     status_name: String,
     project_title: String,
     concept_name: String,
@@ -1227,17 +1242,39 @@ pub async fn resource_usages_index(
         }
     }
 
-    let mut rows = Vec::new();
+    let mut row_inputs = Vec::new();
     for concept in concepts {
+        if concept.id.is_none() {
+            continue;
+        }
+        let project = get_project_by_id_for_company(&state, &concept.project_id, &company_id)
+            .await
+            .ok()
+            .flatten();
+        let project_title = project
+            .as_ref()
+            .map(|project| project.title.clone())
+            .unwrap_or_default();
+        row_inputs.push((project_title, concept));
+    }
+    row_inputs.sort_by(
+        |(project_title_a, concept_a), (project_title_b, concept_b)| {
+            project_title_a
+                .cmp(project_title_b)
+                .then_with(|| concept_a.position.cmp(&concept_b.position))
+                .then_with(|| concept_a.name.cmp(&concept_b.name))
+        },
+    );
+
+    let mut rows = Vec::new();
+    let mut last_project_id = String::new();
+    for (project_title, concept) in row_inputs {
         let Some(concept_id) = concept.id.clone() else {
             continue;
         };
-        let project_title = get_project_by_id_for_company(&state, &concept.project_id, &company_id)
-            .await
-            .ok()
-            .flatten()
-            .map(|project| project.title)
-            .unwrap_or_default();
+        let project_id = concept.project_id.to_hex();
+        let show_project_header = project_id != last_project_id;
+        last_project_id = project_id.clone();
         let mut cells = Vec::new();
         for hour in &hours {
             let mut cell_resources = Vec::new();
@@ -1284,6 +1321,8 @@ pub async fn resource_usages_index(
         }
         rows.push(ResourceUsageGridRow {
             concept_id: concept_id.to_hex(),
+            project_id,
+            show_project_header,
             status_name: status_names
                 .get(&concept.status_id)
                 .cloned()

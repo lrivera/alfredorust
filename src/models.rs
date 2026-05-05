@@ -786,6 +786,9 @@ pub struct ConceptStatus {
     #[serde(default)]
     pub is_terminal: bool,
 
+    #[serde(default)]
+    pub is_cancelled: bool,
+
     #[serde(default = "default_true")]
     pub is_active: bool,
 

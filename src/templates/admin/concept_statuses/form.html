@@ -21,9 +21,10 @@
         <input name="color" value="{{ color }}" placeholder="sky, amber, emerald" class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
       </div>
     </div>
-    <div class="grid gap-3 sm:grid-cols-3">
+    <div class="grid gap-3 sm:grid-cols-4">
       <label class="flex items-center gap-2 rounded-xl border border-slate-200 p-3 text-sm"><input type="checkbox" name="is_initial" {% if is_initial %}checked{% endif %}> Inicial</label>
       <label class="flex items-center gap-2 rounded-xl border border-slate-200 p-3 text-sm"><input type="checkbox" name="is_terminal" {% if is_terminal %}checked{% endif %}> Terminal</label>
+      <label class="flex items-center gap-2 rounded-xl border border-slate-200 p-3 text-sm"><input type="checkbox" name="is_cancelled" {% if is_cancelled %}checked{% endif %}> Cancelado</label>
       <label class="flex items-center gap-2 rounded-xl border border-slate-200 p-3 text-sm"><input type="checkbox" name="is_active" {% if is_active %}checked{% endif %}> Activo</label>
     </div>
     {% if errors.is_some() %}<div class="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{{ errors.as_ref().unwrap() }}</div>{% endif %}

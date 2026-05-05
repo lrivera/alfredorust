@@ -73,12 +73,14 @@ pub async fn create_concept_status(
     color: Option<String>,
     is_initial: bool,
     is_terminal: bool,
+    is_cancelled: bool,
     is_active: bool,
 ) -> Result<ObjectId> {
     let name = name.trim();
     if name.is_empty() {
         bail!("concept status name is required");
     }
+    ensure_single_status_marker(is_initial, is_terminal, is_cancelled)?;
 
     if is_initial {
         state
@@ -100,6 +102,7 @@ pub async fn create_concept_status(
             color,
             is_initial,
             is_terminal,
+            is_cancelled,
             is_active,
             created_at: Some(DateTime::from_system_time(SystemTime::now())),
             updated_at: None,
@@ -119,12 +122,14 @@ pub async fn update_concept_status(
     color: Option<String>,
     is_initial: bool,
     is_terminal: bool,
+    is_cancelled: bool,
     is_active: bool,
 ) -> Result<()> {
     let name = name.trim();
     if name.is_empty() {
         bail!("concept status name is required");
     }
+    ensure_single_status_marker(is_initial, is_terminal, is_cancelled)?;
 
     if is_initial {
         state
@@ -146,11 +151,27 @@ pub async fn update_concept_status(
                 "color": color,
                 "is_initial": is_initial,
                 "is_terminal": is_terminal,
+                "is_cancelled": is_cancelled,
                 "is_active": is_active,
                 "updated_at": DateTime::from_system_time(SystemTime::now()),
             } },
         )
         .await?;
+    Ok(())
+}
+
+fn ensure_single_status_marker(
+    is_initial: bool,
+    is_terminal: bool,
+    is_cancelled: bool,
+) -> Result<()> {
+    let marker_count = [is_initial, is_terminal, is_cancelled]
+        .into_iter()
+        .filter(|selected| *selected)
+        .count();
+    if marker_count > 1 {
+        bail!("a status can only be initial, terminal, cancelled, or none");
+    }
     Ok(())
 }
 

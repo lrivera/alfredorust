@@ -327,9 +327,16 @@ async fn list_active_project_concepts_for_scope(
     let mut items = Vec::new();
     while let Some(concept) = cursor.try_next().await? {
         let project = get_project_by_id_for_company(state, &concept.project_id, company_id).await?;
+        let status = state
+            .concept_statuses
+            .find_one(doc! { "_id": &concept.status_id, "company_id": company_id })
+            .await?;
         if project
             .as_ref()
             .is_some_and(|project| project.status != ProjectStatus::Cancelado)
+            && status
+                .as_ref()
+                .is_some_and(|status| !status.is_terminal && !status.is_cancelled)
         {
             items.push(concept);
         }
