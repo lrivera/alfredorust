@@ -39,7 +39,7 @@ pub async fn account_options(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(accounts
         .into_iter()
-        .filter(|a| a.company_id == *company_id)
+        .filter(|a| a.company_id == *company_id && a.is_active)
         .filter_map(|a| {
             a.id.map(|id| SimpleOption {
                 value: id.to_hex(),
