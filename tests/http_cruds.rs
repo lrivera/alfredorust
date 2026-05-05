@@ -14,14 +14,15 @@ use axum::{
 use tower::ServiceExt; // for oneshot
 
 use alfredodev::{
-    models::{ProjectPriority, ResourceType},
+    models::{ProjectPriority, ResourceType, UserRole},
     routes,
     session::{SESSION_COOKIE_NAME, require_session},
     state::{
-        AppState, create_project, create_resource, create_resource_log, create_session,
-        list_accounts, list_categories, list_companies, list_contacts, list_forecasts,
-        list_planned_entries, list_projects, list_recurring_plans, list_resource_logs,
-        list_resources, list_transactions, list_users,
+        AppState, add_user_to_company, create_company, create_project, create_resource,
+        create_resource_log, create_session, create_user, get_user_by_id, list_accounts,
+        list_categories, list_companies, list_contacts, list_forecasts, list_planned_entries,
+        list_projects, list_recurring_plans, list_resource_logs, list_resources, list_transactions,
+        list_users,
     },
 };
 use bson::DateTime;
@@ -33,9 +34,13 @@ fn build_app(state: Arc<AppState>) -> Router {
         .route("/secret", get(routes::secret_generate))
         .route("/api/tiempo", get(routes::tiempo_data))
         .route("/logout", post(routes::logout))
-        .route("/admin/users", get(routes::users_index))
+        .route(
+            "/admin/users",
+            get(routes::users_index).post(routes::users_create),
+        )
         .route("/admin/users/new", get(routes::users_new))
         .route("/admin/users/{id}/edit", get(routes::users_edit))
+        .route("/admin/users/{id}/update", post(routes::users_update))
         .route("/admin/users/{id}/delete", post(routes::users_delete))
         .route("/admin/users/{id}/qrcode", get(routes::users_qrcode))
         .route("/pdf", get(routes::pdf_editor))
@@ -379,6 +384,129 @@ async fn planned_entry_pay_endpoint_creates_transaction() {
             .iter()
             .any(|tx| tx.planned_entry_id == entry.id && (tx.amount - 123.45).abs() < f64::EPSILON),
         "payment must create linked transaction"
+    );
+
+    common::teardown(Some(ctx)).await;
+}
+
+#[tokio::test]
+async fn planned_entry_pay_validation_rerenders_form_instead_of_blank_page() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let shared = Arc::new(state.clone());
+
+    let user = list_users(&state).await.unwrap().remove(0);
+    let host = format!("{}.miapp.local", user.company_slug);
+    let token = create_session(&state, &user.email).await.unwrap();
+    let company_id = user.company_id.clone();
+
+    let entry = list_planned_entries(&state)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|entry| entry.company_id == company_id && entry.id.is_some())
+        .expect("seeded planned entry for active company");
+    let entry_id = entry.id.clone().unwrap().to_hex();
+    let initial_transactions = list_transactions(&state).await.unwrap().len();
+
+    let app = build_app(shared);
+    let (status, _location, body) = post_form_with_cookie_response(
+        app,
+        &host,
+        &format!("/admin/planned_entries/{entry_id}/pay"),
+        &token,
+        "paid_at=2026-05-04&amount=123.45&account_id=not-an-id&return_to=/tiempo".into(),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "invalid pay submit must re-render the form"
+    );
+    assert!(body.contains("Selecciona una cuenta válida"));
+    assert!(body.contains(r#"name="return_to" value="/tiempo""#));
+    assert_eq!(
+        list_transactions(&state).await.unwrap().len(),
+        initial_transactions
+    );
+
+    common::teardown(Some(ctx)).await;
+}
+
+#[tokio::test]
+async fn users_update_can_add_allowed_company_membership() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let shared = Arc::new(state.clone());
+
+    let admin = list_users(&state).await.unwrap().remove(0);
+    let host = format!("{}.miapp.local", admin.company_slug);
+    let token = create_session(&state, &admin.email).await.unwrap();
+    let primary_company_id = admin.company_id.clone();
+    let extra_company_id = create_company(
+        &state,
+        "Compania Endpoint",
+        "compania-endpoint",
+        "MXN",
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+    add_user_to_company(&state, &admin.id, &extra_company_id, UserRole::Admin)
+        .await
+        .unwrap();
+
+    let target_user_id = create_user(
+        &state,
+        "target-endpoint@example.com",
+        "TARGETSECRET",
+        &[(primary_company_id.clone(), UserRole::Staff)],
+    )
+    .await
+    .unwrap();
+
+    let app = build_app(shared);
+    let (status, location, body) = post_form_with_cookie_response(
+        app,
+        &host,
+        &format!("/admin/users/{}/update", target_user_id.to_hex()),
+        &token,
+        format!(
+            "email=target-endpoint%40example.com&secret=TARGETSECRET&company_ids={}&company_ids={}&role_{}=staff&role_{}=admin",
+            primary_company_id.to_hex(),
+            extra_company_id.to_hex(),
+            primary_company_id.to_hex(),
+            extra_company_id.to_hex()
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::SEE_OTHER,
+        "user update failed with body: {body}"
+    );
+    assert_eq!(location.as_deref(), Some("/admin/users"));
+
+    let target = get_user_by_id(&state, &target_user_id)
+        .await
+        .unwrap()
+        .expect("target user exists");
+    assert!(target.company_ids.contains(&primary_company_id));
+    assert!(target.company_ids.contains(&extra_company_id));
+    assert_eq!(
+        target
+            .company_ids
+            .iter()
+            .position(|id| id == &extra_company_id)
+            .and_then(|idx| target.company_roles.get(idx)),
+        Some(&UserRole::Admin)
     );
 
     common::teardown(Some(ctx)).await;

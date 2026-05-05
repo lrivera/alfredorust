@@ -7,15 +7,11 @@ use std::{
 use askama::Template;
 use axum::{
     body::Body,
-    extract::{Form, Path, State},
+    extract::{Path, State},
     http::StatusCode,
     response::{Html, IntoResponse, Redirect, Response},
 };
 use mongodb::bson::oid::ObjectId;
-use serde::Deserialize;
-use serde::de::{self, Deserializer, SeqAccess, Visitor};
-
-use std::fmt;
 
 #[allow(unused_imports)]
 use crate::filters;
@@ -77,49 +73,37 @@ struct CompanyOption {
     role: String,
 }
 
-#[derive(Deserialize)]
 pub(crate) struct UserFormData {
     email: String,
     secret: String,
-    #[serde(default, deserialize_with = "deserialize_company_ids")]
     company_ids: Vec<String>,
-    #[serde(flatten)]
     role_map: std::collections::HashMap<String, String>,
 }
 
-fn deserialize_company_ids<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    struct CompanyIdsVisitor;
+fn parse_user_form(body: &str) -> Result<UserFormData, String> {
+    let mut email = String::new();
+    let mut secret = String::new();
+    let mut company_ids = Vec::new();
+    let mut role_map = HashMap::new();
 
-    impl<'de> Visitor<'de> for CompanyIdsVisitor {
-        type Value = Vec<String>;
-
-        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-            formatter.write_str("a string or a sequence of strings")
-        }
-
-        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-        where
-            E: de::Error,
-        {
-            Ok(vec![v.to_string()])
-        }
-
-        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-        where
-            A: SeqAccess<'de>,
-        {
-            let mut ids = Vec::new();
-            while let Some(id) = seq.next_element::<String>()? {
-                ids.push(id);
+    for (key, value) in form_urlencoded::parse(body.as_bytes()) {
+        match key.as_ref() {
+            "email" => email = value.into_owned(),
+            "secret" => secret = value.into_owned(),
+            "company_ids" => company_ids.push(value.into_owned()),
+            key if key.starts_with("role_") => {
+                role_map.insert(key.to_string(), value.into_owned());
             }
-            Ok(ids)
+            _ => {}
         }
     }
 
-    deserializer.deserialize_any(CompanyIdsVisitor)
+    Ok(UserFormData {
+        email,
+        secret,
+        company_ids,
+        role_map,
+    })
 }
 
 pub async fn users_index(
@@ -199,11 +183,16 @@ pub async fn users_new(
 pub async fn users_create(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
-    Form(form): Form<UserFormData>,
+    body: String,
 ) -> impl IntoResponse {
     if !session_user.is_admin() {
         return StatusCode::FORBIDDEN.into_response();
     }
+
+    let form = match parse_user_form(&body) {
+        Ok(form) => form,
+        Err(message) => return (StatusCode::UNPROCESSABLE_ENTITY, message).into_response(),
+    };
 
     let admin_companies: Vec<ObjectId> = session_user
         .user()
@@ -305,8 +294,13 @@ pub async fn users_update(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
-    Form(form): Form<UserFormData>,
+    body: String,
 ) -> impl IntoResponse {
+    let form = match parse_user_form(&body) {
+        Ok(form) => form,
+        Err(message) => return (StatusCode::UNPROCESSABLE_ENTITY, message).into_response(),
+    };
+
     let admin_companies: Vec<ObjectId> = session_user
         .user()
         .company_ids

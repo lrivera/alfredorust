@@ -54,6 +54,7 @@ dependencies = [
  "chrono",
  "data-encoding",
  "dotenvy",
+ "form_urlencoded",
  "futures",
  "image",
  "mongodb",
