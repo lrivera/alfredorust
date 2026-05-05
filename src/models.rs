@@ -493,20 +493,20 @@ pub enum OrderStatus {
 impl OrderStatus {
     pub fn as_str(&self) -> &'static str {
         match self {
-            OrderStatus::Pending    => "pending",
-            OrderStatus::Confirmed  => "confirmed",
+            OrderStatus::Pending => "pending",
+            OrderStatus::Confirmed => "confirmed",
             OrderStatus::InProgress => "in_progress",
-            OrderStatus::Completed  => "completed",
-            OrderStatus::Cancelled  => "cancelled",
+            OrderStatus::Completed => "completed",
+            OrderStatus::Cancelled => "cancelled",
         }
     }
     pub fn label(&self) -> &'static str {
         match self {
-            OrderStatus::Pending    => "Pendiente",
-            OrderStatus::Confirmed  => "Confirmada",
+            OrderStatus::Pending => "Pendiente",
+            OrderStatus::Confirmed => "Confirmada",
             OrderStatus::InProgress => "En proceso",
-            OrderStatus::Completed  => "Completada",
-            OrderStatus::Cancelled  => "Cancelada",
+            OrderStatus::Completed => "Completada",
+            OrderStatus::Cancelled => "Cancelada",
         }
     }
 }
@@ -623,4 +623,230 @@ pub struct SatConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
     pub created_at: DateTime,
+}
+
+/// ---------- PROJECTS ----------
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectStatus {
+    Pedidos,
+    Analisis,
+    Cotizado,
+    OrdenDeCompraMandada,
+    Ingenieria,
+    Produccion,
+    Calidad,
+    EsperandoEntrega,
+    Entregado,
+    Cancelado,
+}
+
+impl ProjectStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ProjectStatus::Pedidos => "pedidos",
+            ProjectStatus::Analisis => "analisis",
+            ProjectStatus::Cotizado => "cotizado",
+            ProjectStatus::OrdenDeCompraMandada => "orden_de_compra_mandada",
+            ProjectStatus::Ingenieria => "ingenieria",
+            ProjectStatus::Produccion => "produccion",
+            ProjectStatus::Calidad => "calidad",
+            ProjectStatus::EsperandoEntrega => "esperando_entrega",
+            ProjectStatus::Entregado => "entregado",
+            ProjectStatus::Cancelado => "cancelado",
+        }
+    }
+    pub fn label(&self) -> &'static str {
+        match self {
+            ProjectStatus::Pedidos => "Pedidos",
+            ProjectStatus::Analisis => "Análisis",
+            ProjectStatus::Cotizado => "Cotizado",
+            ProjectStatus::OrdenDeCompraMandada => "Orden de Compra Mandada",
+            ProjectStatus::Ingenieria => "Ingeniería",
+            ProjectStatus::Produccion => "Producción",
+            ProjectStatus::Calidad => "Calidad",
+            ProjectStatus::EsperandoEntrega => "Esperando Entrega",
+            ProjectStatus::Entregado => "Entregado",
+            ProjectStatus::Cancelado => "Cancelado",
+        }
+    }
+    pub fn next(&self) -> Option<Self> {
+        match self {
+            ProjectStatus::Pedidos => Some(ProjectStatus::Analisis),
+            ProjectStatus::Analisis => Some(ProjectStatus::Cotizado),
+            ProjectStatus::Cotizado => Some(ProjectStatus::OrdenDeCompraMandada),
+            ProjectStatus::OrdenDeCompraMandada => Some(ProjectStatus::Ingenieria),
+            ProjectStatus::Ingenieria => Some(ProjectStatus::Produccion),
+            ProjectStatus::Produccion => Some(ProjectStatus::Calidad),
+            ProjectStatus::Calidad => Some(ProjectStatus::EsperandoEntrega),
+            ProjectStatus::EsperandoEntrega => Some(ProjectStatus::Entregado),
+            ProjectStatus::Entregado => None,
+            ProjectStatus::Cancelado => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ProjectPriority {
+    Low,
+    #[default]
+    Medium,
+    High,
+    Urgent,
+}
+
+impl ProjectPriority {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ProjectPriority::Low => "low",
+            ProjectPriority::Medium => "medium",
+            ProjectPriority::High => "high",
+            ProjectPriority::Urgent => "urgent",
+        }
+    }
+    pub fn label(&self) -> &'static str {
+        match self {
+            ProjectPriority::Low => "Baja",
+            ProjectPriority::Medium => "Media",
+            ProjectPriority::High => "Alta",
+            ProjectPriority::Urgent => "Urgente",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Project {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+
+    pub company_id: ObjectId,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contact_id: Option<ObjectId>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category_id: Option<ObjectId>,
+
+    pub title: String,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    pub status: ProjectStatus,
+
+    #[serde(default)]
+    pub priority: ProjectPriority,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_budget: Option<f64>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scheduled_at: Option<DateTime>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completed_at: Option<DateTime>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<DateTime>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<DateTime>,
+}
+
+/// ---------- RESOURCES ----------
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ResourceType {
+    Machinery,
+    Vehicle,
+    Equipment,
+    Other,
+}
+
+impl ResourceType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ResourceType::Machinery => "machinery",
+            ResourceType::Vehicle => "vehicle",
+            ResourceType::Equipment => "equipment",
+            ResourceType::Other => "other",
+        }
+    }
+    pub fn label(&self) -> &'static str {
+        match self {
+            ResourceType::Machinery => "Maquinaria",
+            ResourceType::Vehicle => "Vehículo",
+            ResourceType::Equipment => "Equipo",
+            ResourceType::Other => "Otro",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Resource {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+
+    pub company_id: ObjectId,
+
+    pub name: String,
+
+    pub resource_type: ResourceType,
+
+    #[serde(default = "default_true")]
+    pub is_active: bool,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<DateTime>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<DateTime>,
+}
+
+/// ---------- RESOURCE LOGS ----------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResourceLog {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+
+    pub company_id: ObjectId,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<ObjectId>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resource_id: Option<ObjectId>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resource_name: Option<String>,
+
+    pub started_at: DateTime,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ended_at: Option<DateTime>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_hours: Option<f64>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operator_name: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<DateTime>,
 }

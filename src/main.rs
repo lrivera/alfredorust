@@ -16,8 +16,8 @@ use dotenvy::dotenv;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::net::TcpListener;
 
-pub mod filters;
 mod cfdi;
+pub mod filters;
 mod models;
 mod routes;
 mod sat;
@@ -185,7 +185,10 @@ async fn main() {
             "/admin/planned_entries/{id}/pay",
             get(routes::planned_entries_pay_form).post(routes::planned_entries_pay),
         )
-        .route("/api/admin/transactions/data", get(routes::transactions_data_api))
+        .route(
+            "/api/admin/transactions/data",
+            get(routes::transactions_data_api),
+        )
         .route(
             "/admin/transactions",
             get(routes::transactions_index).post(routes::transactions_create),
@@ -217,12 +220,62 @@ async fn main() {
             "/admin/forecasts/{id}/delete",
             post(routes::forecasts_delete),
         )
-        .route("/admin/orders", get(routes::orders_index).post(routes::orders_create))
+        .route(
+            "/admin/orders",
+            get(routes::orders_index).post(routes::orders_create),
+        )
         .route("/admin/orders/new", get(routes::orders_new))
         .route("/admin/orders/{id}/edit", get(routes::orders_edit))
         .route("/admin/orders/{id}/update", post(routes::orders_update))
         .route("/admin/orders/{id}/delete", post(routes::orders_delete))
         .route("/admin/orders/{id}/complete", post(routes::orders_complete))
+        .route(
+            "/admin/projects",
+            get(routes::projects_index).post(routes::projects_create),
+        )
+        .route("/admin/projects/new", get(routes::projects_new))
+        .route("/admin/projects/{id}/edit", get(routes::projects_edit))
+        .route("/admin/projects/{id}/update", post(routes::projects_update))
+        .route("/admin/projects/{id}/delete", post(routes::projects_delete))
+        .route(
+            "/admin/projects/{id}/advance",
+            post(routes::projects_advance),
+        )
+        .route(
+            "/admin/resources",
+            get(routes::resources_index).post(routes::resources_create),
+        )
+        .route("/admin/resources/new", get(routes::resources_new))
+        .route("/admin/resources/{id}/edit", get(routes::resources_edit))
+        .route(
+            "/admin/resources/{id}/update",
+            post(routes::resources_update),
+        )
+        .route(
+            "/admin/resources/{id}/delete",
+            post(routes::resources_delete),
+        )
+        .route(
+            "/admin/resource_logs",
+            get(routes::resource_logs_index).post(routes::resource_logs_create),
+        )
+        .route("/admin/resource_logs/new", get(routes::resource_logs_new))
+        .route(
+            "/admin/resource_logs/{id}/edit",
+            get(routes::resource_logs_edit),
+        )
+        .route(
+            "/admin/resource_logs/{id}/update",
+            post(routes::resource_logs_update),
+        )
+        .route(
+            "/admin/resource_logs/{id}/delete",
+            post(routes::resource_logs_delete),
+        )
+        .route(
+            "/admin/resource_logs/{id}/end",
+            post(routes::resource_logs_end),
+        )
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             session::require_session,

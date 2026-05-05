@@ -1,0 +1,72 @@
+{% extends "layouts/base.html" %}
+{% block title %}Registros de Recursos{% endblock %}
+{% block content %}
+  <div class="flex items-center justify-between pb-6">
+    <div>
+      <h1 class="text-2xl font-semibold text-slate-800">Registros de Recursos</h1>
+      <p class="mt-1 text-sm text-slate-500">Control de tiempo de maquinaria y equipos.</p>
+    </div>
+    <a href="/admin/resource_logs/new"
+      class="inline-flex items-center rounded-md bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700">
+      Nuevo registro
+    </a>
+  </div>
+
+  <div class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+    <table class="min-w-full divide-y divide-slate-200 text-sm">
+      <thead class="bg-slate-50 text-left font-semibold text-slate-600">
+        <tr>
+          <th class="px-4 py-2">Proyecto</th>
+          <th class="px-4 py-2">Fase</th>
+          <th class="px-4 py-2">Recurso</th>
+          <th class="px-4 py-2">Inicio</th>
+          <th class="px-4 py-2">Fin</th>
+          <th class="px-4 py-2">Horas</th>
+          <th class="px-4 py-2">Operador</th>
+          <th class="px-4 py-2 text-right">Acciones</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for l in logs %}
+        <tr class="transition hover:bg-slate-50">
+          <td class="px-4 py-3 font-medium text-slate-800">{{ l.project_title }}</td>
+          <td class="px-4 py-3 text-slate-600">{{ l.phase }}</td>
+          <td class="px-4 py-3 text-slate-600">{{ l.resource_name }}</td>
+          <td class="px-4 py-3 text-slate-500">{{ l.started_at }}</td>
+          <td class="px-4 py-3 text-slate-500">{{ l.ended_at }}</td>
+          <td class="px-4 py-3 font-medium text-slate-800">{{ l.duration_hours }}</td>
+          <td class="px-4 py-3 text-slate-600">{{ l.operator_name }}</td>
+          <td class="px-4 py-3 text-right">
+            <div class="flex justify-end gap-2">
+              {% if l.ended_at == "" %}
+              <form method="post" action="/admin/resource_logs/{{ l.id }}/end"
+                onsubmit="return confirm('¿Terminar este registro?')">
+                <button type="submit"
+                  class="inline-flex items-center rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100">
+                  Terminar
+                </button>
+              </form>
+              {% endif %}
+              <a href="/admin/resource_logs/{{ l.id }}/edit"
+                class="inline-flex items-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-sky-400 hover:text-sky-600">
+                Editar
+              </a>
+              <form method="post" action="/admin/resource_logs/{{ l.id }}/delete"
+                onsubmit="return confirm('¿Eliminar este registro?')">
+                <button type="submit"
+                  class="inline-flex items-center rounded-md border border-rose-200 bg-rose-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-rose-600">
+                  Eliminar
+                </button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="8" class="px-4 py-6 text-center text-sm text-slate-500">No hay registros.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

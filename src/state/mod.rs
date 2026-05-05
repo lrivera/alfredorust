@@ -7,8 +7,8 @@ use std::{collections::HashMap, env, sync::Arc};
 use tokio::sync::Mutex;
 
 use crate::models::{
-    Account, Category, Company, Contact, Forecast, PlannedEntry, RecurringPlan, SatConfig,
-    ServiceOrder, Session, Transaction, User, UserCompany,
+    Account, Category, Company, Contact, Forecast, PlannedEntry, Project, RecurringPlan, Resource,
+    ResourceLog, SatConfig, ServiceOrder, Session, Transaction, User, UserCompany,
 };
 use bson::Document;
 
@@ -41,18 +41,24 @@ pub struct CfdiJob {
 
 pub type JobStore = Arc<Mutex<HashMap<String, CfdiJob>>>;
 
-mod seed;
-mod users;
 mod companies;
 mod finance;
 mod orders;
+mod projects;
+mod resource_logs;
+mod resources;
 mod sat_configs;
+mod seed;
+mod users;
 
-pub use users::*;
 pub use companies::*;
 pub use finance::*;
 pub use orders::*;
+pub use projects::*;
+pub use resource_logs::*;
+pub use resources::*;
 pub use sat_configs::*;
+pub use users::*;
 
 pub const SESSION_TTL_SECONDS: u64 = 60 * 60 * 24; // 1 day
 pub const PLANNED_MONTHS_AHEAD: u32 = 24;
@@ -74,12 +80,19 @@ pub struct AppState {
     pub cfdis: Collection<Document>,
     pub sat_configs: Collection<SatConfig>,
     pub orders: Collection<ServiceOrder>,
+    pub projects: Collection<Project>,
+    pub resources: Collection<Resource>,
+    pub resource_logs: Collection<ResourceLog>,
 }
 
 pub async fn init_state() -> Result<AppState> {
     let uri = env::var("MONGODB_URI").unwrap_or_else(|_| "mongodb://localhost:27017".to_string());
     let db_name = env::var("MONGODB_DB").unwrap_or_else(|_| "totp".to_string());
 
+    init_state_with_db_name(&uri, &db_name).await
+}
+
+pub async fn init_state_with_db_name(uri: &str, db_name: &str) -> Result<AppState> {
     println!("Connecting to MongoDB at {}", uri);
     let client = Client::with_uri_str(uri).await?;
     let db = client.database(&db_name);
@@ -111,5 +124,8 @@ pub async fn init_state() -> Result<AppState> {
         cfdis: db.collection::<Document>("cfdis"),
         sat_configs: db.collection::<SatConfig>("sat_configs"),
         orders: db.collection::<ServiceOrder>("service_orders"),
+        projects: db.collection::<Project>("projects"),
+        resources: db.collection::<Resource>("resources"),
+        resource_logs: db.collection::<ResourceLog>("resource_logs"),
     })
 }
