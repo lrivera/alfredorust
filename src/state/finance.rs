@@ -1075,10 +1075,13 @@ async fn validate_transaction_links(
         ensure_account_active_in_company(state, acc, company_id).await?;
     }
 
-    ensure_category_matches_flow(state, category_id, company_id, transaction_type).await?;
-
     if let Some(pe_id) = planned_entry_id {
+        // The planned entry is the authority on flow type; only check company ownership
+        // of the category, not its flow_type (which may differ from the entry's).
+        ensure_category_in_company(state, category_id, company_id).await?;
         ensure_planned_entry_alignment(state, pe_id, company_id, transaction_type).await?;
+    } else {
+        ensure_category_matches_flow(state, category_id, company_id, transaction_type).await?;
     }
 
     Ok(())
@@ -1100,6 +1103,23 @@ async fn ensure_account_active_in_company(
     }
     if !account.is_active {
         bail!("account is inactive");
+    }
+    Ok(())
+}
+
+async fn ensure_category_in_company(
+    state: &AppState,
+    category_id: &ObjectId,
+    company_id: &ObjectId,
+) -> Result<()> {
+    let category = state
+        .categories
+        .find_one(doc! { "_id": category_id })
+        .await?
+        .context("category not found")?;
+
+    if &category.company_id != company_id {
+        bail!("category belongs to another company");
     }
     Ok(())
 }

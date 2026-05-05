@@ -8,6 +8,7 @@ use alfredodev::state::{
     get_account_by_id, get_category_by_id, get_contact_by_id, get_forecast_by_id,
     get_planned_entry_by_id, get_transaction_by_id, list_accounts, list_categories, list_companies,
     list_contacts, list_forecasts, list_planned_entries, list_recurring_plans, list_transactions,
+    pay_planned_entry,
 };
 
 #[path = "common/mod.rs"]
@@ -344,6 +345,63 @@ async fn forecasts_crud_works() {
 
     delete_forecast(&state, &fc_id).await.unwrap();
     assert!(get_forecast_by_id(&state, &fc_id).await.unwrap().is_none());
+
+    common::teardown(Some(ctx)).await;
+}
+
+#[tokio::test]
+async fn pay_planned_entry_succeeds_when_category_flow_type_mismatches_entry() {
+    // Regression: a planned entry whose category has the wrong flow_type (e.g. after
+    // the category was edited) must still be payable — the planned entry is the authority
+    // on flow type, not the category.
+    let ctx = match common::setup_state().await {
+        Some(s) => s,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let company_id = list_companies(&state).await.unwrap()[0].id.clone().unwrap();
+
+    // Category is Income but the planned entry will be Expense — the mismatch
+    // that used to cause "category flow_type does not match transaction type".
+    let cat_id = create_category(&state, &company_id, "Wrong-flow cat", FlowType::Income, None, None)
+        .await
+        .unwrap();
+
+    let acc_id = create_account(&state, &company_id, "Test Bank", AccountType::Bank, "MXN", true, None)
+        .await
+        .unwrap();
+
+    let due = DateTime::from_chrono(Utc::now());
+    let pe_id = create_planned_entry(
+        &state,
+        &company_id,
+        None,
+        None,
+        None,
+        "Rent",
+        FlowType::Expense,
+        &cat_id,
+        &acc_id,
+        None,
+        1000.0,
+        due,
+        PlannedStatus::Planned,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let initial_txs = list_transactions(&state).await.unwrap().len();
+
+    pay_planned_entry(&state, &pe_id, &company_id, &acc_id, 1000.0, due, None)
+        .await
+        .expect("payment must succeed even when category flow_type mismatches entry flow_type");
+
+    assert_eq!(
+        list_transactions(&state).await.unwrap().len(),
+        initial_txs + 1,
+        "exactly one transaction must be created"
+    );
 
     common::teardown(Some(ctx)).await;
 }
