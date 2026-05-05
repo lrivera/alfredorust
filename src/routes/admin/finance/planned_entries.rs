@@ -631,6 +631,7 @@ pub async fn planned_entries_pay(
         .into_response(),
         Err(err) => {
             eprintln!("[planned_entries] pay failed for {id}: {err}");
+            let msg = format!("No se pudo registrar el pago: {err}");
             render_pay_form_error(
                 &state,
                 &company_id,
@@ -638,7 +639,7 @@ pub async fn planned_entries_pay(
                 &entry.name,
                 &form,
                 entry.original_amount_estimated.unwrap_or(0.0),
-                "No se pudo registrar el pago. Verifica que la cuenta esté activa y pertenezca a la compañía.",
+                &msg,
             )
             .await
             .into_response()
