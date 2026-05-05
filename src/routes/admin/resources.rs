@@ -7,7 +7,7 @@ use axum::{
     response::{Html, IntoResponse, Redirect},
 };
 use bson::oid::ObjectId;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 
 #[allow(unused_imports)]
 use crate::filters;
@@ -65,7 +65,7 @@ pub async fn resources_index(
         .into_iter()
         .map(|r| {
             let allowed_statuses = if r.allowed_status_ids.is_empty() {
-                "Todos los estados".to_string()
+                "Ningún estado".to_string()
             } else {
                 statuses
                     .iter()
@@ -150,6 +150,41 @@ mod tests {
 
         assert_eq!(values, vec!["machinery", "vehicle", "equipment", "other"]);
     }
+
+    #[test]
+    fn resource_form_accepts_single_allowed_status_id() {
+        let form: ResourceForm = serde_json::from_value(serde_json::json!({
+            "name": "CNC",
+            "resource_type": "machinery",
+            "allowed_status_ids": "69fa2bc87bc6c685d00722d0"
+        }))
+        .unwrap();
+
+        assert_eq!(form.allowed_status_ids, vec!["69fa2bc87bc6c685d00722d0"]);
+    }
+
+    #[test]
+    fn resource_form_accepts_multiple_allowed_status_ids() {
+        let form: ResourceForm = serde_json::from_value(serde_json::json!({
+            "name": "CNC",
+            "resource_type": "machinery",
+            "allowed_status_ids": ["a", "b"]
+        }))
+        .unwrap();
+
+        assert_eq!(form.allowed_status_ids, vec!["a", "b"]);
+    }
+
+    #[test]
+    fn resource_form_defaults_missing_allowed_status_ids_to_empty() {
+        let form: ResourceForm = serde_json::from_value(serde_json::json!({
+            "name": "CNC",
+            "resource_type": "machinery"
+        }))
+        .unwrap();
+
+        assert!(form.allowed_status_ids.is_empty());
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -159,7 +194,8 @@ pub struct ResourceForm {
     pub is_active: Option<String>,
     pub hourly_cost: Option<String>,
     pub currency: Option<String>,
-    pub allowed_status_ids: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "deserialize_status_ids")]
+    pub allowed_status_ids: Vec<String>,
     pub notes: Option<String>,
 }
 
@@ -391,12 +427,32 @@ async fn resource_status_options(
         .collect())
 }
 
-fn parse_status_ids(values: Option<Vec<String>>) -> Vec<ObjectId> {
+fn parse_status_ids(values: Vec<String>) -> Vec<ObjectId> {
     values
-        .unwrap_or_default()
         .into_iter()
         .filter_map(|id| ObjectId::parse_str(id).ok())
         .collect()
+}
+
+fn deserialize_status_ids<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum OneOrMany {
+        One(String),
+        Many(Vec<String>),
+    }
+
+    Ok(match Option::<OneOrMany>::deserialize(deserializer)? {
+        Some(OneOrMany::One(value)) if !value.is_empty() => vec![value],
+        Some(OneOrMany::One(_)) | None => Vec::new(),
+        Some(OneOrMany::Many(values)) => values
+            .into_iter()
+            .filter(|value| !value.is_empty())
+            .collect(),
+    })
 }
 
 pub async fn resources_delete(

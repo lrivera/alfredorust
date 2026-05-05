@@ -44,7 +44,7 @@
 
       <div>
         <label for="allowed_status_ids" class="block text-sm font-medium text-slate-700">Mostrar en estados</label>
-        <p class="mt-1 text-xs text-slate-500">Deja vacío para mostrar este recurso en todos los estados del panel horario.</p>
+        <p class="mt-1 text-xs text-slate-500">Selecciona los estados donde este recurso debe aparecer. Si no eliges ninguno, no aparecerá en el panel horario.</p>
         <select multiple size="6" name="allowed_status_ids" id="allowed_status_ids"
           class="mt-2 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500">
           {% for s in statuses %}

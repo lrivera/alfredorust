@@ -1168,9 +1168,7 @@ pub async fn resource_usages_index(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .into_iter()
         .filter(|resource| {
-            resource.is_active
-                && (resource.allowed_status_ids.is_empty()
-                    || resource.allowed_status_ids.contains(&selected_status_id))
+            resource.is_active && resource.allowed_status_ids.contains(&selected_status_id)
         })
         .collect::<Vec<_>>();
     let resources_empty = resources.is_empty();

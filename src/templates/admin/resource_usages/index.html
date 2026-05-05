@@ -26,7 +26,7 @@
   </div>
 
   {% if resources_empty %}
-  <div class="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">No hay recursos activos configurados para el estado {{ selected_status_name }}. Edita recursos y asígnales este estado, o deja su lista de estados vacía para mostrarlos siempre.</div>
+  <div class="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">No hay recursos activos configurados para el estado {{ selected_status_name }}. Edita recursos y asígnales este estado.</div>
   {% endif %}
 
   <form method="post" action="/admin/resource_usages" class="space-y-4">
