@@ -12,8 +12,8 @@ use axum::{
     response::{Html, IntoResponse, Redirect, Response},
 };
 use mongodb::bson::oid::ObjectId;
-use serde::de::{self, Deserializer, SeqAccess, Visitor};
 use serde::Deserialize;
+use serde::de::{self, Deserializer, SeqAccess, Visitor};
 
 use std::fmt;
 
@@ -179,13 +179,7 @@ pub async fn users_new(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let companies = load_company_options(
-        &state,
-        None,
-        admin_companies.as_slice(),
-        None,
-    )
-    .await?;
+    let companies = load_company_options(&state, None, admin_companies.as_slice(), None).await?;
     let form = UserFormView {
         email: String::new(),
         secret: generate_base32_secret_n(DEFAULT_SECRET_BYTES),
@@ -223,15 +217,7 @@ pub async fn users_create(
         return StatusCode::FORBIDDEN.into_response();
     }
 
-    match process_user_form(
-        form,
-        None,
-        &state,
-        true,
-        admin_companies.as_slice(),
-    )
-    .await
-    {
+    match process_user_form(form, None, &state, true, admin_companies.as_slice()).await {
         Ok(_) => Redirect::to("/admin/users").into_response(),
         Err((form_view, companies, message)) => render(UserFormTemplate {
             form: form_view,
@@ -537,7 +523,8 @@ async fn process_user_form(
     }
 
     if let Some((id, _existing_roles)) = existing {
-        if let Err(_) = update_user(state, id, &email_trimmed, &secret_trimmed, &company_roles).await
+        if let Err(_) =
+            update_user(state, id, &email_trimmed, &secret_trimmed, &company_roles).await
         {
             let companies = load_company_options(
                 state,
@@ -553,8 +540,7 @@ async fn process_user_form(
                 "No se pudo actualizar el usuario".into(),
             ));
         }
-    } else if let Err(_) =
-        create_user(state, &email_trimmed, &secret_trimmed, &company_roles).await
+    } else if let Err(_) = create_user(state, &email_trimmed, &secret_trimmed, &company_roles).await
     {
         let companies = load_company_options(
             state,
@@ -609,9 +595,7 @@ async fn load_company_options(
                         .find(|(sel, _)| sel.to_hex() == id)
                         .map(|(_, role)| role.as_str().to_string())
                 })
-                .or_else(|| {
-                    role_map.and_then(|map| map.get(&format!("role_{}", id)).cloned())
-                })
+                .or_else(|| role_map.and_then(|map| map.get(&format!("role_{}", id)).cloned()))
                 .unwrap_or_else(|| UserRole::Staff.as_str().to_string());
             Some(CompanyOption {
                 id,

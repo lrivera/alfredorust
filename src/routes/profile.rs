@@ -1,6 +1,6 @@
 use std::{collections::HashSet, sync::Arc};
 
-use axum::{extract::State, http::StatusCode, Json};
+use axum::{Json, extract::State, http::StatusCode};
 use futures::TryStreamExt;
 use mongodb::bson::{doc, oid::ObjectId};
 use serde::Serialize;
@@ -23,8 +23,7 @@ pub async fn me_companies(
     let active_company = session.active_company_id().clone();
 
     // Always fetch fresh memberships to reflect changes done after login.
-    let mut company_ids: HashSet<ObjectId> =
-        session.user().company_ids.iter().cloned().collect();
+    let mut company_ids: HashSet<ObjectId> = session.user().company_ids.iter().cloned().collect();
 
     // print user_id
     println!("User ID: {}", session.user_id());

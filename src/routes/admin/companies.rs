@@ -14,6 +14,7 @@ use slug::slugify;
 #[allow(unused_imports)]
 use crate::filters;
 
+use super::sat_configs::{SatConfigRow, load_sat_configs_for_company};
 use crate::{
     models::UserRole,
     session::SessionUser,
@@ -22,7 +23,6 @@ use crate::{
         list_companies, update_company,
     },
 };
-use super::sat_configs::{SatConfigRow, load_sat_configs_for_company};
 
 fn render<T: Template>(tpl: T) -> Result<Html<String>, StatusCode> {
     tpl.render()
@@ -200,11 +200,7 @@ pub async fn companies_create(
     };
 
     // Ensure slug uniqueness
-    if let Ok(Some(existing)) = state
-        .companies
-        .find_one(doc! { "slug": &final_slug })
-        .await
-    {
+    if let Ok(Some(existing)) = state.companies.find_one(doc! { "slug": &final_slug }).await {
         if existing.id.is_some() {
             return render(CompanyFormTemplate {
                 action: "/admin/companies".into(),
@@ -224,18 +220,24 @@ pub async fn companies_create(
         }
     }
 
-    match create_company(&state, name, final_slug.as_str(), currency, is_active, notes).await {
-        Ok(company_id) => match add_user_to_company(
-            &state,
-            session_user.user_id(),
-            &company_id,
-            UserRole::Admin,
-        )
-        .await
-        {
-            Ok(_) => Redirect::to("/admin/companies").into_response(),
-            Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-        },
+    match create_company(
+        &state,
+        name,
+        final_slug.as_str(),
+        currency,
+        is_active,
+        notes,
+    )
+    .await
+    {
+        Ok(company_id) => {
+            match add_user_to_company(&state, session_user.user_id(), &company_id, UserRole::Admin)
+                .await
+            {
+                Ok(_) => Redirect::to("/admin/companies").into_response(),
+                Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+            }
+        }
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
@@ -348,11 +350,7 @@ pub async fn companies_update(
     };
 
     // Ensure slug uniqueness against other companies
-    if let Ok(Some(existing)) = state
-        .companies
-        .find_one(doc! { "slug": &final_slug })
-        .await
-    {
+    if let Ok(Some(existing)) = state.companies.find_one(doc! { "slug": &final_slug }).await {
         if existing.id != Some(object_id.clone()) {
             return render(CompanyFormTemplate {
                 action: format!("/admin/companies/{}/update", id),
@@ -424,7 +422,10 @@ pub async fn companies_delete_all_cfdis(
     if !has_admin_role_for(&session_user, &object_id) {
         return StatusCode::FORBIDDEN.into_response();
     }
-    let _ = state.cfdis.delete_many(bson::doc! { "company_id": &id }).await;
+    let _ = state
+        .cfdis
+        .delete_many(bson::doc! { "company_id": &id })
+        .await;
     Redirect::to(&format!("/admin/companies/{id}/edit")).into_response()
 }
 
@@ -440,7 +441,10 @@ pub async fn companies_delete_all_transactions(
     if !has_admin_role_for(&session_user, &object_id) {
         return StatusCode::FORBIDDEN.into_response();
     }
-    let _ = state.transactions.delete_many(bson::doc! { "company_id": object_id }).await;
+    let _ = state
+        .transactions
+        .delete_many(bson::doc! { "company_id": object_id })
+        .await;
     Redirect::to(&format!("/admin/companies/{id}/edit")).into_response()
 }
 

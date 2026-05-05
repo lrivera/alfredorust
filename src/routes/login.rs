@@ -51,12 +51,7 @@ pub async fn login(
                                 .get("host")
                                 .and_then(|h| h.to_str().ok())
                                 .unwrap_or("localhost");
-                            set_cookies_for_host(
-                                &mut response,
-                                &token,
-                                host,
-                                &user.company_slug,
-                            );
+                            set_cookies_for_host(&mut response, &token, host, &user.company_slug);
                             response
                         }
                         Err(e) => (
@@ -92,7 +87,11 @@ pub async fn login(
     }
 }
 fn set_cookies_for_host(response: &mut Response, token: &str, host: &str, slug: &str) {
-    let host_base = host.split(':').next().unwrap_or(host).trim_start_matches('.');
+    let host_base = host
+        .split(':')
+        .next()
+        .unwrap_or(host)
+        .trim_start_matches('.');
 
     // Host-only cookie (current host)
     if let Ok(header_value) = HeaderValue::from_str(&format!(
@@ -164,7 +163,11 @@ fn compute_root_domain(base: &str) -> Option<String> {
 }
 
 pub fn compute_cookie_domain(host: &str) -> Option<String> {
-    let base = host.split(':').next().unwrap_or(host).trim_start_matches('.');
+    let base = host
+        .split(':')
+        .next()
+        .unwrap_or(host)
+        .trim_start_matches('.');
     compute_root_domain(base)
 }
 

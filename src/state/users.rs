@@ -3,10 +3,8 @@ use data_encoding::BASE32_NOPAD;
 use futures::stream::TryStreamExt;
 use mongodb::bson::{DateTime, doc, oid::ObjectId};
 use rand::RngCore;
-use std::{
-    time::{Duration, SystemTime},
-};
 use slug::slugify;
+use std::time::{Duration, SystemTime};
 
 use crate::models::{Session, User, UserCompany, UserRole};
 
@@ -238,7 +236,10 @@ pub async fn add_user_to_company(
 
 pub async fn delete_user(state: &AppState, id: &ObjectId) -> Result<()> {
     state.users.delete_one(doc! { "_id": id }).await?;
-    let _ = state.user_companies.delete_many(doc! { "user_id": id }).await;
+    let _ = state
+        .user_companies
+        .delete_many(doc! { "user_id": id })
+        .await;
     Ok(())
 }
 
@@ -247,10 +248,7 @@ pub async fn delete_session(state: &AppState, token: &str) -> Result<()> {
     Ok(())
 }
 
-async fn build_user_with_company(
-    state: &AppState,
-    user: User,
-) -> Result<UserWithCompany> {
+async fn build_user_with_company(state: &AppState, user: User) -> Result<UserWithCompany> {
     let id = user.id.context("user missing _id")?;
     let mut memberships = Vec::new();
     let mut cursor = state.user_companies.find(doc! { "user_id": &id }).await?;

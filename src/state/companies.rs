@@ -168,7 +168,10 @@ pub async fn delete_company(state: &AppState, id: &ObjectId) -> Result<()> {
     Ok(())
 }
 
-pub(super) async fn company_default_currency(state: &AppState, company_id: &ObjectId) -> Result<String> {
+pub(super) async fn company_default_currency(
+    state: &AppState,
+    company_id: &ObjectId,
+) -> Result<String> {
     let company = state
         .companies
         .find_one(doc! { "_id": company_id })

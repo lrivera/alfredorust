@@ -42,44 +42,48 @@ pub async fn require_session(
                 break;
             }
             Ok(None) => continue,
-            Err(_) => return Err((StatusCode::INTERNAL_SERVER_ERROR, "session lookup failed").into_response()),
+            Err(_) => {
+                return Err(
+                    (StatusCode::INTERNAL_SERVER_ERROR, "session lookup failed").into_response()
+                );
+            }
         }
     }
 
     if let Some((mut user, token)) = found {
-            // Select active company strictly by subdomain if present
-            if let Some(host) = request.headers().get("host").and_then(|h| h.to_str().ok()) {
-                let host_no_port = host.split(':').next().unwrap_or(host);
-                let parts: Vec<&str> = host_no_port.split('.').collect();
-                let has_local_sub = parts.len() == 2 && parts[1].eq_ignore_ascii_case("localhost");
-                let has_std_sub = parts.len() >= 3;
-                let current_subdomain = if has_std_sub || has_local_sub {
-                    Some(parts[0])
-                } else {
-                    None
-                };
+        // Select active company strictly by subdomain if present
+        if let Some(host) = request.headers().get("host").and_then(|h| h.to_str().ok()) {
+            let host_no_port = host.split(':').next().unwrap_or(host);
+            let parts: Vec<&str> = host_no_port.split('.').collect();
+            let has_local_sub = parts.len() == 2 && parts[1].eq_ignore_ascii_case("localhost");
+            let has_std_sub = parts.len() >= 3;
+            let current_subdomain = if has_std_sub || has_local_sub {
+                Some(parts[0])
+            } else {
+                None
+            };
 
-                if let Some(sub) = current_subdomain {
-                    if let Some(idx) = user
-                        .company_slugs
-                        .iter()
-                        .position(|s| s.eq_ignore_ascii_case(sub))
-                    {
-                        user.company_id = user.company_ids[idx].clone();
-                        user.company_slug = user.company_slugs[idx].clone();
-                        user.company_name = user.company_names[idx].clone();
-                        if let Some(role) = user.company_roles.get(idx) {
-                            user.role = role.clone();
-                        }
-                    } else {
-                        // Subdominio no corresponde a ninguna compañía del usuario
-                        return Err(unauthorized_response());
+            if let Some(sub) = current_subdomain {
+                if let Some(idx) = user
+                    .company_slugs
+                    .iter()
+                    .position(|s| s.eq_ignore_ascii_case(sub))
+                {
+                    user.company_id = user.company_ids[idx].clone();
+                    user.company_slug = user.company_slugs[idx].clone();
+                    user.company_name = user.company_names[idx].clone();
+                    if let Some(role) = user.company_roles.get(idx) {
+                        user.role = role.clone();
                     }
+                } else {
+                    // Subdominio no corresponde a ninguna compañía del usuario
+                    return Err(unauthorized_response());
                 }
             }
+        }
 
-            request.extensions_mut().insert(SessionData { user, token });
-            Ok(next.run(request).await)
+        request.extensions_mut().insert(SessionData { user, token });
+        Ok(next.run(request).await)
     } else {
         Err(unauthorized_response())
     }
