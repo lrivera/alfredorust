@@ -363,13 +363,28 @@ async fn pay_planned_entry_succeeds_when_category_flow_type_mismatches_entry() {
 
     // Category is Income but the planned entry will be Expense — the mismatch
     // that used to cause "category flow_type does not match transaction type".
-    let cat_id = create_category(&state, &company_id, "Wrong-flow cat", FlowType::Income, None, None)
-        .await
-        .unwrap();
+    let cat_id = create_category(
+        &state,
+        &company_id,
+        "Wrong-flow cat",
+        FlowType::Income,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
 
-    let acc_id = create_account(&state, &company_id, "Test Bank", AccountType::Bank, "MXN", true, None)
-        .await
-        .unwrap();
+    let acc_id = create_account(
+        &state,
+        &company_id,
+        "Test Bank",
+        AccountType::Bank,
+        "MXN",
+        true,
+        None,
+    )
+    .await
+    .unwrap();
 
     let due = DateTime::from_chrono(Utc::now());
     let pe_id = create_planned_entry(

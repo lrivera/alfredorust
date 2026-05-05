@@ -11,8 +11,8 @@ use std::{
 };
 
 use crate::models::{
-    Account, Category, Company, Contact, Forecast, PlannedEntry, RecurringPlan, SeedUser,
-    Transaction, User, UserCompany,
+    Account, Category, Company, ConceptStatus, Contact, Forecast, PlannedEntry, RecurringPlan,
+    SeedUser, Transaction, User, UserCompany,
 };
 
 pub(super) async fn is_database_empty(db: &Database) -> Result<bool> {
@@ -96,11 +96,26 @@ pub(super) async fn ensure_collections(db: &Database) -> Result<()> {
     if !existing.iter().any(|name| name == "projects") {
         db.create_collection("projects").await?;
     }
+    if !existing.iter().any(|name| name == "concept_statuses") {
+        db.create_collection("concept_statuses").await?;
+    }
+    if !existing.iter().any(|name| name == "project_concepts") {
+        db.create_collection("project_concepts").await?;
+    }
     if !existing.iter().any(|name| name == "resources") {
         db.create_collection("resources").await?;
     }
     if !existing.iter().any(|name| name == "resource_logs") {
         db.create_collection("resource_logs").await?;
+    }
+    if !existing.iter().any(|name| name == "resource_usages") {
+        db.create_collection("resource_usages").await?;
+    }
+    if !existing
+        .iter()
+        .any(|name| name == "resource_usage_allocations")
+    {
+        db.create_collection("resource_usage_allocations").await?;
     }
     Ok(())
 }
@@ -138,9 +153,48 @@ pub(super) async fn seed_default_companies(
             .inserted_id
             .as_object_id()
             .context("company insert missing _id")?;
+        seed_default_concept_statuses(db, &id).await?;
         map.insert(name.clone(), id);
     }
     Ok(map)
+}
+
+async fn seed_default_concept_statuses(db: &Database, company_id: &ObjectId) -> Result<()> {
+    let statuses = db.collection::<ConceptStatus>("concept_statuses");
+    if statuses
+        .find_one(doc! { "company_id": company_id })
+        .await?
+        .is_some()
+    {
+        return Ok(());
+    }
+
+    let defaults = [
+        ("Pedido", "slate", true, false),
+        ("Ingeniería", "sky", false, false),
+        ("CNC", "amber", false, false),
+        ("Calidad", "violet", false, false),
+        ("Entrega", "emerald", false, false),
+        ("Terminado", "green", false, true),
+    ];
+
+    for (idx, (name, color, is_initial, is_terminal)) in defaults.into_iter().enumerate() {
+        statuses
+            .insert_one(ConceptStatus {
+                id: None,
+                company_id: company_id.clone(),
+                name: name.to_string(),
+                position: (idx as i32) + 1,
+                color: Some(color.to_string()),
+                is_initial,
+                is_terminal,
+                is_active: true,
+                created_at: None,
+                updated_at: None,
+            })
+            .await?;
+    }
+    Ok(())
 }
 
 pub(super) async fn seed_default_users(

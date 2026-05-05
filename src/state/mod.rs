@@ -7,8 +7,9 @@ use std::{collections::HashMap, env, sync::Arc};
 use tokio::sync::Mutex;
 
 use crate::models::{
-    Account, Category, Company, Contact, Forecast, PlannedEntry, Project, RecurringPlan, Resource,
-    ResourceLog, SatConfig, ServiceOrder, Session, Transaction, User, UserCompany,
+    Account, Category, Company, ConceptStatus, Contact, Forecast, PlannedEntry, Project,
+    ProjectConcept, RecurringPlan, Resource, ResourceLog, ResourceUsage, ResourceUsageAllocation,
+    SatConfig, ServiceOrder, Session, Transaction, User, UserCompany,
 };
 use bson::Document;
 
@@ -44,8 +45,10 @@ pub type JobStore = Arc<Mutex<HashMap<String, CfdiJob>>>;
 mod companies;
 mod finance;
 mod orders;
+mod project_concepts;
 mod projects;
 mod resource_logs;
+mod resource_usages;
 mod resources;
 mod sat_configs;
 mod seed;
@@ -54,8 +57,10 @@ mod users;
 pub use companies::*;
 pub use finance::*;
 pub use orders::*;
+pub use project_concepts::*;
 pub use projects::*;
 pub use resource_logs::*;
+pub use resource_usages::*;
 pub use resources::*;
 pub use sat_configs::*;
 pub use users::*;
@@ -81,8 +86,12 @@ pub struct AppState {
     pub sat_configs: Collection<SatConfig>,
     pub orders: Collection<ServiceOrder>,
     pub projects: Collection<Project>,
+    pub concept_statuses: Collection<ConceptStatus>,
+    pub project_concepts: Collection<ProjectConcept>,
     pub resources: Collection<Resource>,
     pub resource_logs: Collection<ResourceLog>,
+    pub resource_usages: Collection<ResourceUsage>,
+    pub resource_usage_allocations: Collection<ResourceUsageAllocation>,
 }
 
 pub async fn init_state() -> Result<AppState> {
@@ -125,7 +134,12 @@ pub async fn init_state_with_db_name(uri: &str, db_name: &str) -> Result<AppStat
         sat_configs: db.collection::<SatConfig>("sat_configs"),
         orders: db.collection::<ServiceOrder>("service_orders"),
         projects: db.collection::<Project>("projects"),
+        concept_statuses: db.collection::<ConceptStatus>("concept_statuses"),
+        project_concepts: db.collection::<ProjectConcept>("project_concepts"),
         resources: db.collection::<Resource>("resources"),
         resource_logs: db.collection::<ResourceLog>("resource_logs"),
+        resource_usages: db.collection::<ResourceUsage>("resource_usages"),
+        resource_usage_allocations: db
+            .collection::<ResourceUsageAllocation>("resource_usage_allocations"),
     })
 }

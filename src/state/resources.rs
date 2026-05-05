@@ -70,6 +70,42 @@ pub async fn create_resource(
             name: name.to_string(),
             resource_type,
             is_active,
+            hourly_cost: 0.0,
+            currency: "MXN".to_string(),
+            notes,
+            created_at: Some(DateTime::from_system_time(SystemTime::now())),
+            updated_at: None,
+        })
+        .await?;
+    res.inserted_id
+        .as_object_id()
+        .context("resource insert missing _id")
+}
+
+pub async fn create_resource_with_cost(
+    state: &AppState,
+    company_id: &ObjectId,
+    name: &str,
+    resource_type: ResourceType,
+    is_active: bool,
+    hourly_cost: f64,
+    currency: &str,
+    notes: Option<String>,
+) -> Result<ObjectId> {
+    let res = state
+        .resources
+        .insert_one(Resource {
+            id: None,
+            company_id: company_id.clone(),
+            name: name.to_string(),
+            resource_type,
+            is_active,
+            hourly_cost: hourly_cost.max(0.0),
+            currency: if currency.trim().is_empty() {
+                "MXN".to_string()
+            } else {
+                currency.trim().to_string()
+            },
             notes,
             created_at: Some(DateTime::from_system_time(SystemTime::now())),
             updated_at: None,
@@ -98,6 +134,27 @@ pub async fn update_resource(
                 "resource_type": resource_type.as_str(),
                 "is_active": is_active,
                 "notes": notes,
+                "updated_at": DateTime::from_system_time(SystemTime::now()),
+            } },
+        )
+        .await?;
+    Ok(())
+}
+
+pub async fn update_resource_cost(
+    state: &AppState,
+    id: &ObjectId,
+    company_id: &ObjectId,
+    hourly_cost: f64,
+    currency: &str,
+) -> Result<()> {
+    state
+        .resources
+        .update_one(
+            doc! { "_id": id, "company_id": company_id },
+            doc! { "$set": {
+                "hourly_cost": hourly_cost.max(0.0),
+                "currency": if currency.trim().is_empty() { "MXN" } else { currency.trim() },
                 "updated_at": DateTime::from_system_time(SystemTime::now()),
             } },
         )

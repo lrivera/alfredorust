@@ -86,6 +86,14 @@ fn default_true() -> bool {
     true
 }
 
+fn default_zero() -> f64 {
+    0.0
+}
+
+fn default_mxn() -> String {
+    "MXN".to_string()
+}
+
 /// User document stored in MongoDB referencing the company by ObjectId.
 /// Each user belongs to exactly one company (tenant) in this first version.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -758,6 +766,79 @@ pub struct Project {
     pub updated_at: Option<DateTime>,
 }
 
+/// ---------- CONFIGURABLE CONCEPT STATUSES ----------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConceptStatus {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+
+    pub company_id: ObjectId,
+    pub name: String,
+    pub position: i32,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+
+    #[serde(default)]
+    pub is_initial: bool,
+
+    #[serde(default)]
+    pub is_terminal: bool,
+
+    #[serde(default = "default_true")]
+    pub is_active: bool,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<DateTime>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<DateTime>,
+}
+
+/// A line item/part inside a project, e.g. "Engrane A, 5 piezas".
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectConcept {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+
+    pub company_id: ObjectId,
+    pub project_id: ObjectId,
+    pub status_id: ObjectId,
+    pub name: String,
+
+    #[serde(default = "default_one_f64")]
+    pub quantity: f64,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unit: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub estimated_hours: Option<f64>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub estimated_cost: Option<f64>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+
+    #[serde(default)]
+    pub position: i32,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<DateTime>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<DateTime>,
+}
+
+fn default_one_f64() -> f64 {
+    1.0
+}
+
 /// ---------- RESOURCES ----------
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -801,6 +882,12 @@ pub struct Resource {
 
     #[serde(default = "default_true")]
     pub is_active: bool,
+
+    #[serde(default = "default_zero")]
+    pub hourly_cost: f64,
+
+    #[serde(default = "default_mxn")]
+    pub currency: String,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
@@ -849,6 +936,73 @@ pub struct ResourceLog {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created_at: Option<DateTime>,
+}
+
+/// Real time window where one resource was used. Cost is snapshotted here.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResourceUsage {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+
+    pub company_id: ObjectId,
+    pub resource_id: ObjectId,
+    pub resource_name_snapshot: String,
+    pub started_at: DateTime,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ended_at: Option<DateTime>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_hours: Option<f64>,
+
+    #[serde(default = "default_zero")]
+    pub hourly_cost_snapshot: f64,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_cost: Option<f64>,
+
+    #[serde(default = "default_mxn")]
+    pub currency: String,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operator_name: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<DateTime>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<DateTime>,
+}
+
+/// Cost/time allocation from one resource usage to one project concept.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResourceUsageAllocation {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+
+    pub company_id: ObjectId,
+    pub usage_id: ObjectId,
+    pub project_id: ObjectId,
+    pub concept_id: ObjectId,
+    pub allocation_ratio: f64,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allocated_hours: Option<f64>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allocated_cost: Option<f64>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<DateTime>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<DateTime>,
 }
 
 #[cfg(test)]

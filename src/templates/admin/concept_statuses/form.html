@@ -1,0 +1,36 @@
+{% extends "layouts/base.html" %}
+{% block title %}{% if is_edit %}Editar{% else %}Nuevo{% endif %} Estado{% endblock %}
+{% block content %}
+<section class="mx-auto w-full max-w-3xl">
+  <div class="mb-6 rounded-2xl bg-gradient-to-br from-sky-600 to-slate-900 p-6 text-white shadow-sm">
+    <p class="text-xs font-semibold uppercase tracking-[0.25em] text-sky-100">Configuración</p>
+    <h1 class="mt-2 text-3xl font-semibold">{% if is_edit %}Editar estado{% else %}Nuevo estado{% endif %}</h1>
+  </div>
+  <form method="post" action="{{ action }}" class="space-y-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <div>
+      <label class="block text-sm font-semibold text-slate-700">Nombre *</label>
+      <input name="name" value="{{ name }}" required class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+    </div>
+    <div class="grid gap-4 sm:grid-cols-2">
+      <div>
+        <label class="block text-sm font-semibold text-slate-700">Orden</label>
+        <input type="number" name="position" value="{{ position }}" class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+      </div>
+      <div>
+        <label class="block text-sm font-semibold text-slate-700">Color</label>
+        <input name="color" value="{{ color }}" placeholder="sky, amber, emerald" class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+      </div>
+    </div>
+    <div class="grid gap-3 sm:grid-cols-3">
+      <label class="flex items-center gap-2 rounded-xl border border-slate-200 p-3 text-sm"><input type="checkbox" name="is_initial" {% if is_initial %}checked{% endif %}> Inicial</label>
+      <label class="flex items-center gap-2 rounded-xl border border-slate-200 p-3 text-sm"><input type="checkbox" name="is_terminal" {% if is_terminal %}checked{% endif %}> Terminal</label>
+      <label class="flex items-center gap-2 rounded-xl border border-slate-200 p-3 text-sm"><input type="checkbox" name="is_active" {% if is_active %}checked{% endif %}> Activo</label>
+    </div>
+    {% if errors.is_some() %}<div class="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{{ errors.as_ref().unwrap() }}</div>{% endif %}
+    <div class="flex flex-wrap gap-3">
+      <button class="rounded-full bg-sky-600 px-5 py-2 text-sm font-semibold text-white hover:bg-sky-700">Guardar</button>
+      <a href="/admin/concept_statuses" class="px-5 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900">Cancelar</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

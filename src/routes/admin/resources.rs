@@ -16,8 +16,8 @@ use crate::{
     models::ResourceType,
     session::SessionUser,
     state::{
-        AppState, create_resource, delete_resource, get_resource_by_id, list_resources,
-        update_resource,
+        AppState, create_resource_with_cost, delete_resource, get_resource_by_id, list_resources,
+        update_resource, update_resource_cost,
     },
 };
 
@@ -41,6 +41,8 @@ struct ResourceRow {
     resource_type: String,
     resource_type_label: String,
     is_active: bool,
+    hourly_cost: String,
+    currency: String,
     notes: String,
 }
 
@@ -62,6 +64,8 @@ pub async fn resources_index(
             resource_type: r.resource_type.as_str().to_string(),
             resource_type_label: r.resource_type.label().to_string(),
             is_active: r.is_active,
+            hourly_cost: format!("{:.2}", r.hourly_cost),
+            currency: r.currency,
             notes: r.notes.unwrap_or_default(),
         })
         .collect();
@@ -77,6 +81,8 @@ struct ResourceFormTemplate {
     name: String,
     resource_type: String,
     is_active: String,
+    hourly_cost: String,
+    currency: String,
     notes: String,
     resource_type_options: Vec<(String, String)>,
     is_edit: bool,
@@ -129,6 +135,8 @@ pub struct ResourceForm {
     pub name: String,
     pub resource_type: String,
     pub is_active: Option<String>,
+    pub hourly_cost: Option<String>,
+    pub currency: Option<String>,
     pub notes: Option<String>,
 }
 
@@ -144,6 +152,8 @@ pub async fn resources_new(
         name: String::new(),
         resource_type: "machinery".into(),
         is_active: "on".into(),
+        hourly_cost: "0.00".into(),
+        currency: "MXN".into(),
         notes: String::new(),
         resource_type_options: resource_type_options(),
         is_edit: false,
@@ -174,6 +184,8 @@ pub async fn resources_create(
                 .map(|s| s.as_str())
                 .unwrap_or("")
                 .to_string(),
+            hourly_cost: form.hourly_cost.clone().unwrap_or_default(),
+            currency: form.currency.clone().unwrap_or_else(|| "MXN".into()),
             notes: form.notes.clone().unwrap_or_default(),
             resource_type_options: resource_type_options(),
             is_edit: false,
@@ -184,9 +196,27 @@ pub async fn resources_create(
 
     let resource_type = parse_resource_type(&form.resource_type);
     let is_active = form.is_active.is_some();
+    let hourly_cost = form
+        .hourly_cost
+        .as_deref()
+        .unwrap_or("0")
+        .parse()
+        .unwrap_or(0.0);
+    let currency = form.currency.as_deref().unwrap_or("MXN");
     let notes = form.notes.filter(|s| !s.trim().is_empty());
 
-    match create_resource(&state, &company_id, name, resource_type, is_active, notes).await {
+    match create_resource_with_cost(
+        &state,
+        &company_id,
+        name,
+        resource_type,
+        is_active,
+        hourly_cost,
+        currency,
+        notes,
+    )
+    .await
+    {
         Ok(_) => Redirect::to("/admin/resources").into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
@@ -217,6 +247,8 @@ pub async fn resources_edit(
         } else {
             String::new()
         },
+        hourly_cost: format!("{:.2}", resource.hourly_cost),
+        currency: resource.currency,
         notes: resource.notes.unwrap_or_default(),
         resource_type_options: resource_type_options(),
         is_edit: true,
@@ -252,6 +284,8 @@ pub async fn resources_update(
                 .map(|s| s.as_str())
                 .unwrap_or("")
                 .to_string(),
+            hourly_cost: form.hourly_cost.clone().unwrap_or_default(),
+            currency: form.currency.clone().unwrap_or_else(|| "MXN".into()),
             notes: form.notes.clone().unwrap_or_default(),
             resource_type_options: resource_type_options(),
             is_edit: true,
@@ -262,6 +296,13 @@ pub async fn resources_update(
 
     let resource_type = parse_resource_type(&form.resource_type);
     let is_active = form.is_active.is_some();
+    let hourly_cost = form
+        .hourly_cost
+        .as_deref()
+        .unwrap_or("0")
+        .parse()
+        .unwrap_or(0.0);
+    let currency = form.currency.as_deref().unwrap_or("MXN").to_string();
     let notes = form.notes.filter(|s| !s.trim().is_empty());
 
     match update_resource(
@@ -275,7 +316,12 @@ pub async fn resources_update(
     )
     .await
     {
-        Ok(_) => Redirect::to("/admin/resources").into_response(),
+        Ok(_) => {
+            match update_resource_cost(&state, &oid, &company_id, hourly_cost, &currency).await {
+                Ok(_) => Redirect::to("/admin/resources").into_response(),
+                Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+            }
+        }
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }

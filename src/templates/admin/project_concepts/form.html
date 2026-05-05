@@ -1,0 +1,30 @@
+{% extends "layouts/base.html" %}
+{% block title %}{% if is_edit %}Editar{% else %}Nuevo{% endif %} Concepto{% endblock %}
+{% block content %}
+<section class="mx-auto w-full max-w-4xl">
+  <div class="mb-6 rounded-3xl bg-gradient-to-br from-slate-950 via-sky-950 to-sky-700 p-6 text-white shadow-sm">
+    <p class="text-xs font-semibold uppercase tracking-[0.25em] text-sky-200">Producción</p>
+    <h1 class="mt-2 text-3xl font-semibold">{% if is_edit %}Editar concepto{% else %}Nuevo concepto{% endif %}</h1>
+  </div>
+  <form method="post" action="{{ action }}" class="grid gap-5 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+    <div>
+      <label class="block text-sm font-semibold text-slate-700">Concepto *</label>
+      <input name="name" value="{{ name }}" required placeholder="Engrane A" class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+    </div>
+    <div class="grid gap-4 sm:grid-cols-4">
+      <div><label class="block text-sm font-semibold text-slate-700">Cantidad</label><input type="number" step="0.01" name="quantity" value="{{ quantity }}" class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"></div>
+      <div><label class="block text-sm font-semibold text-slate-700">Unidad</label><input name="unit" value="{{ unit }}" class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"></div>
+      <div><label class="block text-sm font-semibold text-slate-700">Orden</label><input type="number" name="position" value="{{ position }}" class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"></div>
+      <div><label class="block text-sm font-semibold text-slate-700">Estado</label><select name="status_id" class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm">{% for s in statuses %}<option value="{{ s.value }}" {% if s.selected %}selected{% endif %}>{{ s.label }}</option>{% endfor %}</select></div>
+    </div>
+    <div class="grid gap-4 sm:grid-cols-2">
+      <div><label class="block text-sm font-semibold text-slate-700">Horas estimadas</label><input type="number" step="0.01" name="estimated_hours" value="{{ estimated_hours }}" class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"></div>
+      <div><label class="block text-sm font-semibold text-slate-700">Costo estimado</label><input type="number" step="0.01" name="estimated_cost" value="{{ estimated_cost }}" class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"></div>
+    </div>
+    <div><label class="block text-sm font-semibold text-slate-700">Descripción</label><textarea name="description" rows="3" class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm">{{ description }}</textarea></div>
+    <div><label class="block text-sm font-semibold text-slate-700">Notas</label><textarea name="notes" rows="3" class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm">{{ notes }}</textarea></div>
+    {% if errors.is_some() %}<div class="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{{ errors.as_ref().unwrap() }}</div>{% endif %}
+    <div class="flex flex-wrap gap-3"><button class="rounded-full bg-sky-600 px-5 py-2 text-sm font-semibold text-white hover:bg-sky-700">Guardar</button><a href="/admin/projects/{{ project_id }}" class="px-5 py-2 text-sm font-semibold text-slate-600">Cancelar</a></div>
+  </form>
+</section>
+{% endblock %}

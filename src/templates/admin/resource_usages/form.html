@@ -1,0 +1,36 @@
+{% extends "layouts/base.html" %}
+{% block title %}{% if is_edit %}Editar{% else %}Nuevo{% endif %} Uso de Recurso{% endblock %}
+{% block content %}
+<section class="mx-auto w-full max-w-5xl">
+  <div class="mb-6 rounded-3xl bg-slate-950 p-6 text-white shadow-sm">
+    <p class="text-xs font-semibold uppercase tracking-[0.25em] text-emerald-300">Bitácora y costos</p>
+    <h1 class="mt-2 text-3xl font-semibold">{% if is_edit %}Editar uso de recurso{% else %}Nuevo uso de recurso{% endif %}</h1>
+  </div>
+  <form method="post" action="{{ action }}" class="grid gap-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+    <div>
+      <label class="block text-sm font-semibold text-slate-700">Recurso *</label>
+      <select name="resource_id" required class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+        <option value="">Seleccionar recurso</option>
+        {% for r in resources %}<option value="{{ r.value }}" {% if r.selected %}selected{% endif %}>{{ r.label }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="grid gap-4 sm:grid-cols-2">
+      <div><label class="block text-sm font-semibold text-slate-700">Inicio *</label><input type="datetime-local" name="started_at" value="{{ started_at }}" required class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"></div>
+      <div><label class="block text-sm font-semibold text-slate-700">Fin</label><input type="datetime-local" name="ended_at" value="{{ ended_at }}" class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"></div>
+    </div>
+    <div>
+      <label class="block text-sm font-semibold text-slate-700">Asignar a conceptos</label>
+      <p class="mt-1 text-xs text-slate-500">Puedes seleccionar varios. Por ahora el costo se divide en partes iguales.</p>
+      <select name="concept_ids" multiple size="8" class="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+        {% for c in concepts %}<option value="{{ c.value }}" {% if c.selected %}selected{% endif %}>{{ c.label }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="grid gap-4 sm:grid-cols-2">
+      <div><label class="block text-sm font-semibold text-slate-700">Operador</label><input name="operator_name" value="{{ operator_name }}" class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"></div>
+      <div><label class="block text-sm font-semibold text-slate-700">Notas</label><input name="notes" value="{{ notes }}" class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"></div>
+    </div>
+    {% if errors.is_some() %}<div class="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{{ errors.as_ref().unwrap() }}</div>{% endif %}
+    <div class="flex flex-wrap gap-3"><button class="rounded-full bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-700">Guardar uso</button><a href="/admin/resource_usages" class="px-5 py-2 text-sm font-semibold text-slate-600">Cancelar</a></div>
+  </form>
+</section>
+{% endblock %}

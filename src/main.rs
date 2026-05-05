@@ -234,12 +234,57 @@ async fn main() {
             get(routes::projects_index).post(routes::projects_create),
         )
         .route("/admin/projects/new", get(routes::projects_new))
+        .route("/admin/projects/{id}", get(routes::project_detail))
         .route("/admin/projects/{id}/edit", get(routes::projects_edit))
         .route("/admin/projects/{id}/update", post(routes::projects_update))
         .route("/admin/projects/{id}/delete", post(routes::projects_delete))
         .route(
             "/admin/projects/{id}/advance",
             post(routes::projects_advance),
+        )
+        .route(
+            "/admin/projects/{project_id}/concepts/new",
+            get(routes::project_concepts_new),
+        )
+        .route(
+            "/admin/projects/{project_id}/concepts",
+            post(routes::project_concepts_create_form),
+        )
+        .route(
+            "/admin/project_concepts/{id}/edit",
+            get(routes::project_concepts_edit),
+        )
+        .route(
+            "/admin/project_concepts/{id}/update",
+            post(routes::project_concepts_update_form),
+        )
+        .route(
+            "/admin/project_concepts/{id}/advance",
+            post(routes::project_concepts_advance_form),
+        )
+        .route(
+            "/admin/project_concepts/{id}/delete",
+            post(routes::project_concepts_delete_form),
+        )
+        .route(
+            "/admin/concept_statuses",
+            get(routes::concept_statuses_index).post(routes::concept_statuses_create),
+        )
+        .route(
+            "/admin/concept_statuses/new",
+            get(routes::concept_statuses_new),
+        )
+        .route(
+            "/admin/concept_statuses/{id}/edit",
+            get(routes::concept_statuses_edit),
+        )
+        .route(
+            "/admin/concept_statuses/{id}/update",
+            post(routes::concept_statuses_update_form),
+        )
+        .route(
+            "/admin/concept_statuses/{id}/delete",
+            post(routes::concept_statuses_delete_form),
         )
         .route(
             "/admin/resources",
@@ -275,6 +320,75 @@ async fn main() {
         .route(
             "/admin/resource_logs/{id}/end",
             post(routes::resource_logs_end),
+        )
+        .route(
+            "/admin/resource_usages",
+            get(routes::resource_usages_index).post(routes::resource_usages_create_form),
+        )
+        .route(
+            "/admin/resource_usages/new",
+            get(routes::resource_usages_new),
+        )
+        .route(
+            "/admin/resource_usages/{id}/edit",
+            get(routes::resource_usages_edit),
+        )
+        .route(
+            "/admin/resource_usages/{id}/update",
+            post(routes::resource_usages_update_form),
+        )
+        .route(
+            "/admin/resource_usages/{id}/delete",
+            post(routes::resource_usages_delete_form),
+        )
+        .route(
+            "/api/admin/concept_statuses",
+            get(routes::api_concept_statuses_index).post(routes::api_concept_statuses_create),
+        )
+        .route(
+            "/api/admin/concept_statuses/{id}/update",
+            post(routes::api_concept_statuses_update),
+        )
+        .route(
+            "/api/admin/concept_statuses/{id}/delete",
+            post(routes::api_concept_statuses_delete),
+        )
+        .route(
+            "/api/admin/projects/{project_id}/concepts",
+            get(routes::api_project_concepts_index).post(routes::api_project_concepts_create),
+        )
+        .route(
+            "/api/admin/projects/{project_id}/status_summary",
+            get(routes::api_project_status_summary),
+        )
+        .route(
+            "/api/admin/project_concepts/{id}/update",
+            post(routes::api_project_concepts_update),
+        )
+        .route(
+            "/api/admin/project_concepts/{id}/advance",
+            post(routes::api_project_concepts_advance),
+        )
+        .route(
+            "/api/admin/project_concepts/{id}/delete",
+            post(routes::api_project_concepts_delete),
+        )
+        .route(
+            "/api/admin/resource_usages",
+            get(routes::api_resource_usages_index).post(routes::api_resource_usages_create),
+        )
+        .route(
+            "/api/admin/resource_usages/{id}/update",
+            post(routes::api_resource_usages_update),
+        )
+        .route(
+            "/api/admin/resource_usages/{id}/delete",
+            post(routes::api_resource_usages_delete),
+        )
+        .route(
+            "/api/admin/resource_usages/{id}/allocations",
+            get(routes::api_resource_usage_allocations_index)
+                .post(routes::api_resource_usage_allocations_replace),
         )
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
