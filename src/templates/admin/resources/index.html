@@ -19,6 +19,7 @@
           <th class="px-4 py-2">Nombre</th>
           <th class="px-4 py-2">Tipo</th>
           <th class="px-4 py-2">Costo/hora</th>
+          <th class="px-4 py-2">Estados</th>
           <th class="px-4 py-2">Activo</th>
           <th class="px-4 py-2">Notas</th>
           <th class="px-4 py-2 text-right">Acciones</th>
@@ -30,6 +31,7 @@
           <td class="px-4 py-3 font-medium text-slate-800">{{ r.name }}</td>
           <td class="px-4 py-3 text-slate-600">{{ r.resource_type_label }}</td>
           <td class="px-4 py-3 font-semibold text-slate-800">${{ r.hourly_cost }} {{ r.currency }}</td>
+          <td class="px-4 py-3 text-slate-500">{{ r.allowed_statuses }}</td>
           <td class="px-4 py-3">
             {% if r.is_active %}
             <span class="rounded-full px-2 py-0.5 text-xs font-medium bg-emerald-50 text-emerald-700">Activo</span>
@@ -56,7 +58,7 @@
         </tr>
         {% else %}
         <tr>
-          <td colspan="6" class="px-4 py-6 text-center text-sm text-slate-500">No hay recursos registrados.</td>
+          <td colspan="7" class="px-4 py-6 text-center text-sm text-slate-500">No hay recursos registrados.</td>
         </tr>
         {% endfor %}
       </tbody>

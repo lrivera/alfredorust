@@ -1,9 +1,12 @@
 use anyhow::{Context, Result, bail};
 use futures::stream::TryStreamExt;
 use mongodb::bson::{DateTime, doc, oid::ObjectId};
-use std::time::SystemTime;
+use std::{
+    collections::{HashMap, HashSet},
+    time::SystemTime,
+};
 
-use crate::models::{ResourceUsage, ResourceUsageAllocation};
+use crate::models::{ProjectConcept, ProjectStatus, ResourceUsage, ResourceUsageAllocation};
 
 use super::{
     AppState, get_project_by_id_for_company, get_project_concept_by_id_for_company,
@@ -290,4 +293,179 @@ pub async fn delete_resource_usage(
         .delete_one(doc! { "_id": id, "company_id": company_id })
         .await?;
     Ok(())
+}
+
+pub async fn list_active_project_concepts_for_status(
+    state: &AppState,
+    company_id: &ObjectId,
+    status_id: &ObjectId,
+) -> Result<Vec<ProjectConcept>> {
+    let mut cursor = state
+        .project_concepts
+        .find(doc! { "company_id": company_id, "status_id": status_id })
+        .sort(doc! { "position": 1, "created_at": 1 })
+        .await?;
+    let mut items = Vec::new();
+    while let Some(concept) = cursor.try_next().await? {
+        let project = get_project_by_id_for_company(state, &concept.project_id, company_id).await?;
+        if project
+            .as_ref()
+            .is_some_and(|project| project.status != ProjectStatus::Cancelado)
+        {
+            items.push(concept);
+        }
+    }
+    Ok(items)
+}
+
+pub async fn replace_hourly_resource_usage_grid(
+    state: &AppState,
+    company_id: &ObjectId,
+    status_id: &ObjectId,
+    date_start: DateTime,
+    start_hour: i32,
+    end_hour: i32,
+    selections: &[(ObjectId, i32, ObjectId)],
+) -> Result<()> {
+    let target_concepts =
+        list_active_project_concepts_for_status(state, company_id, status_id).await?;
+    let target_concept_ids: HashSet<ObjectId> = target_concepts
+        .iter()
+        .filter_map(|concept| concept.id.clone())
+        .collect();
+
+    let mut desired: HashMap<(i32, ObjectId), HashSet<ObjectId>> = HashMap::new();
+    for (concept_id, hour, resource_id) in selections {
+        if *hour < start_hour || *hour >= end_hour || !target_concept_ids.contains(concept_id) {
+            continue;
+        }
+        desired
+            .entry((*hour, resource_id.clone()))
+            .or_default()
+            .insert(concept_id.clone());
+    }
+
+    for hour in start_hour..end_hour {
+        let started_at = add_hours(date_start, hour)?;
+        let ended_at = add_hours(date_start, hour + 1)?;
+        let mut resources_to_process: HashSet<ObjectId> = desired
+            .keys()
+            .filter(|(desired_hour, _)| *desired_hour == hour)
+            .map(|(_, resource_id)| resource_id.clone())
+            .collect();
+
+        let existing_usages =
+            list_resource_usages_for_slot(state, company_id, started_at, ended_at).await?;
+        for usage in &existing_usages {
+            let Some(usage_id) = usage.id.clone() else {
+                continue;
+            };
+            let allocations = list_resource_usage_allocations(state, company_id, &usage_id).await?;
+            if allocations
+                .iter()
+                .any(|allocation| target_concept_ids.contains(&allocation.concept_id))
+            {
+                resources_to_process.insert(usage.resource_id.clone());
+            }
+        }
+
+        for resource_id in resources_to_process {
+            let existing_usage =
+                get_resource_usage_for_slot(state, company_id, &resource_id, started_at, ended_at)
+                    .await?;
+
+            let mut final_concepts: HashSet<ObjectId> = HashSet::new();
+            let existing_usage_id = existing_usage.as_ref().and_then(|usage| usage.id.clone());
+            if let Some(usage_id) = &existing_usage_id {
+                for allocation in
+                    list_resource_usage_allocations(state, company_id, usage_id).await?
+                {
+                    if !target_concept_ids.contains(&allocation.concept_id) {
+                        final_concepts.insert(allocation.concept_id);
+                    }
+                }
+            }
+
+            if let Some(selected) = desired.get(&(hour, resource_id.clone())) {
+                final_concepts.extend(selected.iter().cloned());
+            }
+
+            if final_concepts.is_empty() {
+                if let Some(usage_id) = existing_usage_id {
+                    delete_resource_usage(state, &usage_id, company_id).await?;
+                }
+                continue;
+            }
+
+            let usage_id = if let Some(usage_id) = existing_usage_id {
+                usage_id
+            } else {
+                create_resource_usage(
+                    state,
+                    company_id,
+                    &resource_id,
+                    started_at,
+                    Some(ended_at),
+                    None,
+                    Some("Registro horario".to_string()),
+                )
+                .await?
+            };
+
+            let concept_ids: Vec<ObjectId> = final_concepts.into_iter().collect();
+            replace_resource_usage_allocations_equal(state, company_id, &usage_id, &concept_ids)
+                .await?;
+        }
+    }
+
+    Ok(())
+}
+
+pub async fn list_resource_usages_for_slot(
+    state: &AppState,
+    company_id: &ObjectId,
+    started_at: DateTime,
+    ended_at: DateTime,
+) -> Result<Vec<ResourceUsage>> {
+    let mut cursor = state
+        .resource_usages
+        .find(doc! {
+            "company_id": company_id,
+            "started_at": started_at,
+            "ended_at": ended_at,
+        })
+        .await?;
+    let mut items = Vec::new();
+    while let Some(usage) = cursor.try_next().await? {
+        items.push(usage);
+    }
+    Ok(items)
+}
+
+pub async fn get_resource_usage_for_slot(
+    state: &AppState,
+    company_id: &ObjectId,
+    resource_id: &ObjectId,
+    started_at: DateTime,
+    ended_at: DateTime,
+) -> Result<Option<ResourceUsage>> {
+    state
+        .resource_usages
+        .find_one(doc! {
+            "company_id": company_id,
+            "resource_id": resource_id,
+            "started_at": started_at,
+            "ended_at": ended_at,
+        })
+        .await
+        .map_err(Into::into)
+}
+
+fn add_hours(date_start: DateTime, hour: i32) -> Result<DateTime> {
+    if !(0..=24).contains(&hour) {
+        bail!("hour must be between 0 and 24");
+    }
+    Ok(DateTime::from_millis(
+        date_start.timestamp_millis() + i64::from(hour) * 3_600_000,
+    ))
 }

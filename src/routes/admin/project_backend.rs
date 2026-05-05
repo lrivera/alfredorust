@@ -1,9 +1,12 @@
-use std::sync::Arc;
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use askama::Template;
 use axum::{
     Form, Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::{Html, IntoResponse, Redirect, Response},
 };
@@ -17,11 +20,12 @@ use crate::{
         create_resource_usage, delete_concept_status, delete_project_concept,
         delete_resource_usage, get_concept_status_by_id_for_company, get_initial_concept_status,
         get_project_by_id_for_company, get_project_concept_by_id_for_company,
-        get_resource_usage_by_id_for_company, list_concept_statuses, list_project_concepts,
-        list_projects, list_resource_usage_allocations, list_resource_usages, list_resources,
-        project_status_summary_by_quantity, replace_resource_usage_allocations,
-        replace_resource_usage_allocations_equal, update_concept_status, update_project_concept,
-        update_resource_usage,
+        get_resource_usage_by_id_for_company, list_active_project_concepts_for_status,
+        list_concept_statuses, list_project_concepts, list_projects,
+        list_resource_usage_allocations, list_resource_usages, list_resource_usages_for_slot,
+        list_resources, project_status_summary_by_quantity, replace_hourly_resource_usage_grid,
+        replace_resource_usage_allocations, replace_resource_usage_allocations_equal,
+        update_concept_status, update_project_concept, update_resource_usage,
     },
 };
 
@@ -1076,17 +1080,35 @@ pub async fn project_concepts_delete_form(
 #[derive(Template)]
 #[template(path = "admin/resource_usages/index.html")]
 struct ResourceUsagesTemplate {
-    usages: Vec<ResourceUsageRow>,
+    date: String,
+    statuses: Vec<SimpleOption>,
+    selected_status_id: String,
+    selected_status_name: String,
+    hours: Vec<i32>,
+    rows: Vec<ResourceUsageGridRow>,
+    resources_empty: bool,
 }
 
-struct ResourceUsageRow {
-    id: String,
-    resource: String,
-    started_at: String,
-    ended_at: String,
-    hours: String,
-    cost: String,
-    allocations: String,
+struct ResourceUsageGridRow {
+    concept_id: String,
+    project_title: String,
+    concept_name: String,
+    quantity: String,
+    unit: String,
+    cells: Vec<ResourceUsageGridCell>,
+}
+
+struct ResourceUsageGridCell {
+    hour: i32,
+    resources: Vec<ResourceUsageGridResource>,
+    labels: String,
+}
+
+struct ResourceUsageGridResource {
+    field_name: String,
+    resource_id: String,
+    label: String,
+    selected: bool,
 }
 
 #[derive(Template)]
@@ -1117,37 +1139,210 @@ pub struct ResourceUsageFormData {
 pub async fn resource_usages_index(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
+    Query(params): Query<HashMap<String, String>>,
 ) -> Result<Html<String>, StatusCode> {
     let company_id = require_admin_active(&session_user)?;
-    let usages = list_resource_usages(&state, &company_id)
+    let statuses_raw = list_concept_statuses(&state, &company_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let mut rows = Vec::new();
-    for usage in usages {
-        let Some(id) = usage.id.clone() else { continue };
-        let allocations = list_resource_usage_allocations(&state, &company_id, &id)
+
+    let selected_status_id = params
+        .get("status_id")
+        .and_then(|id| ObjectId::parse_str(id).ok())
+        .or_else(|| statuses_raw.first().and_then(|status| status.id.clone()));
+    let selected_status_id = selected_status_id.ok_or(StatusCode::BAD_REQUEST)?;
+    let selected_status_name = statuses_raw
+        .iter()
+        .find(|status| status.id.as_ref() == Some(&selected_status_id))
+        .map(|status| status.name.clone())
+        .unwrap_or_else(|| "Estado".to_string());
+
+    let date = params
+        .get("date")
+        .cloned()
+        .unwrap_or_else(|| chrono::Utc::now().format("%Y-%m-%d").to_string());
+    let date_start = parse_html_date(&date).ok_or(StatusCode::BAD_REQUEST)?;
+    let hours: Vec<i32> = (7..22).collect();
+    let resources = list_resources(&state, &company_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .into_iter()
+        .filter(|resource| {
+            resource.is_active
+                && (resource.allowed_status_ids.is_empty()
+                    || resource.allowed_status_ids.contains(&selected_status_id))
+        })
+        .collect::<Vec<_>>();
+    let resources_empty = resources.is_empty();
+
+    let concepts =
+        list_active_project_concepts_for_status(&state, &company_id, &selected_status_id)
             .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let mut selected_cells: HashSet<(String, i32, String)> = HashSet::new();
+    for hour in &hours {
+        let started_at = add_hours_for_route(date_start, *hour).ok_or(StatusCode::BAD_REQUEST)?;
+        let ended_at = add_hours_for_route(date_start, *hour + 1).ok_or(StatusCode::BAD_REQUEST)?;
+        for usage in list_resource_usages_for_slot(&state, &company_id, started_at, ended_at)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        {
+            let Some(usage_id) = usage.id.clone() else {
+                continue;
+            };
+            let allocations = list_resource_usage_allocations(&state, &company_id, &usage_id)
+                .await
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            for allocation in allocations {
+                selected_cells.insert((
+                    allocation.concept_id.to_hex(),
+                    *hour,
+                    usage.resource_id.to_hex(),
+                ));
+            }
+        }
+    }
+
+    let mut rows = Vec::new();
+    for concept in concepts {
+        let Some(concept_id) = concept.id.clone() else {
+            continue;
+        };
+        let project_title = get_project_by_id_for_company(&state, &concept.project_id, &company_id)
+            .await
+            .ok()
+            .flatten()
+            .map(|project| project.title)
             .unwrap_or_default();
-        rows.push(ResourceUsageRow {
-            id: id.to_hex(),
-            resource: usage.resource_name_snapshot,
-            started_at: format_html_datetime(&usage.started_at),
-            ended_at: usage
-                .ended_at
-                .map(|d| format_html_datetime(&d))
-                .unwrap_or_default(),
-            hours: usage
-                .duration_hours
-                .map(|h| format!("{h:.2}"))
-                .unwrap_or_default(),
-            cost: usage
-                .total_cost
-                .map(|c| format!("${c:.2} {}", usage.currency))
-                .unwrap_or_default(),
-            allocations: allocations.len().to_string(),
+        let mut cells = Vec::new();
+        for hour in &hours {
+            let mut cell_resources = Vec::new();
+            let mut labels = Vec::new();
+            for resource in &resources {
+                let Some(resource_id) = resource.id.clone() else {
+                    continue;
+                };
+                let selected =
+                    selected_cells.contains(&(concept_id.to_hex(), *hour, resource_id.to_hex()));
+                if selected {
+                    labels.push(resource.name.clone());
+                }
+                cell_resources.push(ResourceUsageGridResource {
+                    field_name: format!(
+                        "cell_{}_{}_{}",
+                        concept_id.to_hex(),
+                        hour,
+                        resource_id.to_hex()
+                    ),
+                    resource_id: resource_id.to_hex(),
+                    label: resource.name.clone(),
+                    selected,
+                });
+            }
+            cells.push(ResourceUsageGridCell {
+                hour: *hour,
+                resources: cell_resources,
+                labels: labels.join(", "),
+            });
+        }
+        rows.push(ResourceUsageGridRow {
+            concept_id: concept_id.to_hex(),
+            project_title,
+            concept_name: concept.name,
+            quantity: format_quantity(concept.quantity),
+            unit: concept.unit.unwrap_or_else(|| "pzas".to_string()),
+            cells,
         });
     }
-    render(ResourceUsagesTemplate { usages: rows })
+
+    let statuses = statuses_raw
+        .into_iter()
+        .filter_map(|status| {
+            let id = status.id?;
+            Some(SimpleOption {
+                selected: id == selected_status_id,
+                value: id.to_hex(),
+                label: status.name,
+            })
+        })
+        .collect();
+
+    render(ResourceUsagesTemplate {
+        date,
+        statuses,
+        selected_status_id: selected_status_id.to_hex(),
+        selected_status_name,
+        hours,
+        rows,
+        resources_empty,
+    })
+}
+
+pub async fn resource_usages_save_grid(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Form(form): Form<HashMap<String, String>>,
+) -> impl IntoResponse {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+    let date = form
+        .get("date")
+        .cloned()
+        .unwrap_or_else(|| chrono::Utc::now().format("%Y-%m-%d").to_string());
+    let status_id = match form
+        .get("status_id")
+        .and_then(|id| ObjectId::parse_str(id).ok())
+    {
+        Some(id) => id,
+        None => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    let date_start = match parse_html_date(&date) {
+        Some(date) => date,
+        None => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    let mut selections = Vec::new();
+    for key in form.keys() {
+        let Some(rest) = key.strip_prefix("cell_") else {
+            continue;
+        };
+        let parts: Vec<&str> = rest.split('_').collect();
+        if parts.len() != 3 {
+            continue;
+        }
+        let Ok(concept_id) = ObjectId::parse_str(parts[0]) else {
+            continue;
+        };
+        let Ok(hour) = parts[1].parse::<i32>() else {
+            continue;
+        };
+        let Ok(resource_id) = ObjectId::parse_str(parts[2]) else {
+            continue;
+        };
+        selections.push((concept_id, hour, resource_id));
+    }
+
+    match replace_hourly_resource_usage_grid(
+        &state,
+        &company_id,
+        &status_id,
+        date_start,
+        7,
+        22,
+        &selections,
+    )
+    .await
+    {
+        Ok(_) => Redirect::to(&format!(
+            "/admin/resource_usages?date={}&status_id={}",
+            date,
+            status_id.to_hex()
+        ))
+        .into_response(),
+        Err(err) => (StatusCode::BAD_REQUEST, err.to_string()).into_response(),
+    }
 }
 
 pub async fn resource_usages_new(
@@ -1156,7 +1351,7 @@ pub async fn resource_usages_new(
 ) -> Result<Html<String>, StatusCode> {
     let company_id = require_admin_active(&session_user)?;
     render(ResourceUsageFormTemplate {
-        action: "/admin/resource_usages".into(),
+        action: "/admin/resource_usages/create".into(),
         resources: resource_options(&state, &company_id, None).await?,
         concepts: concept_options(&state, &company_id, &[]).await?,
         resource_id: String::new(),
@@ -1440,4 +1635,20 @@ fn parse_html_datetime(value: &str) -> Option<DateTime> {
     chrono::NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M")
         .ok()
         .map(|dt| DateTime::from_millis(dt.and_utc().timestamp_millis()))
+}
+
+fn parse_html_date(value: &str) -> Option<DateTime> {
+    chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d")
+        .ok()
+        .and_then(|date| date.and_hms_opt(0, 0, 0))
+        .map(|dt| DateTime::from_millis(dt.and_utc().timestamp_millis()))
+}
+
+fn add_hours_for_route(date_start: DateTime, hour: i32) -> Option<DateTime> {
+    if !(0..=24).contains(&hour) {
+        return None;
+    }
+    Some(DateTime::from_millis(
+        date_start.timestamp_millis() + i64::from(hour) * 3_600_000,
+    ))
 }

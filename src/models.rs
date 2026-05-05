@@ -889,6 +889,10 @@ pub struct Resource {
     #[serde(default = "default_mxn")]
     pub currency: String,
 
+    /// If empty, this resource is available for every concept status.
+    #[serde(default)]
+    pub allowed_status_ids: Vec<ObjectId>,
+
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
 

@@ -13,9 +13,10 @@ use alfredodev::{
         get_resource_usage_by_id_for_company, list_active_resources, list_companies,
         list_concept_statuses, list_project_concepts, list_resource_logs_for_project,
         list_resource_usage_allocations, list_resource_usage_allocations_for_concept,
-        list_resources, project_status_summary_by_quantity, replace_resource_usage_allocations,
-        replace_resource_usage_allocations_equal, update_project, update_resource,
-        update_resource_log, update_resource_usage,
+        list_resources, project_status_summary_by_quantity, replace_hourly_resource_usage_grid,
+        replace_resource_usage_allocations, replace_resource_usage_allocations_equal,
+        update_project, update_resource, update_resource_allowed_statuses, update_resource_log,
+        update_resource_usage,
     },
 };
 use bson::DateTime;
@@ -331,6 +332,9 @@ async fn resource_usage_allocations_split_costs_across_concepts() {
     )
     .await
     .unwrap();
+    update_resource_allowed_statuses(&state, &resource_id, &company_id, vec![status_id.clone()])
+        .await
+        .unwrap();
 
     let usage_id = create_resource_usage(
         &state,
@@ -410,6 +414,129 @@ async fn resource_usage_allocations_split_costs_across_concepts() {
             .unwrap()
             .is_empty()
     );
+
+    common::teardown(Some(ctx)).await;
+}
+
+#[tokio::test]
+async fn hourly_resource_grid_replaces_state_concept_allocations() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let company_id = list_companies(&state).await.unwrap()[0].id.clone().unwrap();
+    let status_id = get_initial_concept_status(&state, &company_id)
+        .await
+        .unwrap()
+        .unwrap()
+        .id
+        .unwrap();
+    let project_id = create_project(
+        &state,
+        &company_id,
+        "Grid Project",
+        None,
+        None,
+        None,
+        ProjectPriority::Medium,
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let concept_a = create_project_concept(
+        &state,
+        &company_id,
+        &project_id,
+        Some(status_id.clone()),
+        "Concepto A",
+        2.0,
+        Some("pzas".into()),
+        None,
+        None,
+        None,
+        None,
+        1,
+    )
+    .await
+    .unwrap();
+    let concept_b = create_project_concept(
+        &state,
+        &company_id,
+        &project_id,
+        Some(status_id.clone()),
+        "Concepto B",
+        3.0,
+        Some("pzas".into()),
+        None,
+        None,
+        None,
+        None,
+        2,
+    )
+    .await
+    .unwrap();
+    let resource_id = create_resource_with_cost(
+        &state,
+        &company_id,
+        "CNC Grid",
+        ResourceType::Machinery,
+        true,
+        100.0,
+        "MXN",
+        None,
+    )
+    .await
+    .unwrap();
+    let date = DateTime::parse_rfc3339_str("2026-05-04T00:00:00Z").unwrap();
+
+    replace_hourly_resource_usage_grid(
+        &state,
+        &company_id,
+        &status_id,
+        date,
+        7,
+        10,
+        &[
+            (concept_a.clone(), 8, resource_id.clone()),
+            (concept_b.clone(), 8, resource_id.clone()),
+        ],
+    )
+    .await
+    .unwrap();
+
+    let allocations = list_resource_usage_allocations_for_concept(&state, &company_id, &concept_a)
+        .await
+        .unwrap();
+    assert_eq!(allocations.len(), 1);
+    assert_eq!(allocations[0].allocated_hours, Some(0.5));
+    assert_eq!(allocations[0].allocated_cost, Some(50.0));
+
+    replace_hourly_resource_usage_grid(
+        &state,
+        &company_id,
+        &status_id,
+        date,
+        7,
+        10,
+        &[(concept_b.clone(), 8, resource_id.clone())],
+    )
+    .await
+    .unwrap();
+
+    assert!(
+        list_resource_usage_allocations_for_concept(&state, &company_id, &concept_a)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    let allocations = list_resource_usage_allocations_for_concept(&state, &company_id, &concept_b)
+        .await
+        .unwrap();
+    assert_eq!(allocations[0].allocated_hours, Some(1.0));
+    assert_eq!(allocations[0].allocated_cost, Some(100.0));
 
     common::teardown(Some(ctx)).await;
 }

@@ -16,8 +16,9 @@ use crate::{
     models::ResourceType,
     session::SessionUser,
     state::{
-        AppState, create_resource_with_cost, delete_resource, get_resource_by_id, list_resources,
-        update_resource, update_resource_cost,
+        AppState, create_resource_with_cost, delete_resource, get_resource_by_id,
+        list_concept_statuses, list_resources, update_resource, update_resource_allowed_statuses,
+        update_resource_cost,
     },
 };
 
@@ -43,6 +44,7 @@ struct ResourceRow {
     is_active: bool,
     hourly_cost: String,
     currency: String,
+    allowed_statuses: String,
     notes: String,
 }
 
@@ -56,17 +58,36 @@ pub async fn resources_index(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    let statuses = list_concept_statuses(&state, &company_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let rows = resources
         .into_iter()
-        .map(|r| ResourceRow {
-            id: r.id.map(|i| i.to_hex()).unwrap_or_default(),
-            name: r.name,
-            resource_type: r.resource_type.as_str().to_string(),
-            resource_type_label: r.resource_type.label().to_string(),
-            is_active: r.is_active,
-            hourly_cost: format!("{:.2}", r.hourly_cost),
-            currency: r.currency,
-            notes: r.notes.unwrap_or_default(),
+        .map(|r| {
+            let allowed_statuses = if r.allowed_status_ids.is_empty() {
+                "Todos los estados".to_string()
+            } else {
+                statuses
+                    .iter()
+                    .filter(|s| {
+                        s.id.as_ref()
+                            .is_some_and(|id| r.allowed_status_ids.contains(id))
+                    })
+                    .map(|s| s.name.clone())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            ResourceRow {
+                id: r.id.map(|i| i.to_hex()).unwrap_or_default(),
+                name: r.name,
+                resource_type: r.resource_type.as_str().to_string(),
+                resource_type_label: r.resource_type.label().to_string(),
+                is_active: r.is_active,
+                hourly_cost: format!("{:.2}", r.hourly_cost),
+                currency: r.currency,
+                allowed_statuses,
+                notes: r.notes.unwrap_or_default(),
+            }
         })
         .collect();
 
@@ -83,6 +104,7 @@ struct ResourceFormTemplate {
     is_active: String,
     hourly_cost: String,
     currency: String,
+    statuses: Vec<SimpleOption>,
     notes: String,
     resource_type_options: Vec<(String, String)>,
     is_edit: bool,
@@ -137,14 +159,15 @@ pub struct ResourceForm {
     pub is_active: Option<String>,
     pub hourly_cost: Option<String>,
     pub currency: Option<String>,
+    pub allowed_status_ids: Option<Vec<String>>,
     pub notes: Option<String>,
 }
 
 pub async fn resources_new(
     session_user: SessionUser,
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
 ) -> Result<Html<String>, StatusCode> {
-    require_admin_active(&session_user)?;
+    let company_id = require_admin_active(&session_user)?;
 
     render(ResourceFormTemplate {
         action: "/admin/resources".into(),
@@ -154,6 +177,7 @@ pub async fn resources_new(
         is_active: "on".into(),
         hourly_cost: "0.00".into(),
         currency: "MXN".into(),
+        statuses: resource_status_options(&state, &company_id, &[]).await?,
         notes: String::new(),
         resource_type_options: resource_type_options(),
         is_edit: false,
@@ -186,6 +210,9 @@ pub async fn resources_create(
                 .to_string(),
             hourly_cost: form.hourly_cost.clone().unwrap_or_default(),
             currency: form.currency.clone().unwrap_or_else(|| "MXN".into()),
+            statuses: resource_status_options(&state, &company_id, &[])
+                .await
+                .unwrap_or_default(),
             notes: form.notes.clone().unwrap_or_default(),
             resource_type_options: resource_type_options(),
             is_edit: false,
@@ -217,7 +244,13 @@ pub async fn resources_create(
     )
     .await
     {
-        Ok(_) => Redirect::to("/admin/resources").into_response(),
+        Ok(id) => {
+            let allowed = parse_status_ids(form.allowed_status_ids);
+            match update_resource_allowed_statuses(&state, &id, &company_id, allowed).await {
+                Ok(_) => Redirect::to("/admin/resources").into_response(),
+                Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+            }
+        }
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
@@ -249,6 +282,8 @@ pub async fn resources_edit(
         },
         hourly_cost: format!("{:.2}", resource.hourly_cost),
         currency: resource.currency,
+        statuses: resource_status_options(&state, &company_id, &resource.allowed_status_ids)
+            .await?,
         notes: resource.notes.unwrap_or_default(),
         resource_type_options: resource_type_options(),
         is_edit: true,
@@ -286,6 +321,9 @@ pub async fn resources_update(
                 .to_string(),
             hourly_cost: form.hourly_cost.clone().unwrap_or_default(),
             currency: form.currency.clone().unwrap_or_else(|| "MXN".into()),
+            statuses: resource_status_options(&state, &company_id, &[])
+                .await
+                .unwrap_or_default(),
             notes: form.notes.clone().unwrap_or_default(),
             resource_type_options: resource_type_options(),
             is_edit: true,
@@ -317,13 +355,48 @@ pub async fn resources_update(
     .await
     {
         Ok(_) => {
-            match update_resource_cost(&state, &oid, &company_id, hourly_cost, &currency).await {
+            let allowed = parse_status_ids(form.allowed_status_ids);
+            if update_resource_cost(&state, &oid, &company_id, hourly_cost, &currency)
+                .await
+                .is_err()
+            {
+                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            }
+            match update_resource_allowed_statuses(&state, &oid, &company_id, allowed).await {
                 Ok(_) => Redirect::to("/admin/resources").into_response(),
                 Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
             }
         }
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
+}
+
+async fn resource_status_options(
+    state: &AppState,
+    company_id: &ObjectId,
+    selected: &[ObjectId],
+) -> Result<Vec<SimpleOption>, StatusCode> {
+    Ok(list_concept_statuses(state, company_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .into_iter()
+        .filter_map(|status| {
+            let id = status.id?;
+            Some(SimpleOption {
+                selected: selected.contains(&id),
+                value: id.to_hex(),
+                label: status.name,
+            })
+        })
+        .collect())
+}
+
+fn parse_status_ids(values: Option<Vec<String>>) -> Vec<ObjectId> {
+    values
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|id| ObjectId::parse_str(id).ok())
+        .collect()
 }
 
 pub async fn resources_delete(

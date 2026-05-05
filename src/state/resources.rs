@@ -72,6 +72,7 @@ pub async fn create_resource(
             is_active,
             hourly_cost: 0.0,
             currency: "MXN".to_string(),
+            allowed_status_ids: Vec::new(),
             notes,
             created_at: Some(DateTime::from_system_time(SystemTime::now())),
             updated_at: None,
@@ -106,6 +107,7 @@ pub async fn create_resource_with_cost(
             } else {
                 currency.trim().to_string()
             },
+            allowed_status_ids: Vec::new(),
             notes,
             created_at: Some(DateTime::from_system_time(SystemTime::now())),
             updated_at: None,
@@ -114,6 +116,25 @@ pub async fn create_resource_with_cost(
     res.inserted_id
         .as_object_id()
         .context("resource insert missing _id")
+}
+
+pub async fn update_resource_allowed_statuses(
+    state: &AppState,
+    id: &ObjectId,
+    company_id: &ObjectId,
+    allowed_status_ids: Vec<ObjectId>,
+) -> Result<()> {
+    state
+        .resources
+        .update_one(
+            doc! { "_id": id, "company_id": company_id },
+            doc! { "$set": {
+                "allowed_status_ids": allowed_status_ids,
+                "updated_at": DateTime::from_system_time(SystemTime::now()),
+            } },
+        )
+        .await?;
+    Ok(())
 }
 
 pub async fn update_resource(

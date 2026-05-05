@@ -323,7 +323,11 @@ async fn main() {
         )
         .route(
             "/admin/resource_usages",
-            get(routes::resource_usages_index).post(routes::resource_usages_create_form),
+            get(routes::resource_usages_index).post(routes::resource_usages_save_grid),
+        )
+        .route(
+            "/admin/resource_usages/create",
+            post(routes::resource_usages_create_form),
         )
         .route(
             "/admin/resource_usages/new",
