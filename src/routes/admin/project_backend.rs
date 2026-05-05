@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use askama::Template;
 use axum::{
@@ -1288,13 +1291,43 @@ pub async fn resource_usages_index(
                     }
                 })
                 .collect::<Vec<_>>();
-            for resource in &resources {
-                let Some(resource_id) = resource.id.clone() else {
-                    continue;
-                };
-                if !resource.allowed_status_ids.contains(&concept.status_id) {
-                    continue;
-                }
+            let previous_resource_ids = selected_cells
+                .keys()
+                .filter_map(
+                    |(selected_concept_id, selected_hour, selected_resource_id)| {
+                        if selected_concept_id == &concept_id.to_hex()
+                            && *selected_hour == hour.hour - 1
+                        {
+                            Some(selected_resource_id.clone())
+                        } else {
+                            None
+                        }
+                    },
+                )
+                .collect::<HashSet<_>>();
+            let mut ordered_resources = resources
+                .iter()
+                .filter_map(|resource| {
+                    let resource_id = resource.id.clone()?;
+                    if !resource.allowed_status_ids.contains(&concept.status_id) {
+                        return None;
+                    }
+                    let previous_priority = if previous_resource_ids.contains(&resource_id.to_hex())
+                    {
+                        0
+                    } else {
+                        1
+                    };
+                    Some((
+                        previous_priority,
+                        resource.name.clone(),
+                        resource_id,
+                        resource,
+                    ))
+                })
+                .collect::<Vec<_>>();
+            ordered_resources.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+            for (_, _, resource_id, resource) in ordered_resources {
                 let selected = selected_cells.contains_key(&(
                     concept_id.to_hex(),
                     hour.hour,
