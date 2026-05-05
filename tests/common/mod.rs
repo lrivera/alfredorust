@@ -1,66 +1,49 @@
-use std::{
-    env,
-    sync::{Mutex, MutexGuard, OnceLock},
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::env;
 
 use mongodb::Client;
+use uuid::Uuid;
 
-use alfredodev::state::{init_state, AppState};
-
-/// Global lock so integration tests that mutate the DB run one-at-a-time.
-static TEST_DB_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+use alfredodev::state::{AppState, init_state_with_db_name};
 
 pub struct TestContext {
     pub state: AppState,
     pub db_name: String,
-    _guard: MutexGuard<'static, ()>,
 }
 
 pub async fn setup_state() -> Option<TestContext> {
-    let guard = TEST_DB_LOCK
-        .get_or_init(|| Mutex::new(()))
-        .lock()
-        .expect("failed to lock test db mutex");
-
-    let uri = env::var("MONGODB_URI").unwrap_or_else(|_| "mongodb://localhost:27017".to_string());
-    let db_name = format!(
-        "alfredodevtest_{}",
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis()
+    let uri = with_server_selection_timeout(
+        &env::var("MONGODB_URI").unwrap_or_else(|_| "mongodb://localhost:27017".to_string()),
     );
-    unsafe {
-        env::set_var("MONGODB_DB", &db_name);
-    }
+    let db_name = format!("alfredodevtest_{}", Uuid::new_v4().simple());
 
     let client = match Client::with_uri_str(&uri).await {
         Ok(c) => c,
         Err(err) => {
             eprintln!("Skipping test; cannot connect to MongoDB: {err:?}");
-            drop(guard);
             return None;
         }
     };
     if let Err(err) = client.database(&db_name).drop().await {
         eprintln!("Skipping test; cannot drop test DB: {err:?}");
-        drop(guard);
         return None;
     }
 
-    match init_state().await {
-        Ok(state) => Some(TestContext {
-            state,
-            db_name,
-            _guard: guard,
-        }),
+    match init_state_with_db_name(&uri, &db_name).await {
+        Ok(state) => Some(TestContext { state, db_name }),
         Err(err) => {
             eprintln!("Skipping test; init_state failed: {err:?}");
-            drop(guard);
             None
         }
     }
+}
+
+fn with_server_selection_timeout(uri: &str) -> String {
+    if uri.contains("serverSelectionTimeoutMS=") {
+        return uri.to_string();
+    }
+
+    let separator = if uri.contains('?') { '&' } else { '?' };
+    format!("{uri}{separator}serverSelectionTimeoutMS=2000")
 }
 
 pub async fn teardown(ctx: Option<TestContext>) {

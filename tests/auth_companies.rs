@@ -18,8 +18,9 @@ async fn users_crud_and_memberships_work() {
 
     let companies = list_companies(&state).await.unwrap();
     let primary = companies[0].id.clone().unwrap();
-    let extra_company =
-        create_company(&state, "Test Org Extra", "", "", true, None).await.unwrap();
+    let extra_company = create_company(&state, "Test Org Extra", "", "", true, None)
+        .await
+        .unwrap();
 
     let user_id = create_user(
         &state,
@@ -123,10 +124,12 @@ async fn sessions_resolve_user() {
     assert_eq!(fetched.email, user.email);
 
     delete_session(&state, &token).await.unwrap();
-    assert!(find_user_by_session(&state, &token)
-        .await
-        .unwrap()
-        .is_none());
+    assert!(
+        find_user_by_session(&state, &token)
+            .await
+            .unwrap()
+            .is_none()
+    );
 
     common::teardown(Some(ctx)).await;
 }
@@ -191,10 +194,12 @@ async fn companies_crud_and_deletion_rules_work() {
     // Remove dependency then hard-delete
     delete_account(&state, &acc).await.unwrap();
     delete_company(&state, &company_id).await.unwrap();
-    assert!(get_company_by_id(&state, &company_id)
-        .await
-        .unwrap()
-        .is_none());
+    assert!(
+        get_company_by_id(&state, &company_id)
+            .await
+            .unwrap()
+            .is_none()
+    );
 
     common::teardown(Some(ctx)).await;
 }

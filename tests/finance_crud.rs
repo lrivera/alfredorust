@@ -6,9 +6,8 @@ use alfredodev::state::{
     create_recurring_plan, create_transaction, delete_account, delete_category, delete_contact,
     delete_forecast, delete_planned_entry, delete_recurring_plan, delete_transaction,
     get_account_by_id, get_category_by_id, get_contact_by_id, get_forecast_by_id,
-    get_planned_entry_by_id, get_transaction_by_id, list_accounts, list_categories,
-    list_companies, list_contacts, list_forecasts, list_planned_entries, list_recurring_plans,
-    list_transactions,
+    get_planned_entry_by_id, get_transaction_by_id, list_accounts, list_categories, list_companies,
+    list_contacts, list_forecasts, list_planned_entries, list_recurring_plans, list_transactions,
 };
 
 #[path = "common/mod.rs"]
@@ -102,16 +101,25 @@ async fn contacts_crud_works() {
         Some("test@example.com".into()),
         None,
         None,
+        None,
     )
     .await
     .unwrap();
     assert!(list_contacts(&state).await.unwrap().len() > initial);
 
-    let fetched = get_contact_by_id(&state, &contact_id).await.unwrap().unwrap();
+    let fetched = get_contact_by_id(&state, &contact_id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(fetched.name, "Test Contact");
 
     delete_contact(&state, &contact_id).await.unwrap();
-    assert!(get_contact_by_id(&state, &contact_id).await.unwrap().is_none());
+    assert!(
+        get_contact_by_id(&state, &contact_id)
+            .await
+            .unwrap()
+            .is_none()
+    );
 
     common::teardown(Some(ctx)).await;
 }
@@ -129,16 +137,9 @@ async fn recurring_plans_seed_and_creation_work() {
     assert!(!list_recurring_plans(&state).await.unwrap().is_empty());
 
     // create dependencies
-    let cat_id = create_category(
-        &state,
-        &company_id,
-        "RP Cat",
-        FlowType::Income,
-        None,
-        None,
-    )
-    .await
-    .unwrap();
+    let cat_id = create_category(&state, &company_id, "RP Cat", FlowType::Income, None, None)
+        .await
+        .unwrap();
     let acc_id = create_account(
         &state,
         &company_id,
@@ -190,16 +191,9 @@ async fn planned_entries_crud_works() {
     let state = ctx.state.clone();
     let company_id = list_companies(&state).await.unwrap()[0].id.clone().unwrap();
 
-    let cat_id = create_category(
-        &state,
-        &company_id,
-        "PE Cat",
-        FlowType::Expense,
-        None,
-        None,
-    )
-    .await
-    .unwrap();
+    let cat_id = create_category(&state, &company_id, "PE Cat", FlowType::Expense, None, None)
+        .await
+        .unwrap();
     let acc_id = create_account(
         &state,
         &company_id,
@@ -218,6 +212,7 @@ async fn planned_entries_crud_works() {
         &company_id,
         None,
         None,
+        None,
         "Test PE",
         FlowType::Expense,
         &cat_id,
@@ -232,11 +227,19 @@ async fn planned_entries_crud_works() {
     .unwrap();
     assert!(list_planned_entries(&state).await.unwrap().len() > initial);
 
-    let fetched = get_planned_entry_by_id(&state, &pe_id).await.unwrap().unwrap();
+    let fetched = get_planned_entry_by_id(&state, &pe_id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(fetched.name, "Test PE");
 
     delete_planned_entry(&state, &pe_id).await.unwrap();
-    assert!(get_planned_entry_by_id(&state, &pe_id).await.unwrap().is_none());
+    assert!(
+        get_planned_entry_by_id(&state, &pe_id)
+            .await
+            .unwrap()
+            .is_none()
+    );
 
     common::teardown(Some(ctx)).await;
 }
@@ -250,16 +253,9 @@ async fn transactions_crud_works() {
     let state = ctx.state.clone();
     let company_id = list_companies(&state).await.unwrap()[0].id.clone().unwrap();
 
-    let cat_id = create_category(
-        &state,
-        &company_id,
-        "TX Cat",
-        FlowType::Expense,
-        None,
-        None,
-    )
-    .await
-    .unwrap();
+    let cat_id = create_category(&state, &company_id, "TX Cat", FlowType::Expense, None, None)
+        .await
+        .unwrap();
     let acc_from = create_account(
         &state,
         &company_id,
@@ -286,16 +282,28 @@ async fn transactions_crud_works() {
         None,
         true,
         None,
+        None,
+        None,
+        None,
+        None,
     )
     .await
     .unwrap();
     assert!(list_transactions(&state).await.unwrap().len() > initial);
 
-    let fetched = get_transaction_by_id(&state, &tx_id).await.unwrap().unwrap();
+    let fetched = get_transaction_by_id(&state, &tx_id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(fetched.description, "Test TX");
 
     delete_transaction(&state, &tx_id).await.unwrap();
-    assert!(get_transaction_by_id(&state, &tx_id).await.unwrap().is_none());
+    assert!(
+        get_transaction_by_id(&state, &tx_id)
+            .await
+            .unwrap()
+            .is_none()
+    );
 
     common::teardown(Some(ctx)).await;
 }
