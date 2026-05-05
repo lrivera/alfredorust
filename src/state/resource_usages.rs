@@ -300,10 +300,29 @@ pub async fn list_active_project_concepts_for_status(
     company_id: &ObjectId,
     status_id: &ObjectId,
 ) -> Result<Vec<ProjectConcept>> {
+    list_active_project_concepts_for_scope(state, company_id, Some(status_id)).await
+}
+
+pub async fn list_active_project_concepts(
+    state: &AppState,
+    company_id: &ObjectId,
+) -> Result<Vec<ProjectConcept>> {
+    list_active_project_concepts_for_scope(state, company_id, None).await
+}
+
+async fn list_active_project_concepts_for_scope(
+    state: &AppState,
+    company_id: &ObjectId,
+    status_id: Option<&ObjectId>,
+) -> Result<Vec<ProjectConcept>> {
+    let mut filter = doc! { "company_id": company_id };
+    if let Some(status_id) = status_id {
+        filter.insert("status_id", status_id);
+    }
     let mut cursor = state
         .project_concepts
-        .find(doc! { "company_id": company_id, "status_id": status_id })
-        .sort(doc! { "position": 1, "created_at": 1 })
+        .find(filter)
+        .sort(doc! { "status_id": 1, "position": 1, "created_at": 1 })
         .await?;
     let mut items = Vec::new();
     while let Some(concept) = cursor.try_next().await? {
@@ -321,22 +340,43 @@ pub async fn list_active_project_concepts_for_status(
 pub async fn replace_hourly_resource_usage_grid(
     state: &AppState,
     company_id: &ObjectId,
-    status_id: &ObjectId,
+    status_id: Option<&ObjectId>,
     date_start: DateTime,
     start_hour: i32,
     end_hour: i32,
     selections: &[(ObjectId, i32, ObjectId)],
 ) -> Result<()> {
     let target_concepts =
-        list_active_project_concepts_for_status(state, company_id, status_id).await?;
+        list_active_project_concepts_for_scope(state, company_id, status_id).await?;
     let target_concept_ids: HashSet<ObjectId> = target_concepts
         .iter()
         .filter_map(|concept| concept.id.clone())
+        .collect();
+    let target_concepts_by_id: HashMap<ObjectId, ProjectConcept> = target_concepts
+        .into_iter()
+        .filter_map(|concept| {
+            let id = concept.id.clone()?;
+            Some((id, concept))
+        })
         .collect();
 
     let mut desired: HashMap<(i32, ObjectId), HashSet<ObjectId>> = HashMap::new();
     for (concept_id, hour, resource_id) in selections {
         if *hour < start_hour || *hour >= end_hour || !target_concept_ids.contains(concept_id) {
+            continue;
+        }
+        let Some(concept) = target_concepts_by_id.get(concept_id) else {
+            continue;
+        };
+        let Some(resource) = get_resource_by_id_for_company(state, resource_id, company_id).await?
+        else {
+            continue;
+        };
+        if !resource
+            .allowed_status_ids
+            .iter()
+            .any(|allowed_status_id| allowed_status_id == &concept.status_id)
+        {
             continue;
         }
         desired
@@ -370,6 +410,11 @@ pub async fn replace_hourly_resource_usage_grid(
         }
 
         for resource_id in resources_to_process {
+            let Some(resource) =
+                get_resource_by_id_for_company(state, &resource_id, company_id).await?
+            else {
+                continue;
+            };
             let existing_usage =
                 get_resource_usage_for_slot(state, company_id, &resource_id, started_at, ended_at)
                     .await?;
@@ -380,7 +425,17 @@ pub async fn replace_hourly_resource_usage_grid(
                 for allocation in
                     list_resource_usage_allocations(state, company_id, usage_id).await?
                 {
-                    if !target_concept_ids.contains(&allocation.concept_id) {
+                    let resource_is_editable_for_concept = target_concepts_by_id
+                        .get(&allocation.concept_id)
+                        .is_some_and(|concept| {
+                            resource
+                                .allowed_status_ids
+                                .iter()
+                                .any(|allowed_status_id| allowed_status_id == &concept.status_id)
+                        });
+                    if !target_concept_ids.contains(&allocation.concept_id)
+                        || !resource_is_editable_for_concept
+                    {
                         final_concepts.insert(allocation.concept_id);
                     }
                 }

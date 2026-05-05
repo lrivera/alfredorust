@@ -35,7 +35,7 @@
     <div class="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
       <div>
         <h2 class="text-lg font-semibold text-slate-900">{{ selected_status_name }} · {{ date }}</h2>
-        <p class="text-sm text-slate-500">Conceptos activos de proyectos no cancelados.</p>
+        <p class="text-sm text-slate-500">Conceptos activos de proyectos no cancelados. Cada concepto solo permite recursos de su estado actual.</p>
       </div>
       <button class="rounded-full bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-700">Guardar captura</button>
     </div>
@@ -58,7 +58,10 @@
           <tr class="hover:bg-slate-50/60">
             <th class="sticky left-0 z-10 border-b border-r border-slate-200 bg-white px-4 py-4 text-left align-middle">
               <div class="text-xs font-semibold uppercase tracking-wider text-slate-400">{{ row.project_title }}</div>
-              <div class="mt-1 font-semibold text-sky-900">{{ row.concept_name }}</div>
+              <div class="mt-1 flex flex-wrap items-center gap-2">
+                <span class="font-semibold text-sky-900">{{ row.concept_name }}</span>
+                <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ row.status_name }}</span>
+              </div>
               <div class="mt-1 text-xs text-slate-500">{{ row.quantity }} {{ row.unit }}</div>
             </th>
             {% for cell in row.cells %}
@@ -120,12 +123,23 @@
       let nextIndex = currentIndex + 1;
       if (currentIndex === -1) {
         const previousCell = cell.closest("td")?.previousElementSibling?.querySelector("[data-resource-cell]");
-        const previousInput = previousCell?.querySelector("input[type='checkbox']:checked");
-        const previousResourceId = previousInput?.dataset.resourceId;
-        const preferredIndex = previousResourceId
-          ? inputs.findIndex((input) => input.dataset.resourceId === previousResourceId)
-          : -1;
-        nextIndex = preferredIndex >= 0 ? preferredIndex : 0;
+        const previousResourceIds = new Set(
+          Array.from(previousCell?.querySelectorAll("input[type='checkbox']:checked") || [])
+            .map((input) => input.dataset.resourceId)
+            .filter(Boolean)
+        );
+        if (previousResourceIds.size > 0) {
+          let copied = false;
+          inputs.forEach((input) => {
+            if (previousResourceIds.has(input.dataset.resourceId)) {
+              input.checked = true;
+              copied = true;
+            }
+          });
+          updateCellLabel(cell);
+          if (copied) return;
+        }
+        nextIndex = 0;
       }
       if (nextIndex < inputs.length) {
         inputs[nextIndex].checked = true;

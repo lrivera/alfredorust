@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::{collections::HashMap, sync::Arc};
 
 use askama::Template;
 use axum::{
@@ -20,12 +17,13 @@ use crate::{
         create_resource_usage, delete_concept_status, delete_project_concept,
         delete_resource_usage, get_concept_status_by_id_for_company, get_initial_concept_status,
         get_project_by_id_for_company, get_project_concept_by_id_for_company,
-        get_resource_usage_by_id_for_company, list_active_project_concepts_for_status,
-        list_concept_statuses, list_project_concepts, list_projects,
-        list_resource_usage_allocations, list_resource_usages, list_resource_usages_for_slot,
-        list_resources, project_status_summary_by_quantity, replace_hourly_resource_usage_grid,
-        replace_resource_usage_allocations, replace_resource_usage_allocations_equal,
-        update_concept_status, update_project_concept, update_resource_usage,
+        get_resource_usage_by_id_for_company, list_active_project_concepts,
+        list_active_project_concepts_for_status, list_concept_statuses, list_project_concepts,
+        list_projects, list_resource_usage_allocations, list_resource_usages,
+        list_resource_usages_for_slot, list_resources, project_status_summary_by_quantity,
+        replace_hourly_resource_usage_grid, replace_resource_usage_allocations,
+        replace_resource_usage_allocations_equal, update_concept_status, update_project_concept,
+        update_resource_usage,
     },
 };
 
@@ -1096,6 +1094,7 @@ struct HourHeader {
 
 struct ResourceUsageGridRow {
     concept_id: String,
+    status_name: String,
     project_title: String,
     concept_name: String,
     quantity: String,
@@ -1152,16 +1151,22 @@ pub async fn resource_usages_index(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let selected_status_id = params
-        .get("status_id")
-        .and_then(|id| ObjectId::parse_str(id).ok())
-        .or_else(|| statuses_raw.first().and_then(|status| status.id.clone()));
-    let selected_status_id = selected_status_id.ok_or(StatusCode::BAD_REQUEST)?;
-    let selected_status_name = statuses_raw
-        .iter()
-        .find(|status| status.id.as_ref() == Some(&selected_status_id))
+    let selected_status_id = params.get("status_id").and_then(|id| {
+        if id == "all" {
+            None
+        } else {
+            ObjectId::parse_str(id).ok()
+        }
+    });
+    let selected_status_name = selected_status_id
+        .as_ref()
+        .and_then(|selected_status_id| {
+            statuses_raw
+                .iter()
+                .find(|status| status.id.as_ref() == Some(selected_status_id))
+        })
         .map(|status| status.name.clone())
-        .unwrap_or_else(|| "Estado".to_string());
+        .unwrap_or_else(|| "Todos".to_string());
 
     let date = params
         .get("date")
@@ -1178,18 +1183,22 @@ pub async fn resource_usages_index(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .into_iter()
-        .filter(|resource| {
-            resource.is_active && resource.allowed_status_ids.contains(&selected_status_id)
-        })
+        .filter(|resource| resource.is_active)
         .collect::<Vec<_>>();
     let resources_empty = resources.is_empty();
 
-    let concepts =
-        list_active_project_concepts_for_status(&state, &company_id, &selected_status_id)
-            .await
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let concepts = if let Some(selected_status_id) = &selected_status_id {
+        list_active_project_concepts_for_status(&state, &company_id, selected_status_id).await
+    } else {
+        list_active_project_concepts(&state, &company_id).await
+    }
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let status_names = statuses_raw
+        .iter()
+        .filter_map(|status| Some((status.id.clone()?, status.name.clone())))
+        .collect::<HashMap<_, _>>();
 
-    let mut selected_cells: HashSet<(String, i32, String)> = HashSet::new();
+    let mut selected_cells: HashMap<(String, i32, String), String> = HashMap::new();
     for hour in &hours {
         let started_at =
             add_hours_for_route(date_start, hour.hour).ok_or(StatusCode::BAD_REQUEST)?;
@@ -1206,11 +1215,14 @@ pub async fn resource_usages_index(
                 .await
                 .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
             for allocation in allocations {
-                selected_cells.insert((
-                    allocation.concept_id.to_hex(),
-                    hour.hour,
-                    usage.resource_id.to_hex(),
-                ));
+                selected_cells.insert(
+                    (
+                        allocation.concept_id.to_hex(),
+                        hour.hour,
+                        usage.resource_id.to_hex(),
+                    ),
+                    usage.resource_name_snapshot.clone(),
+                );
             }
         }
     }
@@ -1229,19 +1241,28 @@ pub async fn resource_usages_index(
         let mut cells = Vec::new();
         for hour in &hours {
             let mut cell_resources = Vec::new();
-            let mut labels = Vec::new();
+            let labels = selected_cells
+                .iter()
+                .filter_map(|((selected_concept_id, selected_hour, _), label)| {
+                    if selected_concept_id == &concept_id.to_hex() && *selected_hour == hour.hour {
+                        Some(label.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
             for resource in &resources {
                 let Some(resource_id) = resource.id.clone() else {
                     continue;
                 };
-                let selected = selected_cells.contains(&(
+                if !resource.allowed_status_ids.contains(&concept.status_id) {
+                    continue;
+                }
+                let selected = selected_cells.contains_key(&(
                     concept_id.to_hex(),
                     hour.hour,
                     resource_id.to_hex(),
                 ));
-                if selected {
-                    labels.push(resource.name.clone());
-                }
                 cell_resources.push(ResourceUsageGridResource {
                     field_name: format!(
                         "cell_{}_{}_{}",
@@ -1263,6 +1284,10 @@ pub async fn resource_usages_index(
         }
         rows.push(ResourceUsageGridRow {
             concept_id: concept_id.to_hex(),
+            status_name: status_names
+                .get(&concept.status_id)
+                .cloned()
+                .unwrap_or_else(|| "Estado".to_string()),
             project_title,
             concept_name: concept.name,
             quantity: format_quantity(concept.quantity),
@@ -1271,22 +1296,27 @@ pub async fn resource_usages_index(
         });
     }
 
-    let statuses = statuses_raw
-        .into_iter()
-        .filter_map(|status| {
-            let id = status.id?;
-            Some(SimpleOption {
-                selected: id == selected_status_id,
-                value: id.to_hex(),
-                label: status.name,
-            })
+    let mut statuses = vec![SimpleOption {
+        selected: selected_status_id.is_none(),
+        value: "all".to_string(),
+        label: "Todos".to_string(),
+    }];
+    statuses.extend(statuses_raw.into_iter().filter_map(|status| {
+        let id = status.id?;
+        Some(SimpleOption {
+            selected: selected_status_id.as_ref() == Some(&id),
+            value: id.to_hex(),
+            label: status.name,
         })
-        .collect();
+    }));
 
     render(ResourceUsagesTemplate {
         date,
         statuses,
-        selected_status_id: selected_status_id.to_hex(),
+        selected_status_id: selected_status_id
+            .as_ref()
+            .map(|id| id.to_hex())
+            .unwrap_or_else(|| "all".to_string()),
         selected_status_name,
         hours,
         rows,
@@ -1307,13 +1337,13 @@ pub async fn resource_usages_save_grid(
         .get("date")
         .cloned()
         .unwrap_or_else(|| chrono::Utc::now().format("%Y-%m-%d").to_string());
-    let status_id = match form
-        .get("status_id")
-        .and_then(|id| ObjectId::parse_str(id).ok())
-    {
-        Some(id) => id,
-        None => return StatusCode::BAD_REQUEST.into_response(),
-    };
+    let status_id = form.get("status_id").and_then(|id| {
+        if id == "all" {
+            None
+        } else {
+            ObjectId::parse_str(id).ok()
+        }
+    });
     let date_start = match parse_html_date(&date) {
         Some(date) => date,
         None => return StatusCode::BAD_REQUEST.into_response(),
@@ -1342,7 +1372,7 @@ pub async fn resource_usages_save_grid(
     match replace_hourly_resource_usage_grid(
         &state,
         &company_id,
-        &status_id,
+        status_id.as_ref(),
         date_start,
         0,
         24,
@@ -1353,7 +1383,10 @@ pub async fn resource_usages_save_grid(
         Ok(_) => Redirect::to(&format!(
             "/admin/resource_usages?date={}&status_id={}",
             date,
-            status_id.to_hex()
+            status_id
+                .as_ref()
+                .map(|id| id.to_hex())
+                .unwrap_or_else(|| "all".to_string())
         ))
         .into_response(),
         Err(err) => (StatusCode::BAD_REQUEST, err.to_string()).into_response(),

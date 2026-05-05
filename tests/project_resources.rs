@@ -15,8 +15,8 @@ use alfredodev::{
         list_resource_usage_allocations, list_resource_usage_allocations_for_concept,
         list_resources, project_status_summary_by_quantity, replace_hourly_resource_usage_grid,
         replace_resource_usage_allocations, replace_resource_usage_allocations_equal,
-        update_project, update_resource, update_resource_allowed_statuses, update_resource_log,
-        update_resource_usage,
+        update_project, update_project_concept, update_resource, update_resource_allowed_statuses,
+        update_resource_log, update_resource_usage,
     },
 };
 use bson::DateTime;
@@ -490,12 +490,15 @@ async fn hourly_resource_grid_replaces_state_concept_allocations() {
     )
     .await
     .unwrap();
+    update_resource_allowed_statuses(&state, &resource_id, &company_id, vec![status_id.clone()])
+        .await
+        .unwrap();
     let date = DateTime::parse_rfc3339_str("2026-05-04T00:00:00Z").unwrap();
 
     replace_hourly_resource_usage_grid(
         &state,
         &company_id,
-        &status_id,
+        Some(&status_id),
         date,
         7,
         10,
@@ -517,7 +520,7 @@ async fn hourly_resource_grid_replaces_state_concept_allocations() {
     replace_hourly_resource_usage_grid(
         &state,
         &company_id,
-        &status_id,
+        Some(&status_id),
         date,
         7,
         10,
@@ -537,6 +540,163 @@ async fn hourly_resource_grid_replaces_state_concept_allocations() {
         .unwrap();
     assert_eq!(allocations[0].allocated_hours, Some(1.0));
     assert_eq!(allocations[0].allocated_cost, Some(100.0));
+
+    common::teardown(Some(ctx)).await;
+}
+
+#[tokio::test]
+async fn hourly_resource_grid_all_scope_preserves_previous_status_history() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let company_id = list_companies(&state).await.unwrap()[0].id.clone().unwrap();
+
+    let production_status_id = get_initial_concept_status(&state, &company_id)
+        .await
+        .unwrap()
+        .unwrap()
+        .id
+        .unwrap();
+    let delivery_status_id = create_concept_status(
+        &state,
+        &company_id,
+        "Entrega Especial",
+        60,
+        None,
+        false,
+        false,
+        true,
+    )
+    .await
+    .unwrap();
+    let project_id = create_project(
+        &state,
+        &company_id,
+        "Historial Grid",
+        None,
+        None,
+        None,
+        ProjectPriority::Medium,
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let concept_id = create_project_concept(
+        &state,
+        &company_id,
+        &project_id,
+        Some(production_status_id.clone()),
+        "Pieza con entrega",
+        1.0,
+        Some("pieza".into()),
+        None,
+        None,
+        None,
+        None,
+        1,
+    )
+    .await
+    .unwrap();
+    let machine_id = create_resource_with_cost(
+        &state,
+        &company_id,
+        "Máquina Historial",
+        ResourceType::Machinery,
+        true,
+        100.0,
+        "MXN",
+        None,
+    )
+    .await
+    .unwrap();
+    let truck_id = create_resource_with_cost(
+        &state,
+        &company_id,
+        "Camión Historial",
+        ResourceType::Vehicle,
+        true,
+        200.0,
+        "MXN",
+        None,
+    )
+    .await
+    .unwrap();
+    update_resource_allowed_statuses(
+        &state,
+        &machine_id,
+        &company_id,
+        vec![production_status_id.clone()],
+    )
+    .await
+    .unwrap();
+    update_resource_allowed_statuses(
+        &state,
+        &truck_id,
+        &company_id,
+        vec![delivery_status_id.clone()],
+    )
+    .await
+    .unwrap();
+
+    let date = DateTime::parse_rfc3339_str("2026-05-04T00:00:00Z").unwrap();
+    replace_hourly_resource_usage_grid(
+        &state,
+        &company_id,
+        Some(&production_status_id),
+        date,
+        7,
+        8,
+        &[(concept_id.clone(), 7, machine_id.clone())],
+    )
+    .await
+    .unwrap();
+    update_project_concept(
+        &state,
+        &concept_id,
+        &company_id,
+        &delivery_status_id,
+        "Pieza con entrega",
+        1.0,
+        Some("pieza".into()),
+        None,
+        None,
+        None,
+        None,
+        1,
+    )
+    .await
+    .unwrap();
+    replace_hourly_resource_usage_grid(
+        &state,
+        &company_id,
+        None,
+        date,
+        7,
+        8,
+        &[(concept_id.clone(), 7, truck_id.clone())],
+    )
+    .await
+    .unwrap();
+
+    let allocations = list_resource_usage_allocations_for_concept(&state, &company_id, &concept_id)
+        .await
+        .unwrap();
+    assert_eq!(allocations.len(), 2);
+
+    let mut resource_ids = Vec::new();
+    for allocation in allocations {
+        let usage = get_resource_usage_by_id_for_company(&state, &allocation.usage_id, &company_id)
+            .await
+            .unwrap()
+            .unwrap();
+        resource_ids.push(usage.resource_id);
+    }
+    assert!(resource_ids.contains(&machine_id));
+    assert!(resource_ids.contains(&truck_id));
 
     common::teardown(Some(ctx)).await;
 }
