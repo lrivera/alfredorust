@@ -15,6 +15,7 @@
 
     <form method="post" action="/admin/planned_entries/{{ entry_id }}/pay"
           class="space-y-5 rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+      <input type="hidden" name="return_to" value="{{ return_to }}" />
 
       <div class="grid gap-4 sm:grid-cols-2">
         <div class="space-y-2">
@@ -51,7 +52,7 @@
       </div>
 
       <div class="flex items-center justify-end gap-3">
-        <a href="/admin/planned_entries" class="text-sm font-medium text-slate-500 hover:text-slate-700">Cancelar</a>
+        <a href="{{ return_to }}" class="text-sm font-medium text-slate-500 hover:text-slate-700">Cancelar</a>
         <button type="submit"
           class="inline-flex items-center rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700">
           Registrar pago

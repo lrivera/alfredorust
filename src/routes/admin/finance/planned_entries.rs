@@ -2,7 +2,7 @@ use std::{str::FromStr, sync::Arc};
 
 use askama::Template;
 use axum::{
-    extract::{Form, Path, State},
+    extract::{Form, Path, Query, State},
     http::StatusCode,
     response::{Html, IntoResponse, Redirect},
 };
@@ -487,12 +487,20 @@ struct PayFormTemplate {
     original_amount: f64,
     accounts: Vec<SimpleOption>,
     errors: Option<String>,
+    return_to: String,
+}
+
+#[derive(Deserialize)]
+pub struct PayQuery {
+    #[serde(default)]
+    return_to: Option<String>,
 }
 
 pub async fn planned_entries_pay_form(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
+    Query(query): Query<PayQuery>,
 ) -> Result<Html<String>, StatusCode> {
     let company_id = require_admin_active(&session_user)?;
     let oid = ObjectId::from_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
@@ -514,6 +522,9 @@ pub async fn planned_entries_pay_form(
         original_amount: entry.original_amount_estimated.unwrap_or(0.0),
         accounts,
         errors: None,
+        return_to: safe_return_to(query.return_to.as_deref())
+            .unwrap_or("/admin/planned_entries")
+            .to_string(),
     })
 }
 
@@ -524,6 +535,8 @@ pub struct PayFormData {
     account_id: String,
     #[serde(default)]
     notes: Option<String>,
+    #[serde(default)]
+    return_to: Option<String>,
 }
 
 pub async fn planned_entries_pay(
@@ -540,29 +553,66 @@ pub async fn planned_entries_pay(
         Ok(id) => id,
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
-    match get_planned_entry_by_id(&state, &oid).await {
-        Ok(Some(e)) => {
-            if let Err(s) = ensure_same_company(&e.company_id, &company_id) {
-                return s.into_response();
+    let entry = match get_planned_entry_by_id(&state, &oid).await {
+        Ok(Some(entry)) => {
+            if let Err(status) = ensure_same_company(&entry.company_id, &company_id) {
+                return status.into_response();
             }
+            entry
         }
         Ok(None) => return StatusCode::NOT_FOUND.into_response(),
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-    }
+    };
 
     let account_id = match parse_object_id(&form.account_id, "Cuenta") {
         Ok(id) => id,
-        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+        Err(_) => {
+            return render_pay_form_error(
+                &state,
+                &company_id,
+                id,
+                &entry.name,
+                &form,
+                entry.original_amount_estimated.unwrap_or(0.0),
+                "Selecciona una cuenta válida",
+            )
+            .await
+            .into_response();
+        }
     };
     let paid_amount = match parse_f64_field(&form.amount, "Monto") {
         Ok(v) => v,
-        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+        Err(_) => {
+            return render_pay_form_error(
+                &state,
+                &company_id,
+                id,
+                &entry.name,
+                &form,
+                entry.original_amount_estimated.unwrap_or(0.0),
+                "Captura un monto válido",
+            )
+            .await
+            .into_response();
+        }
     };
     let paid_date = match parse_date_field(&form.paid_at) {
         Some(d) => d,
-        None => return StatusCode::BAD_REQUEST.into_response(),
+        None => {
+            return render_pay_form_error(
+                &state,
+                &company_id,
+                id,
+                &entry.name,
+                &form,
+                entry.original_amount_estimated.unwrap_or(0.0),
+                "Captura una fecha de pago válida",
+            )
+            .await
+            .into_response();
+        }
     };
-    let notes = clean_opt(form.notes);
+    let notes = clean_opt(form.notes.clone());
 
     match pay_planned_entry(
         &state,
@@ -575,7 +625,55 @@ pub async fn planned_entries_pay(
     )
     .await
     {
-        Ok(_) => Redirect::to("/admin/planned_entries").into_response(),
-        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        Ok(_) => Redirect::to(
+            safe_return_to(form.return_to.as_deref()).unwrap_or("/admin/planned_entries"),
+        )
+        .into_response(),
+        Err(err) => {
+            eprintln!("[planned_entries] pay failed for {id}: {err}");
+            render_pay_form_error(
+                &state,
+                &company_id,
+                id,
+                &entry.name,
+                &form,
+                entry.original_amount_estimated.unwrap_or(0.0),
+                "No se pudo registrar el pago. Verifica que la cuenta esté activa y pertenezca a la compañía.",
+            )
+            .await
+            .into_response()
+        }
+    }
+}
+
+async fn render_pay_form_error(
+    state: &AppState,
+    company_id: &ObjectId,
+    entry_id: String,
+    entry_name: &str,
+    form: &PayFormData,
+    original_amount: f64,
+    message: &str,
+) -> Result<Html<String>, StatusCode> {
+    let accounts = account_options(state, None, company_id).await?;
+    render(PayFormTemplate {
+        entry_id,
+        entry_name: entry_name.to_string(),
+        paid_at: form.paid_at.clone(),
+        amount: form.amount.clone(),
+        original_amount,
+        accounts,
+        errors: Some(message.to_string()),
+        return_to: safe_return_to(form.return_to.as_deref())
+            .unwrap_or("/admin/planned_entries")
+            .to_string(),
+    })
+}
+
+fn safe_return_to(value: Option<&str>) -> Option<&str> {
+    match value {
+        Some("/tiempo") => Some("/tiempo"),
+        Some("/admin/planned_entries") => Some("/admin/planned_entries"),
+        _ => None,
     }
 }

@@ -222,6 +222,35 @@ async fn post_form_with_cookie(
     app.oneshot(req).await.expect("request failed").status()
 }
 
+async fn post_form_with_cookie_response(
+    app: Router,
+    host: &str,
+    path: &str,
+    token: &str,
+    form_body: String,
+) -> (StatusCode, Option<String>, String) {
+    let req = Request::builder()
+        .method("POST")
+        .uri(path)
+        .header("host", host)
+        .header("cookie", format!("{SESSION_COOKIE_NAME}={token}"))
+        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .body(Body::from(form_body))
+        .unwrap();
+    let res = app.oneshot(req).await.expect("request failed");
+    let status = res.status();
+    let location = res
+        .headers()
+        .get(header::LOCATION)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_string);
+    let body_bytes = to_bytes(res.into_body(), 1024 * 1024)
+        .await
+        .expect("body read failed");
+    let body = String::from_utf8_lossy(&body_bytes).to_string();
+    (status, location, body)
+}
+
 #[tokio::test]
 async fn finance_endpoints_render_seeded_data() {
     let ctx = match common::setup_state().await {
@@ -322,24 +351,26 @@ async fn planned_entry_pay_endpoint_creates_transaction() {
     let (status, body) = get_with_cookie(
         app,
         &host,
-        &format!("/admin/planned_entries/{entry_id}/pay"),
+        &format!("/admin/planned_entries/{entry_id}/pay?return_to=/tiempo"),
         &token,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "pay form must render");
     assert!(body.contains("Registrar pago"));
     assert!(body.contains(&entry.name));
+    assert!(body.contains(r#"name="return_to" value="/tiempo""#));
 
     let app = build_app(shared);
-    let status = post_form_with_cookie(
+    let (status, location, _body) = post_form_with_cookie_response(
         app,
         &host,
         &format!("/admin/planned_entries/{entry_id}/pay"),
         &token,
-        format!("paid_at=2026-05-04&amount=123.45&account_id={account_id}&notes=Pago+de+prueba"),
+        format!("paid_at=2026-05-04&amount=123.45&account_id={account_id}&notes=Pago+de+prueba&return_to=/tiempo"),
     )
     .await;
     assert_eq!(status, StatusCode::SEE_OTHER, "pay submit must redirect");
+    assert_eq!(location.as_deref(), Some("/tiempo"));
 
     let transactions = list_transactions(&state).await.unwrap();
     assert_eq!(transactions.len(), initial_transactions + 1);
