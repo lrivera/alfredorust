@@ -21,12 +21,14 @@ use crate::{
     },
 };
 
-use super::helpers::{require_admin_active, ensure_same_company, SimpleOption};
+use super::helpers::{SimpleOption, ensure_same_company, require_admin_active};
 use super::options::{account_options, category_options, contact_options};
 use crate::state::get_contact_by_id;
 
 fn render<T: Template>(tpl: T) -> Result<Html<String>, StatusCode> {
-    tpl.render().map(Html).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+    tpl.render()
+        .map(Html)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
 
 // ── Index ──────────────────────────────────────────────────────────────────
@@ -91,12 +93,12 @@ pub async fn orders_index(
             status: o.status.as_str().to_string(),
             status_label: o.status.label().to_string(),
             amount: o.amount,
-            scheduled_at: o.scheduled_at
+            scheduled_at: o
+                .scheduled_at
                 .map(|d| {
                     let ms = d.timestamp_millis();
                     let secs = ms / 1000;
-                    let dt = chrono::DateTime::from_timestamp(secs, 0)
-                        .unwrap_or_default();
+                    let dt = chrono::DateTime::from_timestamp(secs, 0).unwrap_or_default();
                     dt.format("%d/%m/%Y").to_string()
                 })
                 .unwrap_or_default(),
@@ -130,21 +132,21 @@ struct OrderFormTemplate {
 
 fn status_options() -> Vec<(String, String)> {
     vec![
-        ("pending".into(),     "Pendiente".into()),
-        ("confirmed".into(),   "Confirmada".into()),
+        ("pending".into(), "Pendiente".into()),
+        ("confirmed".into(), "Confirmada".into()),
         ("in_progress".into(), "En proceso".into()),
-        ("completed".into(),   "Completada".into()),
-        ("cancelled".into(),   "Cancelada".into()),
+        ("completed".into(), "Completada".into()),
+        ("cancelled".into(), "Cancelada".into()),
     ]
 }
 
 fn parse_status(s: &str) -> OrderStatus {
     match s {
-        "confirmed"   => OrderStatus::Confirmed,
+        "confirmed" => OrderStatus::Confirmed,
         "in_progress" => OrderStatus::InProgress,
-        "completed"   => OrderStatus::Completed,
-        "cancelled"   => OrderStatus::Cancelled,
-        _             => OrderStatus::Pending,
+        "completed" => OrderStatus::Completed,
+        "cancelled" => OrderStatus::Cancelled,
+        _ => OrderStatus::Pending,
     }
 }
 
@@ -169,7 +171,9 @@ pub struct OrderFormData {
     items_json: Option<String>,
 }
 
-fn default_pending() -> String { "pending".to_string() }
+fn default_pending() -> String {
+    "pending".to_string()
+}
 
 fn parse_items(json: &str) -> Vec<OrderItem> {
     serde_json::from_str::<Vec<serde_json::Value>>(json)
@@ -188,7 +192,9 @@ fn parse_items(json: &str) -> Vec<OrderItem> {
 
 fn parse_scheduled_at(s: &str) -> Option<bson::DateTime> {
     let s = s.trim();
-    if s.is_empty() { return None; }
+    if s.is_empty() {
+        return None;
+    }
     let dt = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()?;
     let dt = dt.and_hms_opt(0, 0, 0)?;
     let utc = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc);
@@ -196,7 +202,8 @@ fn parse_scheduled_at(s: &str) -> Option<bson::DateTime> {
 }
 
 fn parse_oid(s: Option<&str>) -> Option<ObjectId> {
-    s.filter(|s| !s.is_empty()).and_then(|s| ObjectId::from_str(s).ok())
+    s.filter(|s| !s.is_empty())
+        .and_then(|s| ObjectId::from_str(s).ok())
 }
 
 pub async fn orders_new(
@@ -239,15 +246,29 @@ pub async fn orders_create(
     let contact_id = parse_oid(form.contact_id.as_deref());
     let category_id = parse_oid(form.category_id.as_deref());
     let account_id = parse_oid(form.account_id.as_deref());
-    let scheduled_at = form.scheduled_at.as_deref().and_then(|s| parse_scheduled_at(s));
+    let scheduled_at = form
+        .scheduled_at
+        .as_deref()
+        .and_then(|s| parse_scheduled_at(s));
     let items = parse_items(form.items_json.as_deref().unwrap_or("[]"));
     let notes = form.notes.filter(|s| !s.trim().is_empty());
     let status = parse_status(&form.status);
 
     let order_id = match create_order(
-        &state, &company_id, contact_id, category_id, account_id,
-        form.title.trim(), status.clone(), amount, scheduled_at, items, notes,
-    ).await {
+        &state,
+        &company_id,
+        contact_id,
+        category_id,
+        account_id,
+        form.title.trim(),
+        status.clone(),
+        amount,
+        scheduled_at,
+        items,
+        notes,
+    )
+    .await
+    {
         Ok(id) => id,
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
@@ -278,19 +299,31 @@ pub async fn orders_edit(
     let categories = category_options(&state, order.category_id.as_ref(), &company_id).await?;
     let accounts = account_options(&state, order.account_id.as_ref(), &company_id).await?;
 
-    let items_json = serde_json::to_string(&order.items.iter().map(|i| serde_json::json!({
-        "description": i.description,
-        "quantity": i.quantity,
-        "unit_price": i.unit_price,
-    })).collect::<Vec<_>>()).unwrap_or_else(|_| "[]".into());
+    let items_json = serde_json::to_string(
+        &order
+            .items
+            .iter()
+            .map(|i| {
+                serde_json::json!({
+                    "description": i.description,
+                    "quantity": i.quantity,
+                    "unit_price": i.unit_price,
+                })
+            })
+            .collect::<Vec<_>>(),
+    )
+    .unwrap_or_else(|_| "[]".into());
 
-    let scheduled_at = order.scheduled_at.map(|d| {
-        let ms = d.timestamp_millis();
-        chrono::DateTime::from_timestamp(ms / 1000, 0)
-            .unwrap_or_default()
-            .format("%Y-%m-%d")
-            .to_string()
-    }).unwrap_or_default();
+    let scheduled_at = order
+        .scheduled_at
+        .map(|d| {
+            let ms = d.timestamp_millis();
+            chrono::DateTime::from_timestamp(ms / 1000, 0)
+                .unwrap_or_default()
+                .format("%Y-%m-%d")
+                .to_string()
+        })
+        .unwrap_or_default();
 
     render(OrderFormTemplate {
         action: format!("/admin/orders/{}/update", id),
@@ -325,7 +358,9 @@ pub async fn orders_update(
     };
     let old_order = match get_order_by_id(&state, &oid).await {
         Ok(Some(o)) => {
-            if let Err(s) = ensure_same_company(&o.company_id, &company_id) { return s.into_response(); }
+            if let Err(s) = ensure_same_company(&o.company_id, &company_id) {
+                return s.into_response();
+            }
             o
         }
         Ok(None) => return StatusCode::NOT_FOUND.into_response(),
@@ -336,21 +371,38 @@ pub async fn orders_update(
     let contact_id = parse_oid(form.contact_id.as_deref());
     let category_id = parse_oid(form.category_id.as_deref());
     let account_id = parse_oid(form.account_id.as_deref());
-    let scheduled_at = form.scheduled_at.as_deref().and_then(|s| parse_scheduled_at(s));
+    let scheduled_at = form
+        .scheduled_at
+        .as_deref()
+        .and_then(|s| parse_scheduled_at(s));
     let items = parse_items(form.items_json.as_deref().unwrap_or("[]"));
     let notes = form.notes.filter(|s| !s.trim().is_empty());
     let new_status = parse_status(&form.status);
 
     if let Err(_) = update_order(
-        &state, &oid, contact_id, category_id, account_id,
-        form.title.trim(), new_status.clone(), amount, scheduled_at, items, notes,
-    ).await {
+        &state,
+        &oid,
+        contact_id,
+        category_id,
+        account_id,
+        form.title.trim(),
+        new_status.clone(),
+        amount,
+        scheduled_at,
+        items,
+        notes,
+    )
+    .await
+    {
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     }
 
     // Create PlannedEntry when transitioning to Confirmed for the first time.
     let was_confirmed = old_order.status == OrderStatus::Confirmed;
-    if new_status == OrderStatus::Confirmed && !was_confirmed && old_order.planned_entry_id.is_none() {
+    if new_status == OrderStatus::Confirmed
+        && !was_confirmed
+        && old_order.planned_entry_id.is_none()
+    {
         if let Ok(Some(updated_order)) = get_order_by_id(&state, &oid).await {
             let _ = confirm_order(&state, &updated_order, &company_id).await;
         }
@@ -373,7 +425,11 @@ pub async fn orders_delete(
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
     match get_order_by_id(&state, &oid).await {
-        Ok(Some(o)) => { if let Err(s) = ensure_same_company(&o.company_id, &company_id) { return s.into_response(); } }
+        Ok(Some(o)) => {
+            if let Err(s) = ensure_same_company(&o.company_id, &company_id) {
+                return s.into_response();
+            }
+        }
         Ok(None) => return StatusCode::NOT_FOUND.into_response(),
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
@@ -398,7 +454,9 @@ pub async fn orders_complete(
     };
     let order = match get_order_by_id(&state, &oid).await {
         Ok(Some(o)) => {
-            if let Err(s) = ensure_same_company(&o.company_id, &company_id) { return s.into_response(); }
+            if let Err(s) = ensure_same_company(&o.company_id, &company_id) {
+                return s.into_response();
+            }
             o
         }
         Ok(None) => return StatusCode::NOT_FOUND.into_response(),

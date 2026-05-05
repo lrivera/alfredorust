@@ -1,10 +1,9 @@
-/// List all SAT configs with their IDs and company IDs.
-/// Usage: cargo run --bin list_sat_configs
-
-use std::sync::Arc;
 use alfredodev::state::init_state;
 use dotenvy::dotenv;
 use futures::stream::TryStreamExt;
+/// List all SAT configs with their IDs and company IDs.
+/// Usage: cargo run --bin list_sat_configs
+use std::sync::Arc;
 
 #[tokio::main]
 async fn main() {

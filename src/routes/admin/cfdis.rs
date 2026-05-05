@@ -5,14 +5,17 @@ use axum::{
     Json,
     extract::{Query, State},
     http::StatusCode,
-    response::{Html, IntoResponse},
+    response::Html,
 };
 use futures::stream::TryStreamExt;
 use serde::{Deserialize, Serialize};
 
 #[allow(unused_imports)]
 use crate::filters;
-use crate::{session::SessionUser, state::{AppState, list_sat_configs}};
+use crate::{
+    session::SessionUser,
+    state::{AppState, list_sat_configs},
+};
 
 const PER_PAGE: u64 = 50;
 const API_LIMIT: i64 = 5000;
@@ -44,7 +47,9 @@ pub struct PageQuery {
     page: u64,
 }
 
-fn default_page() -> u64 { 1 }
+fn default_page() -> u64 {
+    1
+}
 
 fn str_field(doc: &bson::Document, key: &str) -> String {
     doc.get_str(key).unwrap_or("").to_string()
@@ -90,11 +95,17 @@ pub async fn cfdis_index(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let mut rows = Vec::new();
-    while let Some(doc) = cursor.try_next().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)? {
+    while let Some(doc) = cursor
+        .try_next()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    {
         let comp = doc.get_document("comprobante").ok();
         rows.push(CfdiRow {
             uuid: str_field(&doc, "uuid"),
-            tipo: comp.map(|c| str_field(c, "tipoDeComprobante")).unwrap_or_default(),
+            tipo: comp
+                .map(|c| str_field(c, "tipoDeComprobante"))
+                .unwrap_or_default(),
             emisor_rfc: nested_str(&doc, "emisor", "rfc"),
             emisor_nombre: nested_str(&doc, "emisor", "nombre"),
             receptor_rfc: nested_str(&doc, "receptor", "rfc"),
@@ -105,10 +116,15 @@ pub async fn cfdis_index(
         });
     }
 
-    CfdisIndexTemplate { cfdis: rows, page, total_pages, total }
-        .render()
-        .map(Html)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+    CfdisIndexTemplate {
+        cfdis: rows,
+        page,
+        total_pages,
+        total,
+    }
+    .render()
+    .map(Html)
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
 
 // ── JSON API for the React dashboard ──────────────────────────────────────
@@ -151,7 +167,9 @@ pub async fn cfdis_data_api(
     let active_company = session_user.active_company_id();
 
     // Get known RFCs for this company from SAT configs
-    let sat_configs = list_sat_configs(&state, &active_company).await.unwrap_or_default();
+    let sat_configs = list_sat_configs(&state, &active_company)
+        .await
+        .unwrap_or_default();
     let company_rfcs: HashSet<String> = sat_configs
         .into_iter()
         .map(|c| c.rfc.to_uppercase())
@@ -173,38 +191,57 @@ pub async fn cfdis_data_api(
 
     let mut items: Vec<CfdiApiItem> = Vec::new();
 
-    while let Some(doc) = cursor.try_next().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)? {
+    while let Some(doc) = cursor
+        .try_next()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    {
         let (folio, tipo, fecha, subtotal, iva, total, moneda, forma_pago, metodo_pago, concepto) =
             if let Ok(comp) = doc.get_document("comprobante") {
                 let folio = str_field(comp, "folio");
-                let tipo  = str_field(comp, "tipoDeComprobante");
+                let tipo = str_field(comp, "tipoDeComprobante");
                 let fecha = str_field(comp, "fecha");
                 let subtotal = parse_f64(comp.get_str("subTotal").unwrap_or("0"));
-                let total    = parse_f64(comp.get_str("total").unwrap_or("0"));
-                let moneda   = str_field(comp, "moneda");
-                let forma_pago  = str_field(comp, "formaPago");
+                let total = parse_f64(comp.get_str("total").unwrap_or("0"));
+                let moneda = str_field(comp, "moneda");
+                let forma_pago = str_field(comp, "formaPago");
                 let metodo_pago = str_field(comp, "metodoPago");
 
-                let iva = doc.get_document("impuestos").ok()
+                let iva = doc
+                    .get_document("impuestos")
+                    .ok()
                     .and_then(|imp| imp.get_str("totalImpuestosTrasladados").ok())
                     .map(parse_f64)
                     .unwrap_or(0.0);
 
-                let concepto = doc.get_array("conceptos").ok()
+                let concepto = doc
+                    .get_array("conceptos")
+                    .ok()
                     .and_then(|arr| arr.first())
                     .and_then(|v| v.as_document())
                     .and_then(|d| d.get_str("descripcion").ok())
                     .unwrap_or("")
                     .to_string();
 
-                (folio, tipo, fecha, subtotal, iva, total, moneda, forma_pago, metodo_pago, concepto)
+                (
+                    folio,
+                    tipo,
+                    fecha,
+                    subtotal,
+                    iva,
+                    total,
+                    moneda,
+                    forma_pago,
+                    metodo_pago,
+                    concepto,
+                )
             } else {
                 Default::default()
             };
 
-        let emisor_rfc    = nested_str(&doc, "emisor", "rfc");
+        let emisor_rfc = nested_str(&doc, "emisor", "rfc");
         let emisor_nombre = nested_str(&doc, "emisor", "nombre");
-        let receptor_rfc    = nested_str(&doc, "receptor", "rfc");
+        let receptor_rfc = nested_str(&doc, "receptor", "rfc");
         let receptor_nombre = nested_str(&doc, "receptor", "nombre");
 
         // Determine direction: company is emisor → issued (income-side), else received (expense-side)
@@ -235,5 +272,8 @@ pub async fn cfdis_data_api(
         });
     }
 
-    Ok(Json(CfdiDataResponse { company_rfcs: company_rfcs_vec, items }))
+    Ok(Json(CfdiDataResponse {
+        company_rfcs: company_rfcs_vec,
+        items,
+    }))
 }

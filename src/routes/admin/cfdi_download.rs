@@ -23,7 +23,10 @@ use crate::{
     },
 };
 
-enum TxOutcome { Created, Updated }
+enum TxOutcome {
+    Created,
+    Updated,
+}
 
 #[derive(Deserialize)]
 pub struct CfdiDownloadForm {
@@ -34,7 +37,9 @@ pub struct CfdiDownloadForm {
     pub download_type: String,
 }
 
-fn default_both() -> String { "both".to_string() }
+fn default_both() -> String {
+    "both".to_string()
+}
 
 #[derive(Serialize)]
 pub struct StartedJobInfo {
@@ -57,24 +62,48 @@ pub async fn company_cfdi_download(
 ) -> impl IntoResponse {
     let company_object_id = match ObjectId::from_str(&company_id) {
         Ok(id) => id,
-        Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"company_id inválido"}))).into_response(),
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error":"company_id inválido"})),
+            )
+                .into_response();
+        }
     };
 
     let config_id = match ObjectId::from_str(&form.sat_config_id) {
         Ok(id) => id,
-        Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"sat_config_id inválido"}))).into_response(),
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error":"sat_config_id inválido"})),
+            )
+                .into_response();
+        }
     };
 
     let config = match get_sat_config(&state, &config_id).await {
         Ok(Some(c)) => c,
-        Ok(None) => return (StatusCode::NOT_FOUND, Json(serde_json::json!({"error":"Configuración SAT no encontrada"}))).into_response(),
-        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"Error de base de datos"}))).into_response(),
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({"error":"Configuración SAT no encontrada"})),
+            )
+                .into_response();
+        }
+        Err(_) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error":"Error de base de datos"})),
+            )
+                .into_response();
+        }
     };
 
     let dl_types: Vec<DownloadType> = match form.download_type.as_str() {
         "received" => vec![DownloadType::Received],
-        "both"     => vec![DownloadType::Issued, DownloadType::Received],
-        _          => vec![DownloadType::Issued],
+        "both" => vec![DownloadType::Issued, DownloadType::Received],
+        _ => vec![DownloadType::Issued],
     };
 
     let chunks = monthly_chunks(&form.start, &form.end);
@@ -87,14 +116,17 @@ pub async fn company_cfdi_download(
     for (label, chunk_start, chunk_end) in chunks {
         let job_id = Uuid::new_v4().to_string();
 
-        state.jobs.lock().await.insert(job_id.clone(), CfdiJob {
-            job_id: job_id.clone(),
-            company_id: company_id.clone(),
-            label: label.clone(),
-            chunk_start: chunk_start.clone(),
-            started_at: today.clone(),
-            status: CfdiJobStatus::Queued,
-        });
+        state.jobs.lock().await.insert(
+            job_id.clone(),
+            CfdiJob {
+                job_id: job_id.clone(),
+                company_id: company_id.clone(),
+                label: label.clone(),
+                chunk_start: chunk_start.clone(),
+                started_at: today.clone(),
+                status: CfdiJobStatus::Queued,
+            },
+        );
 
         let state_bg = state.clone();
         let job_id_bg = job_id.clone();
@@ -119,19 +151,35 @@ pub async fn company_cfdi_download(
             }
 
             let result = run_download(
-                &state_bg, &company_id_bg, &company_oid_bg,
-                cer.clone(), key.clone(), pwd.clone(), rfc.clone(),
-                dl_types_bg.clone(), chunk_start.clone(), chunk_end.clone(),
-            ).await;
+                &state_bg,
+                &company_id_bg,
+                &company_oid_bg,
+                cer.clone(),
+                key.clone(),
+                pwd.clone(),
+                rfc.clone(),
+                dl_types_bg.clone(),
+                chunk_start.clone(),
+                chunk_end.clone(),
+            )
+            .await;
 
             // 1 retry after 10s if the download failed completely.
             let result = if should_retry(&result) {
                 sleep(Duration::from_secs(10)).await;
                 run_download(
-                    &state_bg, &company_id_bg, &company_oid_bg,
-                    cer, key, pwd, rfc,
-                    dl_types_bg, chunk_start, chunk_end,
-                ).await
+                    &state_bg,
+                    &company_id_bg,
+                    &company_oid_bg,
+                    cer,
+                    key,
+                    pwd,
+                    rfc,
+                    dl_types_bg,
+                    chunk_start,
+                    chunk_end,
+                )
+                .await
             } else {
                 result
             };
@@ -174,7 +222,11 @@ pub async fn company_cfdi_job_status(
     let jobs = state.jobs.lock().await;
     match jobs.get(&job_id) {
         Some(job) => (StatusCode::OK, Json(job.clone())).into_response(),
-        None => (StatusCode::NOT_FOUND, Json(serde_json::json!({"error":"job no encontrado"}))).into_response(),
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error":"job no encontrado"})),
+        )
+            .into_response(),
     }
 }
 
@@ -223,10 +275,16 @@ async fn run_download(
                 Ok(zip_bytes) => {
                     match cfdi::import_zip(&state.cfdis, company_id, &zip_bytes).await {
                         Ok(imported) => {
-                            eprintln!("[cfdi] imported {} from {}", imported.len(), package.package_id);
+                            eprintln!(
+                                "[cfdi] imported {} from {}",
+                                imported.len(),
+                                package.package_id
+                            );
                             all_imported.extend(imported.into_iter().map(|c| (dl_type, c)));
                         }
-                        Err(e) => errors.push(format!("Error importando {}: {e}", package.package_id)),
+                        Err(e) => {
+                            errors.push(format!("Error importando {}: {e}", package.package_id))
+                        }
                     }
                 }
                 Err(e) => errors.push(format!("No se pudo leer ZIP {}: {e}", package.path)),
@@ -238,8 +296,20 @@ async fn run_download(
     let mut tx_updated = 0usize;
     let mut tx_skipped = 0usize;
 
-    let income_category = get_or_create_category(state, company_object_id, "CFDIs Importados (Ingresos)", FlowType::Income).await;
-    let expense_category = get_or_create_category(state, company_object_id, "CFDIs Importados (Egresos)", FlowType::Expense).await;
+    let income_category = get_or_create_category(
+        state,
+        company_object_id,
+        "CFDIs Importados (Ingresos)",
+        FlowType::Income,
+    )
+    .await;
+    let expense_category = get_or_create_category(
+        state,
+        company_object_id,
+        "CFDIs Importados (Egresos)",
+        FlowType::Expense,
+    )
+    .await;
     let sat_account = get_or_create_sat_account(state, company_object_id).await;
 
     for (dl_type, cfdi_item) in &all_imported {
@@ -249,7 +319,7 @@ async fn run_download(
         }
 
         let (tx_type, category_result) = match dl_type {
-            DownloadType::Issued   => (TransactionType::Income,  &income_category),
+            DownloadType::Issued => (TransactionType::Income, &income_category),
             DownloadType::Received => (TransactionType::Expense, &expense_category),
         };
 
@@ -272,11 +342,14 @@ async fn run_download(
         };
 
         let amount: f64 = cfdi_item.total.parse().unwrap_or(0.0);
-        if amount == 0.0 { tx_skipped += 1; continue; }
+        if amount == 0.0 {
+            tx_skipped += 1;
+            continue;
+        }
         let date = parse_cfdi_date(&cfdi_item.fecha);
 
         let (account_from_id, account_to_id) = match tx_type {
-            TransactionType::Income  => (None, Some(sat_account_id)),
+            TransactionType::Income => (None, Some(sat_account_id)),
             TransactionType::Expense => (Some(sat_account_id), None),
             TransactionType::Transfer => (None, None),
         };
@@ -297,40 +370,83 @@ async fn run_download(
         };
 
         let contact_id = if !contact_rfc.is_empty() {
-            get_or_create_contact_by_rfc(state, company_object_id, contact_rfc, contact_name, contact_type).await.ok()
+            get_or_create_contact_by_rfc(
+                state,
+                company_object_id,
+                contact_rfc,
+                contact_name,
+                contact_type,
+            )
+            .await
+            .ok()
         } else {
             None
         };
 
-        let existing = state.transactions.find_one(bson::doc! { "cfdi_uuid": &cfdi_item.uuid }).await.ok().flatten();
+        let existing = state
+            .transactions
+            .find_one(bson::doc! { "cfdi_uuid": &cfdi_item.uuid })
+            .await
+            .ok()
+            .flatten();
 
         let outcome = if let Some(existing_tx) = existing {
-            let res = state.transactions.update_one(
-                bson::doc! { "_id": &existing_tx.id },
-                bson::doc! { "$set": {
-                    "amount": amount,
-                    "date": date,
-                    "description": &description,
-                    "transaction_type": tx_type.as_str(),
-                    "category_id": category_id,
-                    "account_from_id": &account_from_id,
-                    "account_to_id": &account_to_id,
-                    "contact_id": &contact_id,
-                    "currency": cfdi_item.moneda.as_str(),
-                    "cfdi_folio": cfdi_item.folio.as_str(),
-                    "updated_at": bson::DateTime::now(),
-                }},
-            ).await;
+            let res = state
+                .transactions
+                .update_one(
+                    bson::doc! { "_id": &existing_tx.id },
+                    bson::doc! { "$set": {
+                        "amount": amount,
+                        "date": date,
+                        "description": &description,
+                        "transaction_type": tx_type.as_str(),
+                        "category_id": category_id,
+                        "account_from_id": &account_from_id,
+                        "account_to_id": &account_to_id,
+                        "contact_id": &contact_id,
+                        "currency": cfdi_item.moneda.as_str(),
+                        "cfdi_folio": cfdi_item.folio.as_str(),
+                        "updated_at": bson::DateTime::now(),
+                    }},
+                )
+                .await;
             match res {
                 Ok(_) => TxOutcome::Updated,
-                Err(e) => { errors.push(format!("Error actualizando {}: {e}", cfdi_item.uuid)); tx_skipped += 1; continue; }
+                Err(e) => {
+                    errors.push(format!("Error actualizando {}: {e}", cfdi_item.uuid));
+                    tx_skipped += 1;
+                    continue;
+                }
             }
         } else {
             let currency = Some(cfdi_item.moneda.clone()).filter(|s| !s.is_empty());
             let folio = Some(cfdi_item.folio.clone()).filter(|s| !s.is_empty());
-            match create_transaction(state, company_object_id, date, &description, tx_type, category_id, account_from_id, account_to_id, amount, None, true, None, Some(cfdi_item.uuid.clone()), contact_id, currency, folio).await {
+            match create_transaction(
+                state,
+                company_object_id,
+                date,
+                &description,
+                tx_type,
+                category_id,
+                account_from_id,
+                account_to_id,
+                amount,
+                None,
+                true,
+                None,
+                Some(cfdi_item.uuid.clone()),
+                contact_id,
+                currency,
+                folio,
+            )
+            .await
+            {
                 Ok(_) => TxOutcome::Created,
-                Err(e) => { errors.push(format!("Error transacción {}: {e}", cfdi_item.uuid)); tx_skipped += 1; continue; }
+                Err(e) => {
+                    errors.push(format!("Error transacción {}: {e}", cfdi_item.uuid));
+                    tx_skipped += 1;
+                    continue;
+                }
             }
         };
 
@@ -365,19 +481,23 @@ fn monthly_chunks(start_iso: &str, end_iso: &str) -> Vec<(String, String, String
 
     let start = match NaiveDate::parse_from_str(start_str, "%Y-%m-%d") {
         Ok(d) => d,
-        Err(_) => return vec![(
-            "Descarga".into(),
-            start_iso.to_string(),
-            end_iso.to_string(),
-        )],
+        Err(_) => {
+            return vec![(
+                "Descarga".into(),
+                start_iso.to_string(),
+                end_iso.to_string(),
+            )];
+        }
     };
     let end = match NaiveDate::parse_from_str(end_str, "%Y-%m-%d") {
         Ok(d) => d,
-        Err(_) => return vec![(
-            "Descarga".into(),
-            start_iso.to_string(),
-            end_iso.to_string(),
-        )],
+        Err(_) => {
+            return vec![(
+                "Descarga".into(),
+                start_iso.to_string(),
+                end_iso.to_string(),
+            )];
+        }
     };
 
     if start > end {
@@ -398,28 +518,29 @@ fn monthly_chunks(start_iso: &str, end_iso: &str) -> Vec<(String, String, String
     let mut month_cursor = NaiveDate::from_ymd_opt(start.year(), start.month(), 1).unwrap();
 
     loop {
-        let chunk_from = if month_cursor.year() == start.year() && month_cursor.month() == start.month() {
-            start
-        } else {
-            month_cursor
-        };
+        let chunk_from =
+            if month_cursor.year() == start.year() && month_cursor.month() == start.month() {
+                start
+            } else {
+                month_cursor
+            };
 
         let next_month = next_month_start(month_cursor);
         let month_last = next_month.pred_opt().unwrap();
         let chunk_to = month_last.min(end);
 
-        let label = format!("{} {}", month_name_es(month_cursor.month()), month_cursor.year());
+        let label = format!(
+            "{} {}",
+            month_name_es(month_cursor.month()),
+            month_cursor.year()
+        );
         // Use current Mexico City time for today's chunk so we don't send a future timestamp.
         let end_time = if chunk_to == mexico_now.date_naive() {
             format!("{}T{}", chunk_to, mexico_now.format("%H:%M:%S"))
         } else {
             format!("{}T23:59:59", chunk_to)
         };
-        chunks.push((
-            label,
-            format!("{}T00:00:00", chunk_from),
-            end_time,
-        ));
+        chunks.push((label, format!("{}T00:00:00", chunk_from), end_time));
 
         if month_last >= end {
             break;
@@ -441,9 +562,18 @@ fn next_month_start(date: NaiveDate) -> NaiveDate {
 
 fn month_name_es(month: u32) -> &'static str {
     match month {
-        1 => "Ene", 2 => "Feb", 3 => "Mar", 4 => "Abr",
-        5 => "May", 6 => "Jun", 7 => "Jul", 8 => "Ago",
-        9 => "Sep", 10 => "Oct", 11 => "Nov", 12 => "Dic",
+        1 => "Ene",
+        2 => "Feb",
+        3 => "Mar",
+        4 => "Abr",
+        5 => "May",
+        6 => "Jun",
+        7 => "Jul",
+        8 => "Ago",
+        9 => "Sep",
+        10 => "Oct",
+        11 => "Nov",
+        12 => "Dic",
         _ => "???",
     }
 }
@@ -451,7 +581,9 @@ fn month_name_es(month: u32) -> &'static str {
 /// Retry if the download failed completely: no CFDIs imported and at least one error.
 fn should_retry(status: &CfdiJobStatus) -> bool {
     match status {
-        CfdiJobStatus::Done { imported, errors, .. } => *imported == 0 && !errors.is_empty(),
+        CfdiJobStatus::Done {
+            imported, errors, ..
+        } => *imported == 0 && !errors.is_empty(),
         CfdiJobStatus::Failed { .. } => true,
         CfdiJobStatus::Running | CfdiJobStatus::Queued => false,
     }

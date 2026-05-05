@@ -89,7 +89,9 @@ pub struct TxPageQuery {
     #[serde(default = "default_tx_page")]
     page: usize,
 }
-fn default_tx_page() -> usize { 1 }
+fn default_tx_page() -> usize {
+    1
+}
 
 pub async fn transactions_index(
     session_user: SessionUser,
@@ -121,9 +123,16 @@ pub async fn transactions_index(
     let total_pages = (total + TX_PER_PAGE - 1) / TX_PER_PAGE;
     let page = q.page.max(1).min(total_pages.max(1));
     let start = (page - 1) * TX_PER_PAGE;
-    let page_rows = rows.drain(start..(start + TX_PER_PAGE).min(total)).collect();
+    let page_rows = rows
+        .drain(start..(start + TX_PER_PAGE).min(total))
+        .collect();
 
-    render(TransactionsIndexTemplate { transactions: page_rows, page, total_pages, total })
+    render(TransactionsIndexTemplate {
+        transactions: page_rows,
+        page,
+        total_pages,
+        total,
+    })
 }
 
 pub async fn transactions_new(
@@ -232,17 +241,27 @@ pub async fn transactions_create(
 
     let notes = clean_opt(form.notes);
 
-    if let Err(status) =
-        validate_company_refs(&state, &company_id, Some(&category_id), account_from_id.as_ref(), None)
-            .await
+    if let Err(status) = validate_company_refs(
+        &state,
+        &company_id,
+        Some(&category_id),
+        account_from_id.as_ref(),
+        None,
+    )
+    .await
     {
         return status.into_response();
     }
 
     if let Some(ref account_to) = account_to_id {
-        if let Err(status) =
-            validate_company_refs(&state, &company_id, Some(&category_id), Some(account_to), None)
-                .await
+        if let Err(status) = validate_company_refs(
+            &state,
+            &company_id,
+            Some(&category_id),
+            Some(account_to),
+            None,
+        )
+        .await
         {
             return status.into_response();
         }
@@ -423,17 +442,27 @@ pub async fn transactions_update(
 
     let notes = clean_opt(form.notes);
 
-    if let Err(status) =
-        validate_company_refs(&state, &company_id, Some(&category_id), account_from_id.as_ref(), None)
-            .await
+    if let Err(status) = validate_company_refs(
+        &state,
+        &company_id,
+        Some(&category_id),
+        account_from_id.as_ref(),
+        None,
+    )
+    .await
     {
         return status.into_response();
     }
 
     if let Some(ref account_to) = account_to_id {
-        if let Err(status) =
-            validate_company_refs(&state, &company_id, Some(&category_id), Some(account_to), None)
-                .await
+        if let Err(status) = validate_company_refs(
+            &state,
+            &company_id,
+            Some(&category_id),
+            Some(account_to),
+            None,
+        )
+        .await
         {
             return status.into_response();
         }
@@ -525,21 +554,33 @@ pub async fn transactions_data_api(
     // Parallel lookup fetches
     let (accs, cats, contacts, txs) = tokio::try_join!(
         async {
-            state.accounts.find(filter.clone()).await
+            state
+                .accounts
+                .find(filter.clone())
+                .await
                 .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-                .try_collect::<Vec<_>>().await
+                .try_collect::<Vec<_>>()
+                .await
                 .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
         },
         async {
-            state.categories.find(filter.clone()).await
+            state
+                .categories
+                .find(filter.clone())
+                .await
                 .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-                .try_collect::<Vec<_>>().await
+                .try_collect::<Vec<_>>()
+                .await
                 .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
         },
         async {
-            state.contacts.find(filter.clone()).await
+            state
+                .contacts
+                .find(filter.clone())
+                .await
                 .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-                .try_collect::<Vec<_>>().await
+                .try_collect::<Vec<_>>()
+                .await
                 .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
         },
         async {
@@ -547,48 +588,78 @@ pub async fn transactions_data_api(
                 .sort(bson::doc! { "date": -1 })
                 .limit(5000_i64)
                 .build();
-            state.transactions.find(filter.clone()).with_options(opts).await
+            state
+                .transactions
+                .find(filter.clone())
+                .with_options(opts)
+                .await
                 .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-                .try_collect::<Vec<_>>().await
+                .try_collect::<Vec<_>>()
+                .await
                 .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
         },
     )?;
 
     // Build O(1) lookup maps
-    let acc_map: HashMap<String, String> = accs.into_iter()
+    let acc_map: HashMap<String, String> = accs
+        .into_iter()
         .filter_map(|a| a.id.map(|id| (id.to_hex(), a.name)))
         .collect();
-    let cat_map: HashMap<String, String> = cats.into_iter()
+    let cat_map: HashMap<String, String> = cats
+        .into_iter()
         .filter_map(|c| c.id.map(|id| (id.to_hex(), c.name)))
         .collect();
-    let con_map: HashMap<String, String> = contacts.into_iter()
+    let con_map: HashMap<String, String> = contacts
+        .into_iter()
         .filter_map(|c| c.id.map(|id| (id.to_hex(), c.name)))
         .collect();
 
-    let items = txs.into_iter().filter_map(|tx| {
-        let id = tx.id?;
-        let date = tx.date.to_chrono().format("%Y-%m-%d").to_string();
-        let tx_type = match tx.transaction_type {
-            crate::models::TransactionType::Income   => "income",
-            crate::models::TransactionType::Expense  => "expense",
-            crate::models::TransactionType::Transfer => "transfer",
-        }.to_string();
-        Some(TxApiItem {
-            id: id.to_hex(),
-            date,
-            description: tx.description,
-            tx_type,
-            amount: tx.amount,
-            category:     cat_map.get(&tx.category_id.to_hex()).cloned().unwrap_or_default(),
-            account_from: tx.account_from_id.as_ref().and_then(|id| acc_map.get(&id.to_hex())).cloned().unwrap_or_default(),
-            account_to:   tx.account_to_id.as_ref().and_then(|id|  acc_map.get(&id.to_hex())).cloned().unwrap_or_default(),
-            contact:      tx.contact_id.as_ref().and_then(|id|      con_map.get(&id.to_hex())).cloned().unwrap_or_default(),
-            is_confirmed: tx.is_confirmed,
-            cfdi_folio:   tx.cfdi_folio.unwrap_or_default(),
-            currency:     tx.currency.unwrap_or_else(|| "MXN".into()),
-            notes:        tx.notes.unwrap_or_default(),
+    let items = txs
+        .into_iter()
+        .filter_map(|tx| {
+            let id = tx.id?;
+            let date = tx.date.to_chrono().format("%Y-%m-%d").to_string();
+            let tx_type = match tx.transaction_type {
+                crate::models::TransactionType::Income => "income",
+                crate::models::TransactionType::Expense => "expense",
+                crate::models::TransactionType::Transfer => "transfer",
+            }
+            .to_string();
+            Some(TxApiItem {
+                id: id.to_hex(),
+                date,
+                description: tx.description,
+                tx_type,
+                amount: tx.amount,
+                category: cat_map
+                    .get(&tx.category_id.to_hex())
+                    .cloned()
+                    .unwrap_or_default(),
+                account_from: tx
+                    .account_from_id
+                    .as_ref()
+                    .and_then(|id| acc_map.get(&id.to_hex()))
+                    .cloned()
+                    .unwrap_or_default(),
+                account_to: tx
+                    .account_to_id
+                    .as_ref()
+                    .and_then(|id| acc_map.get(&id.to_hex()))
+                    .cloned()
+                    .unwrap_or_default(),
+                contact: tx
+                    .contact_id
+                    .as_ref()
+                    .and_then(|id| con_map.get(&id.to_hex()))
+                    .cloned()
+                    .unwrap_or_default(),
+                is_confirmed: tx.is_confirmed,
+                cfdi_folio: tx.cfdi_folio.unwrap_or_default(),
+                currency: tx.currency.unwrap_or_else(|| "MXN".into()),
+                notes: tx.notes.unwrap_or_default(),
+            })
         })
-    }).collect();
+        .collect();
 
     Ok(Json(items))
 }

@@ -239,9 +239,7 @@ pub async fn planned_entries_create(
     }
 
     if let Some(ref plan_id) = recurring_plan_id {
-        if let Err(status) =
-            validate_recurring_plan_company(&state, plan_id, &company_id).await
-        {
+        if let Err(status) = validate_recurring_plan_company(&state, plan_id, &company_id).await {
             return status.into_response();
         }
     }
@@ -284,12 +282,10 @@ pub async fn planned_entries_edit(
     ensure_same_company(&entry.company_id, &active_company)?;
 
     let companies = company_options(&state, &active_company).await?;
-    let categories =
-        category_options(&state, Some(&entry.category_id), &active_company).await?;
+    let categories = category_options(&state, Some(&entry.category_id), &active_company).await?;
     let accounts =
         account_options(&state, Some(&entry.account_expected_id), &active_company).await?;
-    let contacts =
-        contact_options(&state, entry.contact_id.as_ref(), &active_company).await?;
+    let contacts = contact_options(&state, entry.contact_id.as_ref(), &active_company).await?;
     let recurring_plans =
         recurring_plan_options(&state, entry.recurring_plan_id.as_ref(), &active_company).await?;
 
@@ -545,7 +541,11 @@ pub async fn planned_entries_pay(
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
     match get_planned_entry_by_id(&state, &oid).await {
-        Ok(Some(e)) => { if let Err(s) = ensure_same_company(&e.company_id, &company_id) { return s.into_response(); } }
+        Ok(Some(e)) => {
+            if let Err(s) = ensure_same_company(&e.company_id, &company_id) {
+                return s.into_response();
+            }
+        }
         Ok(None) => return StatusCode::NOT_FOUND.into_response(),
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
@@ -564,7 +564,17 @@ pub async fn planned_entries_pay(
     };
     let notes = clean_opt(form.notes);
 
-    match pay_planned_entry(&state, &oid, &company_id, &account_id, paid_amount, paid_date, notes).await {
+    match pay_planned_entry(
+        &state,
+        &oid,
+        &company_id,
+        &account_id,
+        paid_amount,
+        paid_date,
+        notes,
+    )
+    .await
+    {
         Ok(_) => Redirect::to("/admin/planned_entries").into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }

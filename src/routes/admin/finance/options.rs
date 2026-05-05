@@ -8,7 +8,7 @@ use crate::state::{
 
 use super::helpers::SimpleOption;
 
-pub(super) async fn category_options(
+pub async fn category_options(
     state: &AppState,
     selected: Option<&ObjectId>,
     company_id: &ObjectId,
@@ -29,7 +29,7 @@ pub(super) async fn category_options(
         .collect())
 }
 
-pub(super) async fn account_options(
+pub async fn account_options(
     state: &AppState,
     selected: Option<&ObjectId>,
     company_id: &ObjectId,
@@ -50,7 +50,7 @@ pub(super) async fn account_options(
         .collect())
 }
 
-pub(super) async fn contact_options(
+pub async fn contact_options(
     state: &AppState,
     selected: Option<&ObjectId>,
     company_id: &ObjectId,
@@ -163,4 +163,3 @@ pub(super) async fn user_options(
     );
     Ok(options)
 }
-

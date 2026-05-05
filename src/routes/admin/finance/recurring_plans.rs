@@ -158,7 +158,9 @@ pub async fn recurring_plans_create(
         Err(status) => return status.into_response(),
     };
 
-    let companies = company_options(&state, &company_id).await.unwrap_or_default();
+    let companies = company_options(&state, &company_id)
+        .await
+        .unwrap_or_default();
     let categories = category_options(&state, None, &company_id)
         .await
         .unwrap_or_default();
@@ -488,11 +490,18 @@ pub async fn recurring_plans_edit(
 
     let companies = company_options(&state, &active_company).await?;
     let categories = category_options(&state, Some(&plan.category_id), &active_company).await?;
-    let accounts =
-        account_options(&state, Some(&plan.account_expected_id), session_user.active_company_id())
-            .await?;
-    let contacts =
-        contact_options(&state, plan.contact_id.as_ref(), session_user.active_company_id()).await?;
+    let accounts = account_options(
+        &state,
+        Some(&plan.account_expected_id),
+        session_user.active_company_id(),
+    )
+    .await?;
+    let contacts = contact_options(
+        &state,
+        plan.contact_id.as_ref(),
+        session_user.active_company_id(),
+    )
+    .await?;
 
     render(RecurringPlanFormTemplate {
         action: format!("/admin/recurring_plans/{}/update", id),

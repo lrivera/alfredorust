@@ -14,7 +14,10 @@ use crate::filters;
 
 use crate::{
     session::SessionUser,
-    state::{AppState, create_category, delete_category, get_category_by_id, list_categories, update_category},
+    state::{
+        AppState, create_category, delete_category, get_category_by_id, list_categories,
+        update_category,
+    },
 };
 
 use super::helpers::*;
@@ -129,7 +132,9 @@ pub async fn categories_create(
         Err(status) => return status.into_response(),
     };
 
-    let companies = company_options(&state, &company_id).await.unwrap_or_default();
+    let companies = company_options(&state, &company_id)
+        .await
+        .unwrap_or_default();
     let parents = category_parent_options(&state, None, &company_id)
         .await
         .unwrap_or_default();

@@ -1,10 +1,7 @@
 use std::{collections::HashMap, str::FromStr};
 
 use askama::Template;
-use axum::{
-    http::StatusCode,
-    response::Html,
-};
+use axum::{http::StatusCode, response::Html};
 use mongodb::bson::{DateTime, oid::ObjectId};
 
 #[allow(unused_imports)]
@@ -19,14 +16,14 @@ use crate::{
     },
 };
 
-pub(super) fn require_admin_active(session_user: &SessionUser) -> Result<ObjectId, StatusCode> {
+pub fn require_admin_active(session_user: &SessionUser) -> Result<ObjectId, StatusCode> {
     if !session_user.is_admin() {
         return Err(StatusCode::FORBIDDEN);
     }
     Ok(session_user.active_company_id().clone())
 }
 
-pub(super) fn ensure_same_company(
+pub fn ensure_same_company(
     entity_company: &ObjectId,
     active_company: &ObjectId,
 ) -> Result<(), StatusCode> {
@@ -117,7 +114,7 @@ pub(super) fn render<T: Template>(tpl: T) -> Result<Html<String>, StatusCode> {
 }
 
 #[derive(Clone)]
-pub(super) struct SimpleOption {
+pub struct SimpleOption {
     pub value: String,
     pub label: String,
     pub selected: bool,
@@ -468,7 +465,9 @@ pub(super) fn datetime_to_string(dt: &DateTime) -> String {
 /// Parse a `YYYY-MM-DD` date string (from an HTML date input) into a bson DateTime at midnight UTC.
 pub(super) fn parse_date_field(s: &str) -> Option<DateTime> {
     let s = s.trim();
-    if s.is_empty() { return None; }
+    if s.is_empty() {
+        return None;
+    }
     let nd = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()?;
     let dt = nd.and_hms_opt(0, 0, 0)?;
     let utc = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc);

@@ -14,7 +14,9 @@ use crate::filters;
 
 use crate::{
     session::SessionUser,
-    state::{AppState, create_account, delete_account, get_account_by_id, list_accounts, update_account},
+    state::{
+        AppState, create_account, delete_account, get_account_by_id, list_accounts, update_account,
+    },
 };
 
 use super::helpers::*;
@@ -124,7 +126,9 @@ pub async fn accounts_create(
         Err(status) => return status.into_response(),
     };
 
-    let companies = company_options(&state, &company_id).await.unwrap_or_default();
+    let companies = company_options(&state, &company_id)
+        .await
+        .unwrap_or_default();
 
     let account_type = match parse_account_type(&form.account_type) {
         Ok(t) => t,

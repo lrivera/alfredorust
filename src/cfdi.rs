@@ -109,7 +109,10 @@ fn parse_cfdi(doc: &Document) -> Result<(String, bson::Document, ImportedCfdi)> 
         "certificado":       root.attribute("Certificado").unwrap_or(""),
     };
 
-    let tipo = root.attribute("TipoDeComprobante").unwrap_or("").to_string();
+    let tipo = root
+        .attribute("TipoDeComprobante")
+        .unwrap_or("")
+        .to_string();
     let total_str = root.attribute("Total").unwrap_or("0").to_string();
     let fecha_str = root.attribute("Fecha").unwrap_or("").to_string();
     let moneda_str = root.attribute("Moneda").unwrap_or("MXN").to_string();
@@ -117,13 +120,19 @@ fn parse_cfdi(doc: &Document) -> Result<(String, bson::Document, ImportedCfdi)> 
     let folio_str = root.attribute("Folio").unwrap_or("").to_string();
     let folio_combined = match (serie_str.is_empty(), folio_str.is_empty()) {
         (false, false) => format!("{serie_str}-{folio_str}"),
-        (true,  false) => folio_str,
-        _              => String::new(),
+        (true, false) => folio_str,
+        _ => String::new(),
     };
 
     let emisor_node = child(root, "Emisor");
-    let emisor_rfc = emisor_node.and_then(|n| n.attribute("Rfc")).unwrap_or("").to_string();
-    let emisor_nombre = emisor_node.and_then(|n| n.attribute("Nombre")).unwrap_or("").to_string();
+    let emisor_rfc = emisor_node
+        .and_then(|n| n.attribute("Rfc"))
+        .unwrap_or("")
+        .to_string();
+    let emisor_nombre = emisor_node
+        .and_then(|n| n.attribute("Nombre"))
+        .unwrap_or("")
+        .to_string();
     let emisor = doc! {
         "rfc":          &emisor_rfc,
         "nombre":       &emisor_nombre,
@@ -131,8 +140,14 @@ fn parse_cfdi(doc: &Document) -> Result<(String, bson::Document, ImportedCfdi)> 
     };
 
     let receptor_node = child(root, "Receptor");
-    let receptor_rfc = receptor_node.and_then(|n| n.attribute("Rfc")).unwrap_or("").to_string();
-    let receptor_nombre = receptor_node.and_then(|n| n.attribute("Nombre")).unwrap_or("").to_string();
+    let receptor_rfc = receptor_node
+        .and_then(|n| n.attribute("Rfc"))
+        .unwrap_or("")
+        .to_string();
+    let receptor_nombre = receptor_node
+        .and_then(|n| n.attribute("Nombre"))
+        .unwrap_or("")
+        .to_string();
     let receptor = doc! {
         "rfc":           &receptor_rfc,
         "nombre":        &receptor_nombre,

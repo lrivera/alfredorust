@@ -44,10 +44,7 @@ pub async fn delete_sat_config(state: &AppState, config_id: &ObjectId) -> Result
     Ok(())
 }
 
-pub async fn get_sat_config(
-    state: &AppState,
-    config_id: &ObjectId,
-) -> Result<Option<SatConfig>> {
+pub async fn get_sat_config(state: &AppState, config_id: &ObjectId) -> Result<Option<SatConfig>> {
     Ok(state
         .sat_configs
         .find_one(doc! { "_id": config_id })

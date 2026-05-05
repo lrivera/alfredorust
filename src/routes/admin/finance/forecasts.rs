@@ -250,8 +250,12 @@ pub async fn forecasts_edit(
     ensure_same_company(&forecast.company_id, &active_company)?;
 
     let companies = company_options(&state, &active_company).await?;
-    let users =
-        user_options(&state, forecast.generated_by_user_id.as_ref(), &active_company).await?;
+    let users = user_options(
+        &state,
+        forecast.generated_by_user_id.as_ref(),
+        &active_company,
+    )
+    .await?;
 
     render(ForecastFormTemplate {
         action: format!("/admin/forecasts/{}/update", id),

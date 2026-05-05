@@ -14,9 +14,7 @@ use crate::filters;
 
 use crate::{
     session::SessionUser,
-    state::{
-        AppState, create_sat_config, delete_sat_config, get_company_by_id, list_sat_configs,
-    },
+    state::{AppState, create_sat_config, delete_sat_config, get_company_by_id, list_sat_configs},
 };
 
 fn render<T: Template>(tpl: T) -> Result<Html<String>, StatusCode> {
@@ -85,20 +83,14 @@ pub async fn sat_configs_create(
                 key_password = field.text().await.unwrap_or_default();
             }
             "cer_file" => {
-                let filename = field
-                    .file_name()
-                    .unwrap_or("cert.cer")
-                    .to_string();
+                let filename = field.file_name().unwrap_or("cert.cer").to_string();
                 let data = field.bytes().await.unwrap_or_default().to_vec();
                 if !data.is_empty() {
                     cer_bytes = Some((filename, data));
                 }
             }
             "key_file" => {
-                let filename = field
-                    .file_name()
-                    .unwrap_or("private.key")
-                    .to_string();
+                let filename = field.file_name().unwrap_or("private.key").to_string();
                 let data = field.bytes().await.unwrap_or_default().to_vec();
                 if !data.is_empty() {
                     key_bytes = Some((filename, data));
@@ -160,9 +152,7 @@ pub async fn sat_configs_create(
     )
     .await
     {
-        Ok(_) => {
-            Redirect::to(&format!("/admin/companies/{}/edit", company_id)).into_response()
-        }
+        Ok(_) => Redirect::to(&format!("/admin/companies/{}/edit", company_id)).into_response(),
         Err(e) => {
             eprintln!("[sat_configs] db insert error: {e}");
             StatusCode::INTERNAL_SERVER_ERROR.into_response()

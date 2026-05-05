@@ -14,7 +14,9 @@ use crate::filters;
 
 use crate::{
     session::SessionUser,
-    state::{AppState, create_contact, delete_contact, get_contact_by_id, list_contacts, update_contact},
+    state::{
+        AppState, create_contact, delete_contact, get_contact_by_id, list_contacts, update_contact,
+    },
 };
 
 use super::helpers::*;
@@ -127,7 +129,9 @@ pub async fn contacts_create(
         Err(status) => return status.into_response(),
     };
 
-    let companies = company_options(&state, &company_id).await.unwrap_or_default();
+    let companies = company_options(&state, &company_id)
+        .await
+        .unwrap_or_default();
 
     let contact_type = match parse_contact_type(&form.contact_type) {
         Ok(c) => c,

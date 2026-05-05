@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use mongodb::{
-    bson::{doc, oid::ObjectId},
     Collection, Database,
+    bson::{doc, oid::ObjectId},
 };
 use serde::de::DeserializeOwned;
 use slug::slugify;
@@ -11,8 +11,8 @@ use std::{
 };
 
 use crate::models::{
-    Account, Category, Company, Contact, Forecast, PlannedEntry, RecurringPlan, SeedUser, Transaction, User,
-    UserCompany,
+    Account, Category, Company, Contact, Forecast, PlannedEntry, RecurringPlan, SeedUser,
+    Transaction, User, UserCompany,
 };
 
 pub(super) async fn is_database_empty(db: &Database) -> Result<bool> {
@@ -28,7 +28,10 @@ pub(super) fn load_default_users() -> Result<Vec<SeedUser>> {
     Ok(users)
 }
 
-pub(super) fn load_json_array<T: DeserializeOwned>(env_key: &str, default_path: &str) -> Result<Vec<T>> {
+pub(super) fn load_json_array<T: DeserializeOwned>(
+    env_key: &str,
+    default_path: &str,
+) -> Result<Vec<T>> {
     let path = env::var(env_key).unwrap_or_else(|_| default_path.to_string());
     if let Ok(contents) = fs::read_to_string(&path) {
         let parsed = serde_json::from_str::<Vec<T>>(&contents)?;
@@ -89,6 +92,15 @@ pub(super) async fn ensure_collections(db: &Database) -> Result<()> {
     }
     if !existing.iter().any(|name| name == "forecasts") {
         db.create_collection("forecasts").await?;
+    }
+    if !existing.iter().any(|name| name == "projects") {
+        db.create_collection("projects").await?;
+    }
+    if !existing.iter().any(|name| name == "resources") {
+        db.create_collection("resources").await?;
+    }
+    if !existing.iter().any(|name| name == "resource_logs") {
+        db.create_collection("resource_logs").await?;
     }
     Ok(())
 }
@@ -197,9 +209,7 @@ pub(super) async fn seed_default_users(
         };
 
         // Reset memberships
-        let _ = memberships
-            .delete_many(doc! { "user_id": &user_id })
-            .await;
+        let _ = memberships.delete_many(doc! { "user_id": &user_id }).await;
         for cid in &companies_final {
             let _ = memberships
                 .insert_one(UserCompany {

@@ -3,15 +3,12 @@ use bson::{DateTime, doc, oid::ObjectId};
 use futures::stream::TryStreamExt;
 use std::time::SystemTime;
 
-use crate::models::{FlowType, OrderItem, OrderStatus, PlannedStatus, ServiceOrder};
 use super::AppState;
 use super::finance::create_planned_entry;
+use crate::models::{FlowType, OrderItem, OrderStatus, PlannedStatus, ServiceOrder};
 
 pub async fn list_orders(state: &AppState, company_id: &ObjectId) -> Result<Vec<ServiceOrder>> {
-    let mut cursor = state
-        .orders
-        .find(doc! { "company_id": company_id })
-        .await?;
+    let mut cursor = state.orders.find(doc! { "company_id": company_id }).await?;
     let mut items = Vec::new();
     while let Some(o) = cursor.try_next().await? {
         items.push(o);
@@ -20,7 +17,11 @@ pub async fn list_orders(state: &AppState, company_id: &ObjectId) -> Result<Vec<
 }
 
 pub async fn get_order_by_id(state: &AppState, id: &ObjectId) -> Result<Option<ServiceOrder>> {
-    state.orders.find_one(doc! { "_id": id }).await.map_err(Into::into)
+    state
+        .orders
+        .find_one(doc! { "_id": id })
+        .await
+        .map_err(Into::into)
 }
 
 pub async fn create_order(
@@ -57,7 +58,9 @@ pub async fn create_order(
             updated_at: None,
         })
         .await?;
-    res.inserted_id.as_object_id().context("order insert missing _id")
+    res.inserted_id
+        .as_object_id()
+        .context("order insert missing _id")
 }
 
 pub async fn update_order(
@@ -75,10 +78,12 @@ pub async fn update_order(
 ) -> Result<()> {
     let items_bson: Vec<bson::Document> = items
         .iter()
-        .map(|i| doc! {
-            "description": &i.description,
-            "quantity": i.quantity,
-            "unit_price": i.unit_price,
+        .map(|i| {
+            doc! {
+                "description": &i.description,
+                "quantity": i.quantity,
+                "unit_price": i.unit_price,
+            }
         })
         .collect();
 
@@ -118,7 +123,9 @@ pub async fn confirm_order(
     };
     let order_id = order.id.as_ref().context("order missing _id")?;
 
-    let due_date = order.scheduled_at.unwrap_or_else(|| DateTime::from_system_time(SystemTime::now()));
+    let due_date = order
+        .scheduled_at
+        .unwrap_or_else(|| DateTime::from_system_time(SystemTime::now()));
 
     let planned_id = create_planned_entry(
         state,

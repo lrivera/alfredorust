@@ -1,7 +1,6 @@
 /// Download raw CFDIs from SAT to cfdi_data/ for local inspection.
 /// Usage: cargo run --bin inspect_cfdis -- <start YYYY-MM-DD> <end YYYY-MM-DD>
 /// Example: cargo run --bin inspect_cfdis -- 2022-01-01 2026-04-21
-
 use std::path::PathBuf;
 
 use alfredodev::sat::{CfdiDownloadRequest, DownloadType, RequestType, download_cfdis};
@@ -10,7 +9,8 @@ use zip::ZipArchive;
 
 const RFC: &str = "RIAL8907172J3";
 const CER_PATH: &str = "tmp/FIEL_RIAL8907172J3_20221215134700/rial8907172j3.cer";
-const KEY_PATH: &str = "tmp/FIEL_RIAL8907172J3_20221215134700/Claveprivada_FIEL_RIAL8907172J3_20221215_134700.key";
+const KEY_PATH: &str =
+    "tmp/FIEL_RIAL8907172J3_20221215134700/Claveprivada_FIEL_RIAL8907172J3_20221215_134700.key";
 const KEY_PASSWORD: &str = "AxelNicole1303";
 
 #[tokio::main]

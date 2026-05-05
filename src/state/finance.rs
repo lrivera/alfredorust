@@ -9,7 +9,7 @@ use crate::models::{
     PlannedStatus, RecurringPlan, Transaction, TransactionType,
 };
 
-use super::{companies::company_default_currency, AppState, PLANNED_MONTHS_AHEAD};
+use super::{AppState, PLANNED_MONTHS_AHEAD, companies::company_default_currency};
 
 pub async fn list_accounts(state: &AppState) -> Result<Vec<Account>> {
     let mut cursor = state.accounts.find(doc! {}).await?;
@@ -73,7 +73,9 @@ pub async fn get_or_create_sat_account(
     {
         return acc.id.context("sat account missing _id");
     }
-    let currency = company_default_currency(state, company_id).await.unwrap_or_else(|_| "MXN".to_string());
+    let currency = company_default_currency(state, company_id)
+        .await
+        .unwrap_or_else(|_| "MXN".to_string());
     let res = state
         .accounts
         .insert_one(Account {
@@ -88,7 +90,9 @@ pub async fn get_or_create_sat_account(
             notes: Some("Cuenta automática para CFDIs importados".to_string()),
         })
         .await?;
-    res.inserted_id.as_object_id().context("sat account insert missing _id")
+    res.inserted_id
+        .as_object_id()
+        .context("sat account insert missing _id")
 }
 
 pub async fn update_account(
@@ -290,8 +294,17 @@ pub async fn get_or_create_contact_by_rfc(
     {
         return existing.id.context("contact missing _id");
     }
-    create_contact(state, company_id, name, contact_type, Some(rfc_upper), None, None, None)
-        .await
+    create_contact(
+        state,
+        company_id,
+        name,
+        contact_type,
+        Some(rfc_upper),
+        None,
+        None,
+        None,
+    )
+    .await
 }
 
 pub async fn update_contact(
@@ -667,11 +680,11 @@ pub async fn pay_planned_entry(
 
     let (account_from_id, account_to_id) = match pe.flow_type {
         FlowType::Expense => (Some(account_id.clone()), None),
-        FlowType::Income  => (None, Some(account_id.clone())),
+        FlowType::Income => (None, Some(account_id.clone())),
     };
     let tx_type = match pe.flow_type {
         FlowType::Expense => TransactionType::Expense,
-        FlowType::Income  => TransactionType::Income,
+        FlowType::Income => TransactionType::Income,
     };
 
     create_transaction(
@@ -894,9 +907,7 @@ pub async fn get_or_create_category(
         .find_one(doc! { "company_id": company_id, "name": name })
         .await?
     {
-        return existing
-            .id
-            .context("category missing _id");
+        return existing.id.context("category missing _id");
     }
     create_category(state, company_id, name, flow_type, None, None).await
 }
@@ -1415,4 +1426,3 @@ fn clamp_day(year: i32, month: u32, day: i32) -> u32 {
             last_day
         })
 }
-
