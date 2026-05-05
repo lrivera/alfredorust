@@ -1084,9 +1084,14 @@ struct ResourceUsagesTemplate {
     statuses: Vec<SimpleOption>,
     selected_status_id: String,
     selected_status_name: String,
-    hours: Vec<i32>,
+    hours: Vec<HourHeader>,
     rows: Vec<ResourceUsageGridRow>,
     resources_empty: bool,
+}
+
+struct HourHeader {
+    hour: i32,
+    is_work_hour: bool,
 }
 
 struct ResourceUsageGridRow {
@@ -1100,6 +1105,7 @@ struct ResourceUsageGridRow {
 
 struct ResourceUsageGridCell {
     hour: i32,
+    is_work_hour: bool,
     resources: Vec<ResourceUsageGridResource>,
     labels: String,
 }
@@ -1162,7 +1168,12 @@ pub async fn resource_usages_index(
         .cloned()
         .unwrap_or_else(|| chrono::Utc::now().format("%Y-%m-%d").to_string());
     let date_start = parse_html_date(&date).ok_or(StatusCode::BAD_REQUEST)?;
-    let hours: Vec<i32> = (7..22).collect();
+    let hours: Vec<HourHeader> = (0..24)
+        .map(|hour| HourHeader {
+            hour,
+            is_work_hour: (7..=22).contains(&hour),
+        })
+        .collect();
     let resources = list_resources(&state, &company_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
@@ -1180,8 +1191,10 @@ pub async fn resource_usages_index(
 
     let mut selected_cells: HashSet<(String, i32, String)> = HashSet::new();
     for hour in &hours {
-        let started_at = add_hours_for_route(date_start, *hour).ok_or(StatusCode::BAD_REQUEST)?;
-        let ended_at = add_hours_for_route(date_start, *hour + 1).ok_or(StatusCode::BAD_REQUEST)?;
+        let started_at =
+            add_hours_for_route(date_start, hour.hour).ok_or(StatusCode::BAD_REQUEST)?;
+        let ended_at =
+            add_hours_for_route(date_start, hour.hour + 1).ok_or(StatusCode::BAD_REQUEST)?;
         for usage in list_resource_usages_for_slot(&state, &company_id, started_at, ended_at)
             .await
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
@@ -1195,7 +1208,7 @@ pub async fn resource_usages_index(
             for allocation in allocations {
                 selected_cells.insert((
                     allocation.concept_id.to_hex(),
-                    *hour,
+                    hour.hour,
                     usage.resource_id.to_hex(),
                 ));
             }
@@ -1221,8 +1234,11 @@ pub async fn resource_usages_index(
                 let Some(resource_id) = resource.id.clone() else {
                     continue;
                 };
-                let selected =
-                    selected_cells.contains(&(concept_id.to_hex(), *hour, resource_id.to_hex()));
+                let selected = selected_cells.contains(&(
+                    concept_id.to_hex(),
+                    hour.hour,
+                    resource_id.to_hex(),
+                ));
                 if selected {
                     labels.push(resource.name.clone());
                 }
@@ -1230,7 +1246,7 @@ pub async fn resource_usages_index(
                     field_name: format!(
                         "cell_{}_{}_{}",
                         concept_id.to_hex(),
-                        hour,
+                        hour.hour,
                         resource_id.to_hex()
                     ),
                     resource_id: resource_id.to_hex(),
@@ -1239,7 +1255,8 @@ pub async fn resource_usages_index(
                 });
             }
             cells.push(ResourceUsageGridCell {
-                hour: *hour,
+                hour: hour.hour,
+                is_work_hour: hour.is_work_hour,
                 resources: cell_resources,
                 labels: labels.join(", "),
             });
@@ -1327,8 +1344,8 @@ pub async fn resource_usages_save_grid(
         &company_id,
         &status_id,
         date_start,
-        7,
-        22,
+        0,
+        24,
         &selections,
     )
     .await

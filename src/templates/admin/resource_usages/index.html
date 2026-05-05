@@ -7,7 +7,7 @@
       <div>
         <p class="text-xs font-semibold uppercase tracking-[0.25em] text-emerald-300">Captura diaria</p>
         <h1 class="mt-2 text-3xl font-semibold">Uso de recursos por hora</h1>
-        <p class="mt-2 max-w-3xl text-sm text-slate-300">Filtra por estado, selecciona recursos en cada hora y el sistema reparte el costo si el mismo recurso se usa en varios conceptos.</p>
+        <p class="mt-2 max-w-3xl text-sm text-slate-300">Filtra por estado, selecciona recursos en cada hora y el sistema reparte el costo si el mismo recurso se usa en varios conceptos. Horario normal: 7-22; las demás horas también se pueden capturar.</p>
       </div>
       <form method="get" action="/admin/resource_usages" class="grid gap-3 rounded-2xl bg-white/10 p-3 sm:grid-cols-[180px_220px_auto]">
         <div>
@@ -49,7 +49,7 @@
               <div class="mt-1 text-xs font-semibold uppercase tracking-wider text-slate-500">Concepto</div>
             </th>
             {% for h in hours %}
-            <th class="w-24 border-b border-r border-slate-200 px-2 py-3 text-center text-2xl font-black text-slate-950">{{ h }}</th>
+            <th class="w-24 border-b border-r border-slate-200 px-2 py-3 text-center text-2xl {% if h.is_work_hour %}font-black text-slate-950{% else %}font-semibold text-slate-300 bg-slate-50{% endif %}">{{ h.hour }}</th>
             {% endfor %}
           </tr>
         </thead>
@@ -62,31 +62,121 @@
               <div class="mt-1 text-xs text-slate-500">{{ row.quantity }} {{ row.unit }}</div>
             </th>
             {% for cell in row.cells %}
-            <td class="h-20 border-b border-r border-slate-200 p-1 align-top">
-              <details class="group h-full rounded-xl transition open:bg-sky-50">
-                <summary class="flex h-full cursor-pointer list-none items-center justify-center rounded-xl px-1 text-center text-xs font-semibold text-slate-700 hover:bg-slate-100 group-open:h-auto group-open:py-2">
-                  {% if cell.labels != "" %}{{ cell.labels }}{% else %}<span class="text-slate-300">+</span>{% endif %}
-                </summary>
-                <div class="mt-1 max-h-48 space-y-1 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
+            <td class="h-20 border-b border-r border-slate-200 p-1 align-top {% if !cell.is_work_hour %}bg-slate-50/70{% endif %}">
+              <div class="resource-cell group relative h-full rounded-xl transition" data-resource-cell>
+                <button type="button" class="resource-cell-button flex h-full w-full cursor-pointer items-center justify-center rounded-xl px-1 text-center text-xs {% if cell.is_work_hour %}font-semibold text-slate-700{% else %}font-medium text-slate-400{% endif %} hover:bg-slate-100" data-resource-cell-button>
+                  <span data-resource-cell-label>{% if cell.labels != "" %}{{ cell.labels }}{% else %}+{% endif %}</span>
+                </button>
+                <div class="resource-cell-menu absolute left-0 top-full z-30 mt-1 hidden max-h-48 min-w-44 space-y-1 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-xl" data-resource-cell-menu>
                   {% for resource in cell.resources %}
                   <label class="flex items-center gap-2 rounded-lg px-2 py-1 text-xs hover:bg-slate-50">
-                    <input type="checkbox" name="{{ resource.field_name }}" {% if resource.selected %}checked{% endif %} class="rounded border-slate-300 text-sky-600 focus:ring-sky-500">
+                    <input type="checkbox" name="{{ resource.field_name }}" data-resource-id="{{ resource.resource_id }}" data-resource-label="{{ resource.label }}" {% if resource.selected %}checked{% endif %} class="rounded border-slate-300 text-sky-600 focus:ring-sky-500">
                     <span>{{ resource.label }}</span>
                   </label>
                   {% else %}
                   <div class="px-2 py-1 text-xs text-slate-400">Sin recursos</div>
                   {% endfor %}
                 </div>
-              </details>
+              </div>
             </td>
             {% endfor %}
           </tr>
           {% else %}
-          <tr><td colspan="16" class="px-6 py-10 text-center text-slate-500">No hay conceptos activos en este estado.</td></tr>
+          <tr><td colspan="25" class="px-6 py-10 text-center text-slate-500">No hay conceptos activos en este estado.</td></tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
   </form>
 </section>
+{% endblock %}
+{% block scripts %}
+<script>
+  (() => {
+    const LONG_PRESS_MS = 450;
+
+    const updateCellLabel = (cell) => {
+      const label = cell.querySelector("[data-resource-cell-label]");
+      const checked = Array.from(cell.querySelectorAll("input[type='checkbox']:checked"));
+      if (!label) return;
+      label.textContent = checked.length
+        ? checked.map((input) => input.dataset.resourceLabel || "").filter(Boolean).join(", ")
+        : "+";
+      label.classList.toggle("text-slate-300", checked.length === 0);
+      cell.classList.toggle("bg-sky-50", checked.length > 0);
+    };
+
+    const closeMenus = (except) => {
+      document.querySelectorAll("[data-resource-cell-menu]").forEach((menu) => {
+        if (menu !== except) menu.classList.add("hidden");
+      });
+    };
+
+    const cycleSingleResource = (cell) => {
+      const inputs = Array.from(cell.querySelectorAll("input[type='checkbox']"));
+      if (!inputs.length) return;
+      const currentIndex = inputs.findIndex((input) => input.checked);
+      inputs.forEach((input) => { input.checked = false; });
+      let nextIndex = currentIndex + 1;
+      if (currentIndex === -1) {
+        const previousCell = cell.closest("td")?.previousElementSibling?.querySelector("[data-resource-cell]");
+        const previousInput = previousCell?.querySelector("input[type='checkbox']:checked");
+        const previousResourceId = previousInput?.dataset.resourceId;
+        const preferredIndex = previousResourceId
+          ? inputs.findIndex((input) => input.dataset.resourceId === previousResourceId)
+          : -1;
+        nextIndex = preferredIndex >= 0 ? preferredIndex : 0;
+      }
+      if (nextIndex < inputs.length) {
+        inputs[nextIndex].checked = true;
+      }
+      updateCellLabel(cell);
+    };
+
+    document.addEventListener("DOMContentLoaded", () => {
+      document.querySelectorAll("[data-resource-cell]").forEach((cell) => {
+        const button = cell.querySelector("[data-resource-cell-button]");
+        const menu = cell.querySelector("[data-resource-cell-menu]");
+        let timer = null;
+        let longPressed = false;
+
+        updateCellLabel(cell);
+
+        button?.addEventListener("pointerdown", (event) => {
+          longPressed = false;
+          timer = window.setTimeout(() => {
+            longPressed = true;
+            closeMenus(menu);
+            menu?.classList.toggle("hidden");
+          }, LONG_PRESS_MS);
+          event.preventDefault();
+        });
+
+        button?.addEventListener("pointerup", (event) => {
+          if (timer) window.clearTimeout(timer);
+          if (!longPressed) {
+            closeMenus(null);
+            cycleSingleResource(cell);
+          }
+          event.preventDefault();
+        });
+
+        button?.addEventListener("pointerleave", () => {
+          if (timer) window.clearTimeout(timer);
+        });
+
+        cell.querySelectorAll("input[type='checkbox']").forEach((input) => {
+          input.addEventListener("change", () => updateCellLabel(cell));
+        });
+      });
+
+      document.addEventListener("pointerdown", (event) => {
+        if (!(event.target instanceof Element)) return;
+        if (!event.target.closest("[data-resource-cell]")) {
+          closeMenus(null);
+        }
+      });
+    });
+  })();
+</script>
 {% endblock %}
