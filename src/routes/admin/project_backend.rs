@@ -14,6 +14,7 @@ use bson::{DateTime, oid::ObjectId};
 use serde::Deserialize;
 
 use crate::{
+    models::UserRole,
     session::SessionUser,
     state::{
         AppState, advance_project_concept_status, create_concept_status, create_project_concept,
@@ -30,7 +31,7 @@ use crate::{
     },
 };
 
-use super::finance::helpers::{SimpleOption, require_admin_active};
+use super::finance::helpers::{SimpleOption, require_active_company, require_admin_active};
 
 fn render<T: Template>(tpl: T) -> Result<Html<String>, StatusCode> {
     tpl.render()
@@ -786,6 +787,8 @@ struct ProjectDetailTemplate {
     description: String,
     summary: Vec<ProjectSummaryRow>,
     concepts: Vec<ProjectConceptRow>,
+    can_edit: bool,
+    can_view_money: bool,
 }
 
 struct ProjectSummaryRow {
@@ -797,6 +800,7 @@ struct ProjectSummaryRow {
 struct ProjectConceptRow {
     id: String,
     name: String,
+    description: String,
     quantity: String,
     unit: String,
     status: String,
@@ -821,6 +825,8 @@ struct ProjectConceptFormTemplate {
     position: String,
     statuses: Vec<SimpleOption>,
     is_edit: bool,
+    can_edit: bool,
+    can_view_money: bool,
     errors: Option<String>,
 }
 
@@ -842,7 +848,9 @@ pub async fn project_detail(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Html<String>, StatusCode> {
-    let company_id = require_admin_active(&session_user)?;
+    let company_id = require_active_company(&session_user);
+    let can_edit = session_user.is_admin();
+    let can_view_money = session_user.is_admin();
     let project_id = ObjectId::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
     let project = get_project_by_id_for_company(&state, &project_id, &company_id)
         .await
@@ -875,6 +883,7 @@ pub async fn project_detail(
             ProjectConceptRow {
                 id: c.id.map(|id| id.to_hex()).unwrap_or_default(),
                 name: c.name,
+                description: c.description.unwrap_or_default(),
                 quantity: format_quantity(c.quantity),
                 unit: c.unit.unwrap_or_default(),
                 status: status_name,
@@ -896,6 +905,8 @@ pub async fn project_detail(
         description: project.description.unwrap_or_default(),
         summary,
         concepts: rows,
+        can_edit,
+        can_view_money,
     })
 }
 
@@ -920,6 +931,8 @@ pub async fn project_concepts_new(
         position: "1".into(),
         statuses,
         is_edit: false,
+        can_edit: true,
+        can_view_money: true,
         errors: None,
     })
 }
@@ -965,7 +978,9 @@ pub async fn project_concepts_edit(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Html<String>, StatusCode> {
-    let company_id = require_admin_active(&session_user)?;
+    let company_id = require_active_company(&session_user);
+    let can_edit = session_user.is_admin();
+    let can_view_money = session_user.is_admin();
     let oid = ObjectId::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
     let concept = get_project_concept_by_id_for_company(&state, &oid, &company_id)
         .await
@@ -992,6 +1007,8 @@ pub async fn project_concepts_edit(
         position: concept.position.to_string(),
         statuses,
         is_edit: true,
+        can_edit,
+        can_view_money,
         errors: None,
     })
 }
@@ -1101,6 +1118,7 @@ struct ResourceUsagesTemplate {
     hours: Vec<HourHeader>,
     rows: Vec<ResourceUsageGridRow>,
     resources_empty: bool,
+    can_edit: bool,
 }
 
 struct HourHeader {
@@ -1164,7 +1182,7 @@ pub async fn resource_usages_index(
     State(state): State<Arc<AppState>>,
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<Html<String>, StatusCode> {
-    let company_id = require_admin_active(&session_user)?;
+    let company_id = require_active_company(&session_user);
     let statuses_raw = list_concept_statuses(&state, &company_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -1190,6 +1208,8 @@ pub async fn resource_usages_index(
         .get("date")
         .cloned()
         .unwrap_or_else(|| chrono::Utc::now().format("%Y-%m-%d").to_string());
+    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    let can_edit = can_save_resource_usage_date(session_user.active_role(), &date, &today);
     let date_start = parse_html_date(&date).ok_or(StatusCode::BAD_REQUEST)?;
     let hours: Vec<HourHeader> = (0..24)
         .map(|hour| HourHeader {
@@ -1393,7 +1413,12 @@ pub async fn resource_usages_index(
         hours,
         rows,
         resources_empty,
+        can_edit,
     })
+}
+
+fn can_save_resource_usage_date(role: &UserRole, date: &str, today: &str) -> bool {
+    role.is_admin() || date == today
 }
 
 pub async fn resource_usages_save_grid(
@@ -1401,10 +1426,7 @@ pub async fn resource_usages_save_grid(
     State(state): State<Arc<AppState>>,
     Form(form): Form<HashMap<String, String>>,
 ) -> impl IntoResponse {
-    let company_id = match require_admin_active(&session_user) {
-        Ok(id) => id,
-        Err(status) => return status.into_response(),
-    };
+    let company_id = require_active_company(&session_user);
     let date = form
         .get("date")
         .cloned()
@@ -1420,6 +1442,10 @@ pub async fn resource_usages_save_grid(
         Some(date) => date,
         None => return StatusCode::BAD_REQUEST.into_response(),
     };
+    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    if !can_save_resource_usage_date(session_user.active_role(), &date, &today) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
     let mut selections = Vec::new();
     for key in form.keys() {
         let Some(rest) = key.strip_prefix("cell_") else {
@@ -1771,4 +1797,37 @@ fn add_hours_for_route(date_start: DateTime, hour: i32) -> Option<DateTime> {
     Some(DateTime::from_millis(
         date_start.timestamp_millis() + i64::from(hour) * 3_600_000,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn admin_can_save_resource_usage_for_any_date() {
+        assert!(can_save_resource_usage_date(
+            &UserRole::Admin,
+            "2026-05-04",
+            "2026-05-05"
+        ));
+    }
+
+    #[test]
+    fn staff_can_save_resource_usage_only_for_today() {
+        assert!(can_save_resource_usage_date(
+            &UserRole::Staff,
+            "2026-05-05",
+            "2026-05-05"
+        ));
+        assert!(!can_save_resource_usage_date(
+            &UserRole::Staff,
+            "2026-05-04",
+            "2026-05-05"
+        ));
+        assert!(!can_save_resource_usage_date(
+            &UserRole::Staff,
+            "2026-05-06",
+            "2026-05-05"
+        ));
+    }
 }

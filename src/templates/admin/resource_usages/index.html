@@ -29,7 +29,7 @@
   <div class="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">No hay recursos activos configurados para el estado {{ selected_status_name }}. Edita recursos y asígnales este estado.</div>
   {% endif %}
 
-  <form method="post" action="/admin/resource_usages" class="space-y-4">
+  <form method="post" action="/admin/resource_usages" class="space-y-4" data-resource-usage-editable="{% if can_edit %}true{% else %}false{% endif %}">
     <input type="hidden" name="date" value="{{ date }}">
     <input type="hidden" name="status_id" value="{{ selected_status_id }}">
     <div class="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
@@ -37,7 +37,7 @@
         <h2 class="text-lg font-semibold text-slate-900">{{ selected_status_name }} · {{ date }}</h2>
         <p class="text-sm text-slate-500">Conceptos activos de proyectos no cancelados. Cada concepto solo permite recursos de su estado actual.</p>
       </div>
-      <button class="rounded-full bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-700">Guardar captura</button>
+      {% if can_edit %}<button class="rounded-full bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-700">Guardar captura</button>{% else %}<span class="rounded-full bg-slate-100 px-5 py-2 text-sm font-semibold text-slate-500">Solo lectura</span>{% endif %}
     </div>
 
     <div class="overflow-x-auto rounded-3xl border border-slate-200 bg-white shadow-sm">
@@ -82,7 +82,7 @@
                 <div class="resource-cell-menu absolute left-0 top-full z-30 mt-1 hidden max-h-48 min-w-44 space-y-1 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-xl" data-resource-cell-menu>
                   {% for resource in cell.resources %}
                   <label class="flex items-center gap-2 rounded-lg px-2 py-1 text-xs hover:bg-slate-50">
-                    <input type="checkbox" name="{{ resource.field_name }}" data-resource-id="{{ resource.resource_id }}" data-resource-label="{{ resource.label }}" {% if resource.selected %}checked{% endif %} class="rounded border-slate-300 text-sky-600 focus:ring-sky-500">
+                    <input type="checkbox" name="{{ resource.field_name }}" data-resource-id="{{ resource.resource_id }}" data-resource-label="{{ resource.label }}" {% if resource.selected %}checked{% endif %} {% if !can_edit %}disabled{% endif %} class="rounded border-slate-300 text-sky-600 focus:ring-sky-500">
                     <span>{{ resource.label }}</span>
                   </label>
                   {% else %}
@@ -157,6 +157,7 @@
     };
 
     document.addEventListener("DOMContentLoaded", () => {
+      const editable = document.querySelector("[data-resource-usage-editable]")?.dataset.resourceUsageEditable === "true";
       document.querySelectorAll("[data-resource-cell]").forEach((cell) => {
         const button = cell.querySelector("[data-resource-cell-button]");
         const menu = cell.querySelector("[data-resource-cell-menu]");
@@ -164,6 +165,8 @@
         let longPressed = false;
 
         updateCellLabel(cell);
+
+        if (!editable) return;
 
         button?.addEventListener("pointerdown", (event) => {
           longPressed = false;

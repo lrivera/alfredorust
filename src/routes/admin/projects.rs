@@ -21,7 +21,9 @@ use crate::{
     },
 };
 
-use super::finance::helpers::{SimpleOption, ensure_same_company, require_admin_active};
+use super::finance::helpers::{
+    SimpleOption, ensure_same_company, require_active_company, require_admin_active,
+};
 use super::finance::{category_options, contact_options};
 
 fn render<T: Template>(tpl: T) -> Result<Html<String>, StatusCode> {
@@ -34,11 +36,14 @@ fn render<T: Template>(tpl: T) -> Result<Html<String>, StatusCode> {
 #[template(path = "admin/projects/index.html")]
 struct ProjectsIndexTemplate {
     projects: Vec<ProjectRow>,
+    can_edit: bool,
+    can_view_money: bool,
 }
 
 struct ProjectRow {
     id: String,
     title: String,
+    description: String,
     contact_name: String,
     category_name: String,
     status: String,
@@ -54,7 +59,9 @@ pub async fn projects_index(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<Html<String>, StatusCode> {
-    let company_id = require_admin_active(&session_user)?;
+    let can_edit = session_user.is_admin();
+    let can_view_money = session_user.is_admin();
+    let company_id = require_active_company(&session_user);
 
     let projects = list_projects(&state, &company_id)
         .await
@@ -87,6 +94,7 @@ pub async fn projects_index(
         rows.push(ProjectRow {
             id: p.id.map(|i| i.to_hex()).unwrap_or_default(),
             title: p.title,
+            description: p.description.unwrap_or_default(),
             contact_name,
             category_name,
             status: p.status.as_str().to_string(),
@@ -118,7 +126,11 @@ pub async fn projects_index(
         });
     }
 
-    render(ProjectsIndexTemplate { projects: rows })
+    render(ProjectsIndexTemplate {
+        projects: rows,
+        can_edit,
+        can_view_money,
+    })
 }
 
 #[derive(Template)]

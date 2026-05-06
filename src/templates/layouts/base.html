@@ -53,17 +53,17 @@
             <a data-nav href="/" class="hover:text-sky-600 transition">Inicio</a>
             <a data-nav href="/account" class="hover:text-sky-600 transition">Mi cuenta</a>
             <a data-nav data-role="admin-only" href="/admin/users" class="hover:text-sky-600 transition">Usuarios</a>
-            <a data-nav href="/admin/companies" class="hover:text-sky-600 transition">Compañías</a>
+            <a data-nav data-role="admin-only" href="/admin/companies" class="hover:text-sky-600 transition">Compañías</a>
             <a data-nav data-role="admin-only" href="/admin/accounts" class="hover:text-sky-600 transition">Cuentas</a>
             <a data-nav data-role="admin-only" href="/admin/categories" class="hover:text-sky-600 transition">Categorías</a>
             <a data-nav data-role="admin-only" href="/admin/contacts" class="hover:text-sky-600 transition">Contactos</a>
             <a data-nav data-role="admin-only" href="/admin/recurring_plans" class="hover:text-sky-600 transition">Planes</a>
             <a data-nav data-role="admin-only" href="/admin/planned_entries" class="hover:text-sky-600 transition">Compromisos</a>
             <a data-nav data-role="admin-only" href="/admin/orders" class="hover:text-sky-600 transition">Órdenes</a>
-            <a data-nav data-role="admin-only" href="/admin/projects" class="hover:text-sky-600 transition">Proyectos</a>
+            <a data-nav data-role="staff-visible" href="/admin/projects" class="hover:text-sky-600 transition">Proyectos</a>
             <a data-nav data-role="admin-only" href="/admin/concept_statuses" class="hover:text-sky-600 transition">Estados</a>
             <a data-nav data-role="admin-only" href="/admin/resources" class="hover:text-sky-600 transition">Recursos</a>
-            <a data-nav data-role="admin-only" href="/admin/resource_usages" class="hover:text-sky-600 transition">Uso recursos</a>
+            <a data-nav data-role="staff-visible" href="/admin/resource_usages" class="hover:text-sky-600 transition">Uso recursos</a>
             <a data-nav data-role="admin-only" href="/admin/resource_logs" class="hover:text-sky-600 transition">Registros</a>
             <a data-nav data-role="admin-only" href="/admin/transactions" class="hover:text-sky-600 transition">Movimientos</a>
             <a data-nav data-role="admin-only" href="/admin/cfdis" class="hover:text-sky-600 transition">Facturas</a>
@@ -176,6 +176,9 @@
       const applyRoleVisibility = (isAdmin) => {
         document.querySelectorAll("[data-role='admin-only']").forEach((el) => {
           el.classList.toggle("hidden", !isAdmin);
+        });
+        document.querySelectorAll("[data-role='staff-visible']").forEach((el) => {
+          el.classList.remove("hidden");
         });
       };
 

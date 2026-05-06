@@ -23,6 +23,10 @@ pub fn require_admin_active(session_user: &SessionUser) -> Result<ObjectId, Stat
     Ok(session_user.active_company_id().clone())
 }
 
+pub fn require_active_company(session_user: &SessionUser) -> ObjectId {
+    session_user.active_company_id().clone()
+}
+
 pub fn ensure_same_company(
     entity_company: &ObjectId,
     active_company: &ObjectId,
