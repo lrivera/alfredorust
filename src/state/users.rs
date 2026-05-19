@@ -6,7 +6,7 @@ use rand::RngCore;
 use slug::slugify;
 use std::time::{Duration, SystemTime};
 
-use crate::models::{Session, User, UserCompany, UserRole};
+use crate::models::{Session, User, UserCompany, UserPermission, UserRole};
 
 use super::{AppState, SESSION_TTL_SECONDS};
 
@@ -22,7 +22,9 @@ pub struct UserWithCompany {
     pub company_name: String,
     pub company_names: Vec<String>,
     pub company_roles: Vec<UserRole>,
+    pub company_permissions: Vec<Vec<UserPermission>>,
     pub role: UserRole,
+    pub permissions: Vec<UserPermission>,
 }
 
 pub async fn find_user(state: &AppState, email: &str) -> Result<Option<UserWithCompany>> {
@@ -99,11 +101,27 @@ pub async fn create_user(
     secret: &str,
     company_roles: &[(ObjectId, UserRole)],
 ) -> Result<ObjectId> {
-    let (primary, _) = company_roles
+    let company_roles_permissions = company_roles
+        .iter()
+        .map(|(id, role)| (id.clone(), role.clone(), Vec::new()))
+        .collect::<Vec<_>>();
+    create_user_with_permissions(state, email, secret, &company_roles_permissions).await
+}
+
+pub async fn create_user_with_permissions(
+    state: &AppState,
+    email: &str,
+    secret: &str,
+    company_roles_permissions: &[(ObjectId, UserRole, Vec<UserPermission>)],
+) -> Result<ObjectId> {
+    let (primary, _) = company_roles_permissions
         .first()
-        .cloned()
+        .map(|(id, role, _)| (id.clone(), role.clone()))
         .context("at least one company is required for user")?;
-    let company_ids: Vec<ObjectId> = company_roles.iter().map(|(id, _)| id.clone()).collect();
+    let company_ids: Vec<ObjectId> = company_roles_permissions
+        .iter()
+        .map(|(id, _, _)| id.clone())
+        .collect();
     let res = state
         .users
         .insert_one(User {
@@ -123,7 +141,7 @@ pub async fn create_user(
         .user_companies
         .delete_many(doc! { "user_id": &uid })
         .await;
-    for (cid, role) in company_roles {
+    for (cid, role, permissions) in company_roles_permissions {
         let _ = state
             .user_companies
             .insert_one(UserCompany {
@@ -131,6 +149,7 @@ pub async fn create_user(
                 user_id: uid.clone(),
                 company_id: cid.clone(),
                 role: role.clone(),
+                permissions: permissions.clone(),
             })
             .await;
     }
@@ -145,11 +164,28 @@ pub async fn update_user(
     secret: &str,
     company_roles: &[(ObjectId, UserRole)],
 ) -> Result<()> {
-    let (primary, _) = company_roles
+    let company_roles_permissions = company_roles
+        .iter()
+        .map(|(id, role)| (id.clone(), role.clone(), Vec::new()))
+        .collect::<Vec<_>>();
+    update_user_with_permissions(state, id, email, secret, &company_roles_permissions).await
+}
+
+pub async fn update_user_with_permissions(
+    state: &AppState,
+    id: &ObjectId,
+    email: &str,
+    secret: &str,
+    company_roles_permissions: &[(ObjectId, UserRole, Vec<UserPermission>)],
+) -> Result<()> {
+    let (primary, _) = company_roles_permissions
         .first()
-        .cloned()
+        .map(|(id, role, _)| (id.clone(), role.clone()))
         .context("at least one company is required for user")?;
-    let company_ids: Vec<ObjectId> = company_roles.iter().map(|(id, _)| id.clone()).collect();
+    let company_ids: Vec<ObjectId> = company_roles_permissions
+        .iter()
+        .map(|(id, _, _)| id.clone())
+        .collect();
     state
         .users
         .update_one(
@@ -162,7 +198,7 @@ pub async fn update_user(
         .user_companies
         .delete_many(doc! { "user_id": id })
         .await;
-    for (cid, role) in company_roles {
+    for (cid, role, permissions) in company_roles_permissions {
         let _ = state
             .user_companies
             .insert_one(UserCompany {
@@ -170,6 +206,7 @@ pub async fn update_user(
                 user_id: id.clone(),
                 company_id: cid.clone(),
                 role: role.clone(),
+                permissions: permissions.clone(),
             })
             .await;
     }
@@ -227,6 +264,7 @@ pub async fn add_user_to_company(
                 user_id: user_id.clone(),
                 company_id: company_id.clone(),
                 role,
+                permissions: Vec::new(),
             })
             .await?;
     }
@@ -277,6 +315,7 @@ async fn build_user_with_company(state: &AppState, user: User) -> Result<UserWit
     let mut company_names = Vec::new();
     let mut company_slugs = Vec::new();
     let mut company_roles = Vec::new();
+    let mut company_permissions = Vec::new();
     for cid in &all_company_ids {
         if let Some(c) = state.companies.find_one(doc! { "_id": cid }).await? {
             company_names.push(c.name.clone());
@@ -287,7 +326,13 @@ async fn build_user_with_company(state: &AppState, user: User) -> Result<UserWit
             .find(|m| &m.company_id == cid)
             .map(|m| m.role.clone())
             .unwrap_or(UserRole::Staff);
+        let permissions_for_company = memberships
+            .iter()
+            .find(|m| &m.company_id == cid)
+            .map(|m| m.permissions.clone())
+            .unwrap_or_default();
         company_roles.push(role_for_company);
+        company_permissions.push(permissions_for_company);
     }
     let primary_company = state
         .companies
@@ -313,6 +358,7 @@ async fn build_user_with_company(state: &AppState, user: User) -> Result<UserWit
     };
 
     let effective_role = company_roles.get(0).cloned().unwrap_or(UserRole::Staff);
+    let effective_permissions = company_permissions.first().cloned().unwrap_or_default();
     Ok(UserWithCompany {
         id,
         email: user.email,
@@ -324,6 +370,24 @@ async fn build_user_with_company(state: &AppState, user: User) -> Result<UserWit
         company_name: primary_company.name,
         company_names,
         company_roles,
+        company_permissions,
         role: effective_role,
+        permissions: effective_permissions,
     })
+}
+
+pub async fn update_user_company_permissions(
+    state: &AppState,
+    user_id: &ObjectId,
+    company_id: &ObjectId,
+    permissions: Vec<UserPermission>,
+) -> Result<()> {
+    state
+        .user_companies
+        .update_one(
+            doc! { "user_id": user_id, "company_id": company_id },
+            doc! { "$set": { "permissions": mongodb::bson::to_bson(&permissions)? } },
+        )
+        .await?;
+    Ok(())
 }

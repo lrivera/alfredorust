@@ -13,6 +13,11 @@ use crate::totp::build_totp;
 /// Returns a JSON with { email, company, otpauth_url } to enroll in authenticator apps.
 pub async fn setup(session: SessionUser) -> Response {
     let current = session.user();
+    let permissions = current
+        .permissions
+        .iter()
+        .map(|permission| permission.as_str())
+        .collect::<Vec<_>>();
 
     match build_totp(&current.company_name, &current.email, &current.secret) {
         Ok(totp) => {
@@ -23,6 +28,7 @@ pub async fn setup(session: SessionUser) -> Response {
                     "email": current.email,
                     "company": current.company_name,
                     "role": current.role.as_str(),
+                    "permissions": permissions,
                     "otpauth_url": url
                 })),
             )

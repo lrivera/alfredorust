@@ -17,10 +17,11 @@ use mongodb::bson::oid::ObjectId;
 use crate::filters;
 
 use crate::{
-    models::UserRole,
+    models::{UserPermission, UserRole},
     session::SessionUser,
     state::{
-        AppState, create_user, delete_user, get_user_by_id, list_companies, list_users, update_user,
+        AppState, create_user_with_permissions, delete_user, get_user_by_id, list_companies,
+        list_users, update_user_with_permissions,
     },
     totp::{DEFAULT_SECRET_BYTES, build_totp, generate_base32_secret_n},
 };
@@ -71,6 +72,11 @@ struct CompanyOption {
     name: String,
     selected: bool,
     role: String,
+    view_projects: bool,
+    view_project_money: bool,
+    edit_resource_usage_today: bool,
+    view_resource_usage_history: bool,
+    view_timeline: bool,
 }
 
 pub(crate) struct UserFormData {
@@ -78,6 +84,7 @@ pub(crate) struct UserFormData {
     secret: String,
     company_ids: Vec<String>,
     role_map: std::collections::HashMap<String, String>,
+    permission_map: HashMap<String, HashSet<String>>,
 }
 
 fn parse_user_form(body: &str) -> Result<UserFormData, String> {
@@ -85,6 +92,7 @@ fn parse_user_form(body: &str) -> Result<UserFormData, String> {
     let mut secret = String::new();
     let mut company_ids = Vec::new();
     let mut role_map = HashMap::new();
+    let mut permission_map: HashMap<String, HashSet<String>> = HashMap::new();
 
     for (key, value) in form_urlencoded::parse(body.as_bytes()) {
         match key.as_ref() {
@@ -93,6 +101,22 @@ fn parse_user_form(body: &str) -> Result<UserFormData, String> {
             "company_ids" => company_ids.push(value.into_owned()),
             key if key.starts_with("role_") => {
                 role_map.insert(key.to_string(), value.into_owned());
+            }
+            key if key.starts_with("perm_") => {
+                let value = value.into_owned();
+                let Some(rest) = key.strip_prefix("perm_") else {
+                    continue;
+                };
+                let Some((company_id, permission)) = rest.split_once('_') else {
+                    continue;
+                };
+                permission_map
+                    .entry(company_id.to_string())
+                    .or_default()
+                    .insert(permission.to_string());
+                if value.is_empty() {
+                    continue;
+                }
             }
             _ => {}
         }
@@ -103,6 +127,7 @@ fn parse_user_form(body: &str) -> Result<UserFormData, String> {
         secret,
         company_ids,
         role_map,
+        permission_map,
     })
 }
 
@@ -259,11 +284,12 @@ pub async fn users_edit(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let selected_roles: Vec<(ObjectId, UserRole)> = user
+    let selected_roles: Vec<(ObjectId, UserRole, Vec<UserPermission>)> = user
         .company_ids
         .iter()
         .zip(user.company_roles.iter())
-        .map(|(id, role)| (id.clone(), role.clone()))
+        .zip(user.company_permissions.iter())
+        .map(|((id, role), permissions)| (id.clone(), role.clone(), permissions.clone()))
         .collect();
     let companies = load_company_options(
         &state,
@@ -348,7 +374,8 @@ pub async fn users_update(
                 .company_ids
                 .iter()
                 .zip(target_user.company_roles.iter())
-                .map(|(id, role)| (id.clone(), role.clone()))
+                .zip(target_user.company_permissions.iter())
+                .map(|((id, role), permissions)| (id.clone(), role.clone(), permissions.clone()))
                 .collect(),
         )),
         &state,
@@ -444,16 +471,16 @@ pub async fn users_qrcode(
 
 async fn process_user_form(
     form: UserFormData,
-    existing: Option<(&ObjectId, Vec<(ObjectId, UserRole)>)>,
+    existing: Option<(&ObjectId, Vec<(ObjectId, UserRole, Vec<UserPermission>)>)>,
     state: &Arc<AppState>,
     allow_role_change: bool,
     allowed_company_ids: &[ObjectId],
 ) -> Result<(), (UserFormView, Vec<CompanyOption>, String)> {
     let allowed: HashSet<ObjectId> = allowed_company_ids.iter().cloned().collect();
-    let mut company_roles: Vec<(ObjectId, UserRole)> = Vec::new();
+    let mut company_roles: Vec<(ObjectId, UserRole, Vec<UserPermission>)> = Vec::new();
     for raw in &form.company_ids {
         if let Ok(id) = ObjectId::from_str(raw.trim()) {
-            if allowed.contains(&id) && !company_roles.iter().any(|(cid, _)| cid == &id) {
+            if allowed.contains(&id) && !company_roles.iter().any(|(cid, _, _)| cid == &id) {
                 let role_key = format!("role_{}", id.to_hex());
                 let role_val = form
                     .role_map
@@ -461,7 +488,13 @@ async fn process_user_form(
                     .cloned()
                     .unwrap_or_else(|| "staff".to_string());
                 let role = role_from_str(&role_val);
-                company_roles.push((id, role));
+                let permission_values = form
+                    .permission_map
+                    .get(&id.to_hex())
+                    .cloned()
+                    .unwrap_or_default();
+                let permissions = permissions_from_values(&permission_values);
+                company_roles.push((id, role, permissions));
             }
         }
     }
@@ -481,13 +514,13 @@ async fn process_user_form(
         if let Some((_id, existing_roles)) = &existing {
             company_roles = company_roles
                 .into_iter()
-                .map(|(cid, _)| {
+                .map(|(cid, _, permissions)| {
                     let role = existing_roles
                         .iter()
-                        .find(|(eid, _)| eid == &cid)
-                        .map(|(_, r)| r.clone())
+                        .find(|(eid, _, _)| eid == &cid)
+                        .map(|(_, r, _)| r.clone())
                         .unwrap_or(UserRole::Staff);
-                    (cid, role)
+                    (cid, role, permissions)
                 })
                 .collect();
         }
@@ -518,7 +551,8 @@ async fn process_user_form(
 
     if let Some((id, _existing_roles)) = existing {
         if let Err(_) =
-            update_user(state, id, &email_trimmed, &secret_trimmed, &company_roles).await
+            update_user_with_permissions(state, id, &email_trimmed, &secret_trimmed, &company_roles)
+                .await
         {
             let companies = load_company_options(
                 state,
@@ -534,7 +568,8 @@ async fn process_user_form(
                 "No se pudo actualizar el usuario".into(),
             ));
         }
-    } else if let Err(_) = create_user(state, &email_trimmed, &secret_trimmed, &company_roles).await
+    } else if let Err(_) =
+        create_user_with_permissions(state, &email_trimmed, &secret_trimmed, &company_roles).await
     {
         let companies = load_company_options(
             state,
@@ -561,9 +596,26 @@ fn form_view_from_data(data: &UserFormData) -> UserFormView {
     }
 }
 
+fn permissions_from_values(values: &HashSet<String>) -> Vec<UserPermission> {
+    let mut permissions = Vec::new();
+    for value in values {
+        match value.as_str() {
+            "view_projects" => permissions.push(UserPermission::ViewProjects),
+            "view_project_money" => permissions.push(UserPermission::ViewProjectMoney),
+            "edit_resource_usage_today" => permissions.push(UserPermission::EditResourceUsageToday),
+            "view_resource_usage_history" => {
+                permissions.push(UserPermission::ViewResourceUsageHistory)
+            }
+            "view_timeline" => permissions.push(UserPermission::ViewTimeline),
+            _ => {}
+        }
+    }
+    permissions
+}
+
 async fn load_company_options(
     state: &Arc<AppState>,
-    selected: Option<&[(ObjectId, UserRole)]>,
+    selected: Option<&[(ObjectId, UserRole, Vec<UserPermission>)]>,
     allowed: &[ObjectId],
     role_map: Option<&HashMap<String, String>>,
 ) -> Result<Vec<CompanyOption>, StatusCode> {
@@ -580,22 +632,38 @@ async fn load_company_options(
             }
             let id = cid.to_hex();
             let selected_flag = selected
-                .map(|sel_list| sel_list.iter().any(|(sel, _)| sel.to_hex() == id))
+                .map(|sel_list| sel_list.iter().any(|(sel, _, _)| sel.to_hex() == id))
                 .unwrap_or(false);
             let selected_role = selected
                 .and_then(|sel_list| {
                     sel_list
                         .iter()
-                        .find(|(sel, _)| sel.to_hex() == id)
-                        .map(|(_, role)| role.as_str().to_string())
+                        .find(|(sel, _, _)| sel.to_hex() == id)
+                        .map(|(_, role, _)| role.as_str().to_string())
                 })
                 .or_else(|| role_map.and_then(|map| map.get(&format!("role_{}", id)).cloned()))
                 .unwrap_or_else(|| UserRole::Staff.as_str().to_string());
+            let selected_permissions = selected
+                .and_then(|sel_list| {
+                    sel_list
+                        .iter()
+                        .find(|(sel, _, _)| sel.to_hex() == id)
+                        .map(|(_, _, permissions)| permissions.clone())
+                })
+                .unwrap_or_default();
             Some(CompanyOption {
                 id,
                 name: company.name,
                 selected: selected_flag,
                 role: selected_role,
+                view_projects: selected_permissions.contains(&UserPermission::ViewProjects),
+                view_project_money: selected_permissions
+                    .contains(&UserPermission::ViewProjectMoney),
+                edit_resource_usage_today: selected_permissions
+                    .contains(&UserPermission::EditResourceUsageToday),
+                view_resource_usage_history: selected_permissions
+                    .contains(&UserPermission::ViewResourceUsageHistory),
+                view_timeline: selected_permissions.contains(&UserPermission::ViewTimeline),
             })
         })
         .collect();

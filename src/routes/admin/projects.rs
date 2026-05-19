@@ -13,7 +13,7 @@ use serde::Deserialize;
 use crate::filters;
 
 use crate::{
-    models::ProjectPriority,
+    models::{ProjectPriority, UserPermission},
     session::SessionUser,
     state::{
         AppState, advance_project_phase, create_project, delete_project,
@@ -59,8 +59,11 @@ pub async fn projects_index(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<Html<String>, StatusCode> {
+    if !session_user.has_permission(UserPermission::ViewProjects) {
+        return Err(StatusCode::FORBIDDEN);
+    }
     let can_edit = session_user.is_admin();
-    let can_view_money = session_user.is_admin();
+    let can_view_money = session_user.has_permission(UserPermission::ViewProjectMoney);
     let company_id = require_active_company(&session_user);
 
     let projects = list_projects(&state, &company_id)

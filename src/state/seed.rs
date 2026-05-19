@@ -275,6 +275,7 @@ pub(super) async fn seed_default_users(
                     user_id: user_id.clone(),
                     company_id: cid.clone(),
                     role: role_final.clone(),
+                    permissions: Vec::new(),
                 })
                 .await;
         }

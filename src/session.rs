@@ -13,7 +13,10 @@ use futures::future::BoxFuture;
 
 use mongodb::bson::oid::ObjectId;
 
-use crate::state::{AppState, UserWithCompany, find_user_by_session};
+use crate::{
+    models::UserPermission,
+    state::{AppState, UserWithCompany, find_user_by_session},
+};
 
 pub const SESSION_COOKIE_NAME: &str = "session";
 
@@ -75,6 +78,11 @@ pub async fn require_session(
                     if let Some(role) = user.company_roles.get(idx) {
                         user.role = role.clone();
                     }
+                    user.permissions = user
+                        .company_permissions
+                        .get(idx)
+                        .cloned()
+                        .unwrap_or_default();
                 } else {
                     // Subdominio no corresponde a ninguna compañía del usuario
                     return Err(unauthorized_response());
@@ -110,6 +118,10 @@ impl SessionUser {
 
     pub fn active_role(&self) -> &crate::models::UserRole {
         &self.0.user.role
+    }
+
+    pub fn has_permission(&self, permission: UserPermission) -> bool {
+        self.is_admin() || self.0.user.permissions.contains(&permission)
     }
 
     pub fn active_company_id(&self) -> &ObjectId {

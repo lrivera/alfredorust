@@ -14,15 +14,15 @@ use axum::{
 use tower::ServiceExt; // for oneshot
 
 use alfredodev::{
-    models::{ProjectPriority, ResourceType, UserRole},
+    models::{ProjectPriority, ResourceType, UserPermission, UserRole},
     routes,
     session::{SESSION_COOKIE_NAME, require_session},
     state::{
         AppState, add_user_to_company, create_company, create_project, create_resource,
-        create_resource_log, create_session, create_user, get_user_by_id, list_accounts,
-        list_categories, list_companies, list_contacts, list_forecasts, list_planned_entries,
-        list_projects, list_recurring_plans, list_resource_logs, list_resources, list_transactions,
-        list_users,
+        create_resource_log, create_session, create_user, create_user_with_permissions,
+        get_user_by_id, list_accounts, list_categories, list_companies, list_contacts,
+        list_forecasts, list_planned_entries, list_projects, list_recurring_plans,
+        list_resource_logs, list_resources, list_transactions, list_users,
     },
 };
 use bson::DateTime;
@@ -180,6 +180,10 @@ fn build_app(state: Arc<AppState>) -> Router {
         .route(
             "/admin/resource_logs/{id}/end",
             post(routes::resource_logs_end),
+        )
+        .route(
+            "/admin/resource_usages",
+            get(routes::resource_usages_index).post(routes::resource_usages_save_grid),
         )
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
@@ -508,6 +512,146 @@ async fn users_update_can_add_allowed_company_membership() {
             .and_then(|idx| target.company_roles.get(idx)),
         Some(&UserRole::Admin)
     );
+
+    common::teardown(Some(ctx)).await;
+}
+
+#[tokio::test]
+async fn staff_permissions_gate_project_resource_usage_and_timeline_routes() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let shared = Arc::new(state.clone());
+
+    let company = list_companies(&state).await.unwrap().remove(0);
+    let company_id = company.id.clone().unwrap();
+    let host = format!("{}.miapp.local", company.slug);
+    create_project(
+        &state,
+        &company_id,
+        "Proyecto Staff Permisos",
+        None,
+        None,
+        None,
+        ProjectPriority::Medium,
+        Some(1000.0),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let restricted_id = create_user(
+        &state,
+        "staff-restricted@example.com",
+        "SECRET",
+        &[(company_id.clone(), UserRole::Staff)],
+    )
+    .await
+    .unwrap();
+    let permitted_id = create_user_with_permissions(
+        &state,
+        "staff-permitted@example.com",
+        "SECRET",
+        &[(
+            company_id.clone(),
+            UserRole::Staff,
+            vec![
+                UserPermission::ViewProjects,
+                UserPermission::EditResourceUsageToday,
+            ],
+        )],
+    )
+    .await
+    .unwrap();
+    let timeline_id = create_user_with_permissions(
+        &state,
+        "staff-timeline@example.com",
+        "SECRET",
+        &[(
+            company_id.clone(),
+            UserRole::Staff,
+            vec![UserPermission::ViewTimeline],
+        )],
+    )
+    .await
+    .unwrap();
+
+    let restricted = get_user_by_id(&state, &restricted_id)
+        .await
+        .unwrap()
+        .unwrap();
+    let permitted = get_user_by_id(&state, &permitted_id)
+        .await
+        .unwrap()
+        .unwrap();
+    let timeline = get_user_by_id(&state, &timeline_id).await.unwrap().unwrap();
+    let restricted_token = create_session(&state, &restricted.email).await.unwrap();
+    let permitted_token = create_session(&state, &permitted.email).await.unwrap();
+    let timeline_token = create_session(&state, &timeline.email).await.unwrap();
+    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+
+    let app = build_app(shared.clone());
+    let (status, _) = get_with_cookie(app, &host, "/admin/projects", &restricted_token).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let app = build_app(shared.clone());
+    let (status, body) = get_with_cookie(app, &host, "/admin/projects", &permitted_token).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains("Proyecto Staff Permisos"));
+    assert!(!body.contains("$1,000.00"));
+
+    let app = build_app(shared.clone());
+    let (status, _) = get_with_cookie(
+        app,
+        &host,
+        &format!("/admin/resource_usages?date={today}&status_id=all"),
+        &restricted_token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let app = build_app(shared.clone());
+    let (status, _) = get_with_cookie(
+        app,
+        &host,
+        &format!("/admin/resource_usages?date={today}&status_id=all"),
+        &permitted_token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let app = build_app(shared.clone());
+    let status = post_form_with_cookie(
+        app,
+        &host,
+        "/admin/resource_usages",
+        &permitted_token,
+        format!("date={today}&status_id=all"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+
+    let app = build_app(shared.clone());
+    let status = post_form_with_cookie(
+        app,
+        &host,
+        "/admin/resource_usages",
+        &permitted_token,
+        "date=2026-05-04&status_id=all".into(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let app = build_app(shared.clone());
+    let (status, _) = get_with_cookie(app, &host, "/tiempo", &restricted_token).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let app = build_app(shared);
+    let (status, _) = get_with_cookie(app, &host, "/tiempo", &timeline_token).await;
+    assert_eq!(status, StatusCode::OK);
 
     common::teardown(Some(ctx)).await;
 }

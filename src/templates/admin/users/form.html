@@ -48,6 +48,16 @@
                 </select>
                 {% endif %}
               </div>
+              <div class="basis-full rounded-md border border-slate-100 bg-slate-50 p-3 text-xs text-slate-600">
+                <p class="mb-2 font-semibold text-slate-700">Permisos staff</p>
+                <div class="grid gap-2 sm:grid-cols-2">
+                  <label class="inline-flex items-center gap-2"><input type="checkbox" name="perm_{{ company.id }}_view_projects" {% if company.view_projects %}checked{% endif %}> Ver proyectos</label>
+                  <label class="inline-flex items-center gap-2"><input type="checkbox" name="perm_{{ company.id }}_edit_resource_usage_today" {% if company.edit_resource_usage_today %}checked{% endif %}> Editar uso recursos hoy</label>
+                  <label class="inline-flex items-center gap-2"><input type="checkbox" name="perm_{{ company.id }}_view_resource_usage_history" {% if company.view_resource_usage_history %}checked{% endif %}> Ver historial uso recursos</label>
+                  <label class="inline-flex items-center gap-2"><input type="checkbox" name="perm_{{ company.id }}_view_project_money" {% if company.view_project_money %}checked{% endif %}> Ver montos de proyectos</label>
+                  <label class="inline-flex items-center gap-2"><input type="checkbox" name="perm_{{ company.id }}_view_timeline" {% if company.view_timeline %}checked{% endif %}> Ver timeline financiero</label>
+                </div>
+              </div>
             </div>
           {% endfor %}
         </div>

@@ -1,11 +1,12 @@
 #[path = "common/mod.rs"]
 mod common;
 
-use alfredodev::models::{AccountType, UserRole};
+use alfredodev::models::{AccountType, UserPermission, UserRole};
 use alfredodev::state::{
     add_user_to_company, create_account, create_company, create_session, create_user,
-    delete_account, delete_company, delete_session, delete_user, find_user_by_session,
-    get_company_by_id, get_user_by_id, list_companies, list_users, update_company, update_user,
+    create_user_with_permissions, delete_account, delete_company, delete_session, delete_user,
+    find_user_by_session, get_company_by_id, get_user_by_id, list_companies, list_users,
+    update_company, update_user, update_user_with_permissions,
 };
 
 #[tokio::test]
@@ -104,6 +105,73 @@ async fn adding_memberships_reflects_in_user_companies() {
     assert!(user.company_ids.contains(&first_company));
     assert!(user.company_ids.contains(&second_company));
     assert_eq!(user.company_roles.len(), 2);
+
+    common::teardown(Some(ctx)).await;
+}
+
+#[tokio::test]
+async fn user_company_permissions_are_persisted() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+
+    let companies = list_companies(&state).await.unwrap();
+    let first_company = companies[0].id.clone().unwrap();
+    let second_company = create_company(&state, "Permisos Extra", "", "MXN", true, None)
+        .await
+        .unwrap();
+
+    let user_id = create_user_with_permissions(
+        &state,
+        "permissions@example.com",
+        "secret",
+        &[
+            (
+                first_company.clone(),
+                UserRole::Staff,
+                vec![UserPermission::ViewProjects],
+            ),
+            (
+                second_company.clone(),
+                UserRole::Staff,
+                vec![UserPermission::EditResourceUsageToday],
+            ),
+        ],
+    )
+    .await
+    .unwrap();
+
+    let created = get_user_by_id(&state, &user_id).await.unwrap().unwrap();
+    assert_eq!(created.permissions, vec![UserPermission::ViewProjects]);
+    let second_idx = created
+        .company_ids
+        .iter()
+        .position(|id| id == &second_company)
+        .expect("second company membership exists");
+    assert_eq!(
+        created.company_permissions[second_idx],
+        vec![UserPermission::EditResourceUsageToday]
+    );
+
+    update_user_with_permissions(
+        &state,
+        &user_id,
+        "permissions+updated@example.com",
+        "secret2",
+        &[(
+            first_company.clone(),
+            UserRole::Staff,
+            vec![UserPermission::ViewTimeline],
+        )],
+    )
+    .await
+    .unwrap();
+
+    let updated = get_user_by_id(&state, &user_id).await.unwrap().unwrap();
+    assert_eq!(updated.company_ids, vec![first_company]);
+    assert_eq!(updated.permissions, vec![UserPermission::ViewTimeline]);
 
     common::teardown(Some(ctx)).await;
 }

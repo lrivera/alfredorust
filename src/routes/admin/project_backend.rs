@@ -14,7 +14,7 @@ use bson::{DateTime, oid::ObjectId};
 use serde::Deserialize;
 
 use crate::{
-    models::UserRole,
+    models::{UserPermission, UserRole},
     session::SessionUser,
     state::{
         AppState, advance_project_concept_status, create_concept_status, create_project_concept,
@@ -848,9 +848,12 @@ pub async fn project_detail(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Html<String>, StatusCode> {
+    if !session_user.has_permission(UserPermission::ViewProjects) {
+        return Err(StatusCode::FORBIDDEN);
+    }
     let company_id = require_active_company(&session_user);
     let can_edit = session_user.is_admin();
-    let can_view_money = session_user.is_admin();
+    let can_view_money = session_user.has_permission(UserPermission::ViewProjectMoney);
     let project_id = ObjectId::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
     let project = get_project_by_id_for_company(&state, &project_id, &company_id)
         .await
@@ -978,9 +981,12 @@ pub async fn project_concepts_edit(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Html<String>, StatusCode> {
+    if !session_user.has_permission(UserPermission::ViewProjects) {
+        return Err(StatusCode::FORBIDDEN);
+    }
     let company_id = require_active_company(&session_user);
     let can_edit = session_user.is_admin();
-    let can_view_money = session_user.is_admin();
+    let can_view_money = session_user.has_permission(UserPermission::ViewProjectMoney);
     let oid = ObjectId::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
     let concept = get_project_concept_by_id_for_company(&state, &oid, &company_id)
         .await
@@ -1182,6 +1188,15 @@ pub async fn resource_usages_index(
     State(state): State<Arc<AppState>>,
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<Html<String>, StatusCode> {
+    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    let requested_date = params.get("date").cloned().unwrap_or_else(|| today.clone());
+    let can_view_requested_date = session_user.is_admin()
+        || session_user.has_permission(UserPermission::ViewResourceUsageHistory)
+        || (requested_date == today
+            && session_user.has_permission(UserPermission::EditResourceUsageToday));
+    if !can_view_requested_date {
+        return Err(StatusCode::FORBIDDEN);
+    }
     let company_id = require_active_company(&session_user);
     let statuses_raw = list_concept_statuses(&state, &company_id)
         .await
@@ -1204,12 +1219,13 @@ pub async fn resource_usages_index(
         .map(|status| status.name.clone())
         .unwrap_or_else(|| "Todos".to_string());
 
-    let date = params
-        .get("date")
-        .cloned()
-        .unwrap_or_else(|| chrono::Utc::now().format("%Y-%m-%d").to_string());
-    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
-    let can_edit = can_save_resource_usage_date(session_user.active_role(), &date, &today);
+    let date = requested_date;
+    let can_edit = can_save_resource_usage_date(
+        session_user.active_role(),
+        &session_user.user().permissions,
+        &date,
+        &today,
+    );
     let date_start = parse_html_date(&date).ok_or(StatusCode::BAD_REQUEST)?;
     let hours: Vec<HourHeader> = (0..24)
         .map(|hour| HourHeader {
@@ -1417,8 +1433,14 @@ pub async fn resource_usages_index(
     })
 }
 
-fn can_save_resource_usage_date(role: &UserRole, date: &str, today: &str) -> bool {
-    role.is_admin() || date == today
+fn can_save_resource_usage_date(
+    role: &UserRole,
+    permissions: &[UserPermission],
+    date: &str,
+    today: &str,
+) -> bool {
+    role.is_admin()
+        || (date == today && permissions.contains(&UserPermission::EditResourceUsageToday))
 }
 
 pub async fn resource_usages_save_grid(
@@ -1443,7 +1465,12 @@ pub async fn resource_usages_save_grid(
         None => return StatusCode::BAD_REQUEST.into_response(),
     };
     let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
-    if !can_save_resource_usage_date(session_user.active_role(), &date, &today) {
+    if !can_save_resource_usage_date(
+        session_user.active_role(),
+        &session_user.user().permissions,
+        &date,
+        &today,
+    ) {
         return StatusCode::FORBIDDEN.into_response();
     }
     let mut selections = Vec::new();
@@ -1807,6 +1834,7 @@ mod tests {
     fn admin_can_save_resource_usage_for_any_date() {
         assert!(can_save_resource_usage_date(
             &UserRole::Admin,
+            &[],
             "2026-05-04",
             "2026-05-05"
         ));
@@ -1816,17 +1844,26 @@ mod tests {
     fn staff_can_save_resource_usage_only_for_today() {
         assert!(can_save_resource_usage_date(
             &UserRole::Staff,
+            &[UserPermission::EditResourceUsageToday],
             "2026-05-05",
             "2026-05-05"
         ));
         assert!(!can_save_resource_usage_date(
             &UserRole::Staff,
+            &[UserPermission::EditResourceUsageToday],
             "2026-05-04",
             "2026-05-05"
         ));
         assert!(!can_save_resource_usage_date(
             &UserRole::Staff,
+            &[UserPermission::EditResourceUsageToday],
             "2026-05-06",
+            "2026-05-05"
+        ));
+        assert!(!can_save_resource_usage_date(
+            &UserRole::Staff,
+            &[],
+            "2026-05-05",
             "2026-05-05"
         ));
     }

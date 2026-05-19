@@ -15,7 +15,7 @@ use mongodb::bson::{DateTime, doc, oid::ObjectId};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    models::{FlowType, PlannedStatus, TransactionType},
+    models::{FlowType, PlannedStatus, TransactionType, UserPermission},
     session::SessionUser,
     state::AppState,
 };
@@ -30,7 +30,10 @@ fn render<T: Template>(tpl: T) -> Result<Html<String>, StatusCode> {
 #[template(path = "tiempo/index.html")]
 struct TiempoTemplate {}
 
-pub async fn tiempo_page(_session: SessionUser) -> Result<Html<String>, StatusCode> {
+pub async fn tiempo_page(session: SessionUser) -> Result<Html<String>, StatusCode> {
+    if !session.has_permission(UserPermission::ViewTimeline) {
+        return Err(StatusCode::FORBIDDEN);
+    }
     render(TiempoTemplate {})
 }
 
@@ -101,6 +104,14 @@ pub async fn tiempo_data(
     State(state): State<Arc<AppState>>,
     Query(query): Query<TiempoQuery>,
 ) -> Result<Json<Vec<TimelineBucket>>, StatusCode> {
+    if !session.user.role.is_admin()
+        && !session
+            .user
+            .permissions
+            .contains(&UserPermission::ViewTimeline)
+    {
+        return Err(StatusCode::FORBIDDEN);
+    }
     let mode = Mode::parse(&query.mode).ok_or(StatusCode::BAD_REQUEST)?;
 
     let start = parse_iso(&query.from).ok_or(StatusCode::BAD_REQUEST)?;

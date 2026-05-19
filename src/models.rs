@@ -14,6 +14,28 @@ pub enum UserRole {
     Staff,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum UserPermission {
+    ViewProjects,
+    ViewProjectMoney,
+    EditResourceUsageToday,
+    ViewResourceUsageHistory,
+    ViewTimeline,
+}
+
+impl UserPermission {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            UserPermission::ViewProjects => "view_projects",
+            UserPermission::ViewProjectMoney => "view_project_money",
+            UserPermission::EditResourceUsageToday => "edit_resource_usage_today",
+            UserPermission::ViewResourceUsageHistory => "view_resource_usage_history",
+            UserPermission::ViewTimeline => "view_timeline",
+        }
+    }
+}
+
 impl UserRole {
     pub fn default_admin() -> Self {
         UserRole::Admin
@@ -120,6 +142,9 @@ pub struct UserCompany {
     pub user_id: ObjectId,
     pub company_id: ObjectId,
     pub role: UserRole,
+
+    #[serde(default)]
+    pub permissions: Vec<UserPermission>,
 }
 
 /// Session document stored in MongoDB linking a token to a user and expiry.

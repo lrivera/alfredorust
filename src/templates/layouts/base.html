@@ -60,15 +60,15 @@
             <a data-nav data-role="admin-only" href="/admin/recurring_plans" class="hover:text-sky-600 transition">Planes</a>
             <a data-nav data-role="admin-only" href="/admin/planned_entries" class="hover:text-sky-600 transition">Compromisos</a>
             <a data-nav data-role="admin-only" href="/admin/orders" class="hover:text-sky-600 transition">Órdenes</a>
-            <a data-nav data-role="staff-visible" href="/admin/projects" class="hover:text-sky-600 transition">Proyectos</a>
+            <a data-nav data-permission="view_projects" href="/admin/projects" class="hover:text-sky-600 transition">Proyectos</a>
             <a data-nav data-role="admin-only" href="/admin/concept_statuses" class="hover:text-sky-600 transition">Estados</a>
             <a data-nav data-role="admin-only" href="/admin/resources" class="hover:text-sky-600 transition">Recursos</a>
-            <a data-nav data-role="staff-visible" href="/admin/resource_usages" class="hover:text-sky-600 transition">Uso recursos</a>
+            <a data-nav data-permission-any="edit_resource_usage_today view_resource_usage_history" href="/admin/resource_usages" class="hover:text-sky-600 transition">Uso recursos</a>
             <a data-nav data-role="admin-only" href="/admin/resource_logs" class="hover:text-sky-600 transition">Registros</a>
             <a data-nav data-role="admin-only" href="/admin/transactions" class="hover:text-sky-600 transition">Movimientos</a>
             <a data-nav data-role="admin-only" href="/admin/cfdis" class="hover:text-sky-600 transition">Facturas</a>
             <a data-nav data-role="admin-only" href="/admin/forecasts" class="hover:text-sky-600 transition">Pronósticos</a>
-            <a data-nav href="/tiempo" class="hover:text-sky-600 transition">Tiempo</a>
+            <a data-nav data-permission="view_timeline" href="/tiempo" class="hover:text-sky-600 transition">Tiempo</a>
             <a data-nav href="/pdf" class="hover:text-sky-600 transition">PDF Typst</a>
             <div class="relative" id="companySwitcher">
               <button id="companyToggle" class="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:border-sky-300 hover:text-sky-700">
@@ -173,12 +173,18 @@
       const activeName = document.getElementById("companyActiveName");
       if (!toggle || !menu || !list || !activeName || !navAuth) return;
 
-      const applyRoleVisibility = (isAdmin) => {
+      const applyRoleVisibility = (isAdmin, permissions = []) => {
+        const permissionSet = new Set(permissions);
         document.querySelectorAll("[data-role='admin-only']").forEach((el) => {
           el.classList.toggle("hidden", !isAdmin);
         });
-        document.querySelectorAll("[data-role='staff-visible']").forEach((el) => {
-          el.classList.remove("hidden");
+        document.querySelectorAll("[data-permission]").forEach((el) => {
+          const permission = el.getAttribute("data-permission") || "";
+          el.classList.toggle("hidden", !isAdmin && !permissionSet.has(permission));
+        });
+        document.querySelectorAll("[data-permission-any]").forEach((el) => {
+          const permissionsAny = (el.getAttribute("data-permission-any") || "").split(" ").filter(Boolean);
+          el.classList.toggle("hidden", !isAdmin && !permissionsAny.some((permission) => permissionSet.has(permission)));
         });
       };
 
@@ -263,16 +269,16 @@
           const res = await fetch("/setup", { credentials: "same-origin" });
           if (!res.ok) {
             setNavVisible(false);
-            applyRoleVisibility(false);
+            applyRoleVisibility(false, []);
             return;
           }
           const data = await res.json();
           const isAdmin = (data.role || "").toLowerCase() === "admin";
-          applyRoleVisibility(isAdmin);
+          applyRoleVisibility(isAdmin, data.permissions || []);
           setNavVisible(true);
         } catch (_) {
           setNavVisible(false);
-          applyRoleVisibility(false);
+          applyRoleVisibility(false, []);
         }
       };
 
