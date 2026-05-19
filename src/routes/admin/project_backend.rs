@@ -1192,8 +1192,12 @@ pub async fn resource_usages_index(
     let requested_date = params.get("date").cloned().unwrap_or_else(|| today.clone());
     let can_view_requested_date = session_user.is_admin()
         || session_user.has_permission(UserPermission::ViewResourceUsageHistory)
-        || (requested_date == today
-            && session_user.has_permission(UserPermission::EditResourceUsageToday));
+        || can_save_resource_usage_date(
+            session_user.active_role(),
+            &session_user.user().permissions,
+            &requested_date,
+            &today,
+        );
     if !can_view_requested_date {
         return Err(StatusCode::FORBIDDEN);
     }
@@ -1439,8 +1443,19 @@ fn can_save_resource_usage_date(
     date: &str,
     today: &str,
 ) -> bool {
-    role.is_admin()
-        || (date == today && permissions.contains(&UserPermission::EditResourceUsageToday))
+    if role.is_admin() {
+        return true;
+    }
+    if !permissions.contains(&UserPermission::EditResourceUsageToday) {
+        return false;
+    }
+    let Some(date) = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").ok() else {
+        return false;
+    };
+    let Some(today) = chrono::NaiveDate::parse_from_str(today, "%Y-%m-%d").ok() else {
+        return false;
+    };
+    date <= today && date >= today - chrono::Duration::days(4)
 }
 
 pub async fn resource_usages_save_grid(
@@ -1841,17 +1856,23 @@ mod tests {
     }
 
     #[test]
-    fn staff_can_save_resource_usage_only_for_today() {
+    fn staff_can_save_resource_usage_for_recent_four_day_window() {
         assert!(can_save_resource_usage_date(
             &UserRole::Staff,
             &[UserPermission::EditResourceUsageToday],
             "2026-05-05",
             "2026-05-05"
         ));
+        assert!(can_save_resource_usage_date(
+            &UserRole::Staff,
+            &[UserPermission::EditResourceUsageToday],
+            "2026-05-01",
+            "2026-05-05"
+        ));
         assert!(!can_save_resource_usage_date(
             &UserRole::Staff,
             &[UserPermission::EditResourceUsageToday],
-            "2026-05-04",
+            "2026-04-30",
             "2026-05-05"
         ));
         assert!(!can_save_resource_usage_date(

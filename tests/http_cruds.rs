@@ -591,7 +591,14 @@ async fn staff_permissions_gate_project_resource_usage_and_timeline_routes() {
     let restricted_token = create_session(&state, &restricted.email).await.unwrap();
     let permitted_token = create_session(&state, &permitted.email).await.unwrap();
     let timeline_token = create_session(&state, &timeline.email).await.unwrap();
-    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    let today_date = chrono::Utc::now().date_naive();
+    let today = today_date.format("%Y-%m-%d").to_string();
+    let four_days_ago = (today_date - chrono::Duration::days(4))
+        .format("%Y-%m-%d")
+        .to_string();
+    let five_days_ago = (today_date - chrono::Duration::days(5))
+        .format("%Y-%m-%d")
+        .to_string();
 
     let app = build_app(shared.clone());
     let (status, _) = get_with_cookie(app, &host, "/admin/projects", &restricted_token).await;
@@ -640,7 +647,18 @@ async fn staff_permissions_gate_project_resource_usage_and_timeline_routes() {
         &host,
         "/admin/resource_usages",
         &permitted_token,
-        "date=2026-05-04&status_id=all".into(),
+        format!("date={four_days_ago}&status_id=all"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+
+    let app = build_app(shared.clone());
+    let status = post_form_with_cookie(
+        app,
+        &host,
+        "/admin/resource_usages",
+        &permitted_token,
+        format!("date={five_days_ago}&status_id=all"),
     )
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
