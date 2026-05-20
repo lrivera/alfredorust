@@ -153,6 +153,13 @@
           </select>
         </div>
       </div>
+      <label class="inline-flex items-start gap-2 rounded-md border border-slate-100 bg-slate-50 p-3 text-sm text-slate-600">
+        <input id="cfdi-auto-payments" type="checkbox" class="mt-1 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" />
+        <span>
+          <span class="block font-medium text-slate-700">Crear pagos automáticamente</span>
+          <span class="block text-xs text-slate-400">Por default la descarga solo crea compromisos para pagarlos manualmente y asignarlos a proyectos.</span>
+        </span>
+      </label>
       <div class="flex items-center gap-3">
         <button id="cfdi-download-btn" type="button"
           class="inline-flex items-center rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-50">
@@ -172,9 +179,9 @@
               <th class="px-4 py-2">Período</th>
               <th class="px-4 py-2">Estado</th>
               <th class="px-4 py-2 text-right">Encontrados</th>
-              <th class="px-4 py-2 text-right">Tx creadas</th>
-              <th class="px-4 py-2 text-right">Tx actualizadas</th>
-              <th class="px-4 py-2 text-right">Tx omitidas</th>
+              <th class="px-4 py-2 text-right">Compromisos creados</th>
+              <th class="px-4 py-2 text-right">Compromisos actualizados</th>
+              <th class="px-4 py-2 text-right">Omitidos</th>
               <th class="px-4 py-2 text-right">Errores</th>
             </tr>
           </thead>
@@ -342,6 +349,7 @@
         const end = document.getElementById('cfdi-end').value;
         const configId = document.getElementById('cfdi-config').value;
         const dlType = document.getElementById('cfdi-type').value;
+        const autoPayments = document.getElementById('cfdi-auto-payments')?.checked || false;
 
         if (!start || !end) { statusEl.textContent = 'Selecciona fecha inicio y fin.'; return; }
 
@@ -354,6 +362,7 @@
             start: start + 'T00:00:00',
             end: end + 'T23:59:59',
             download_type: dlType,
+            auto_create_payments: autoPayments ? 'true' : 'false',
           });
           const startResp = await fetch(`/admin/companies/${COMPANY_ID}/cfdi/download`, {
             method: 'POST',

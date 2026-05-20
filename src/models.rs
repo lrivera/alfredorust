@@ -421,6 +421,14 @@ pub struct PlannedEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub service_order_id: Option<ObjectId>,
 
+    /// Optional project this commitment belongs to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<ObjectId>,
+
+    /// Optional estimated commitment that this real commitment helps cover.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_planned_entry_id: Option<ObjectId>,
+
     pub name: String,
     pub flow_type: FlowType,
 
@@ -452,6 +460,18 @@ pub struct PlannedEntry {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
+
+    /// UUID of the CFDI/factura that originated this commitment, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cfdi_uuid: Option<String>,
+
+    /// Currency code from the CFDI (e.g. "MXN", "USD").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub currency: Option<String>,
+
+    /// Serie-Folio of the CFDI (e.g. "REGT-474850").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cfdi_folio: Option<String>,
 }
 
 /// Transaction: real movement (income, expense, transfer).
@@ -482,6 +502,10 @@ pub struct Transaction {
     /// Optional link to the planned entry this transaction is covering.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub planned_entry_id: Option<ObjectId>,
+
+    /// Optional project this real movement belongs to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<ObjectId>,
 
     #[serde(default = "default_true")]
     pub is_confirmed: bool,

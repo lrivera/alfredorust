@@ -16,7 +16,8 @@ use crate::{
     session::SessionUser,
     state::{
         AppState, create_planned_entry, delete_planned_entry, get_planned_entry_by_id,
-        list_planned_entries, pay_planned_entry, update_planned_entry,
+        get_project_by_id_for_company, list_planned_entries, list_projects,
+        pay_planned_entry_with_project, update_planned_entry, update_planned_entry_project_links,
     },
 };
 
@@ -56,6 +57,7 @@ struct PlannedEntryFormTemplate {
     categories: Vec<SimpleOption>,
     accounts: Vec<SimpleOption>,
     contacts: Vec<SimpleOption>,
+    projects: Vec<SimpleOption>,
     recurring_plans: Vec<SimpleOption>,
     recurring_plan_version: String,
     is_edit: bool,
@@ -71,6 +73,8 @@ pub struct PlannedEntryFormData {
     account_expected_id: String,
     #[serde(default)]
     contact_id: Option<String>,
+    #[serde(default)]
+    project_id: Option<String>,
     amount_estimated: String,
     due_date: String,
     status: String,
@@ -122,6 +126,7 @@ pub async fn planned_entries_new(
     let categories = category_options(&state, None, &active_company).await?;
     let accounts = account_options(&state, None, &active_company).await?;
     let contacts = contact_options(&state, None, &active_company).await?;
+    let projects = project_options(&state, &active_company, None).await?;
     let recurring_plans = recurring_plan_options(&state, None, &active_company).await?;
 
     render(PlannedEntryFormTemplate {
@@ -138,6 +143,7 @@ pub async fn planned_entries_new(
         categories,
         accounts,
         contacts,
+        projects,
         recurring_plans,
         recurring_plan_version: String::new(),
         is_edit: false,
@@ -225,6 +231,12 @@ pub async fn planned_entries_create(
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
     let notes = clean_opt(form.notes);
+    let project_id =
+        parse_optional_project_id(&state, &company_id, form.project_id.as_deref()).await;
+    let project_id = match project_id {
+        Ok(project_id) => project_id,
+        Err(status) => return status.into_response(),
+    };
 
     if let Err(status) = validate_company_refs(
         &state,
@@ -262,7 +274,19 @@ pub async fn planned_entries_create(
     )
     .await
     {
-        Ok(_) => Redirect::to("/admin/planned_entries").into_response(),
+        Ok(planned_entry_id) => {
+            if project_id.is_some() {
+                let _ = update_planned_entry_project_links(
+                    &state,
+                    &planned_entry_id,
+                    &company_id,
+                    project_id,
+                    None,
+                )
+                .await;
+            }
+            Redirect::to("/admin/planned_entries").into_response()
+        }
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
@@ -286,6 +310,7 @@ pub async fn planned_entries_edit(
     let accounts =
         account_options(&state, Some(&entry.account_expected_id), &active_company).await?;
     let contacts = contact_options(&state, entry.contact_id.as_ref(), &active_company).await?;
+    let projects = project_options(&state, &active_company, entry.project_id.as_ref()).await?;
     let recurring_plans =
         recurring_plan_options(&state, entry.recurring_plan_id.as_ref(), &active_company).await?;
 
@@ -303,6 +328,7 @@ pub async fn planned_entries_edit(
         categories,
         accounts,
         contacts,
+        projects,
         recurring_plans,
         recurring_plan_version: entry
             .recurring_plan_version
@@ -404,6 +430,12 @@ pub async fn planned_entries_update(
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
     let notes = clean_opt(form.notes);
+    let project_id =
+        parse_optional_project_id(&state, &company_id, form.project_id.as_deref()).await;
+    let project_id = match project_id {
+        Ok(project_id) => project_id,
+        Err(status) => return status.into_response(),
+    };
 
     if let Err(status) = validate_company_refs(
         &state,
@@ -441,7 +473,17 @@ pub async fn planned_entries_update(
     )
     .await
     {
-        Ok(_) => Redirect::to("/admin/planned_entries").into_response(),
+        Ok(_) => {
+            let _ = update_planned_entry_project_links(
+                &state,
+                &object_id,
+                &company_id,
+                project_id,
+                None,
+            )
+            .await;
+            Redirect::to("/admin/planned_entries").into_response()
+        }
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
@@ -486,14 +528,201 @@ struct PayFormTemplate {
     amount: String,
     original_amount: f64,
     accounts: Vec<SimpleOption>,
+    projects: Vec<SimpleOption>,
+    parent_entries: Vec<SimpleOption>,
     errors: Option<String>,
     return_to: String,
+}
+
+#[derive(Template)]
+#[template(path = "admin/planned_entries/bulk_pay.html")]
+struct BulkPayFormTemplate {
+    entries: Vec<BulkPayEntryRow>,
+    entry_ids: String,
+    paid_at: String,
+    total_amount: f64,
+    accounts: Vec<SimpleOption>,
+    projects: Vec<SimpleOption>,
+    parent_entries: Vec<SimpleOption>,
+    errors: Option<String>,
+    return_to: String,
+}
+
+struct BulkPayEntryRow {
+    name: String,
+    amount: f64,
 }
 
 #[derive(Deserialize)]
 pub struct PayQuery {
     #[serde(default)]
     return_to: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct BulkPayQuery {
+    ids: String,
+    #[serde(default)]
+    return_to: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct BulkPayFormData {
+    entry_ids: String,
+    paid_at: String,
+    account_id: String,
+    #[serde(default)]
+    project_id: Option<String>,
+    #[serde(default)]
+    parent_planned_entry_id: Option<String>,
+    #[serde(default)]
+    notes: Option<String>,
+    #[serde(default)]
+    return_to: Option<String>,
+}
+
+pub async fn planned_entries_bulk_pay_form(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<BulkPayQuery>,
+) -> Result<Html<String>, StatusCode> {
+    let company_id = require_admin_active(&session_user)?;
+    let entry_ids = parse_entry_ids(&query.ids).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let entries = load_payable_entries(&state, &company_id, &entry_ids).await?;
+    let accounts = account_options(&state, None, &company_id).await?;
+    let projects = project_options(&state, &company_id, None).await?;
+    let parent_entries = parent_entry_options(&state, &company_id, None, None).await?;
+    let total_amount = entries.iter().map(|entry| entry.amount_estimated).sum();
+    let rows = entries
+        .into_iter()
+        .map(|entry| BulkPayEntryRow {
+            name: entry.name,
+            amount: entry.amount_estimated,
+        })
+        .collect();
+
+    render(BulkPayFormTemplate {
+        entries: rows,
+        entry_ids: query.ids,
+        paid_at: chrono::Utc::now().format("%Y-%m-%d").to_string(),
+        total_amount,
+        accounts,
+        projects,
+        parent_entries,
+        errors: None,
+        return_to: safe_return_to(query.return_to.as_deref())
+            .unwrap_or("/admin/planned_entries")
+            .to_string(),
+    })
+}
+
+pub async fn planned_entries_bulk_pay(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Form(form): Form<BulkPayFormData>,
+) -> impl IntoResponse {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(s) => return s.into_response(),
+    };
+    let entry_ids = match parse_entry_ids(&form.entry_ids) {
+        Ok(ids) => ids,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    let entries = match load_payable_entries(&state, &company_id, &entry_ids).await {
+        Ok(entries) => entries,
+        Err(status) => return status.into_response(),
+    };
+    let account_id = match parse_object_id(&form.account_id, "Cuenta") {
+        Ok(id) => id,
+        Err(_) => {
+            return render_bulk_pay_form_error(
+                &state,
+                &company_id,
+                &form,
+                &entries,
+                "Selecciona una cuenta válida",
+            )
+            .await
+            .into_response();
+        }
+    };
+    let paid_date = match parse_date_field(&form.paid_at) {
+        Some(date) => date,
+        None => {
+            return render_bulk_pay_form_error(
+                &state,
+                &company_id,
+                &form,
+                &entries,
+                "Captura una fecha de pago válida",
+            )
+            .await
+            .into_response();
+        }
+    };
+    let project_id =
+        match parse_optional_project_id(&state, &company_id, form.project_id.as_deref()).await {
+            Ok(project_id) => project_id,
+            Err(_) => {
+                return render_bulk_pay_form_error(
+                    &state,
+                    &company_id,
+                    &form,
+                    &entries,
+                    "Selecciona un proyecto válido",
+                )
+                .await
+                .into_response();
+            }
+        };
+    let parent_planned_entry_id = match parse_optional_parent_entry_id(
+        &state,
+        &company_id,
+        form.parent_planned_entry_id.as_deref(),
+        project_id.as_ref(),
+    )
+    .await
+    {
+        Ok(parent_id) => parent_id,
+        Err(_) => {
+            return render_bulk_pay_form_error(
+                &state,
+                &company_id,
+                &form,
+                &entries,
+                "Selecciona un compromiso estimado válido",
+            )
+            .await
+            .into_response();
+        }
+    };
+    let notes = clean_opt(form.notes.clone());
+
+    for entry in entries {
+        let Some(entry_id) = entry.id else {
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        };
+        if let Err(err) = pay_planned_entry_with_project(
+            &state,
+            &entry_id,
+            &company_id,
+            &account_id,
+            entry.amount_estimated,
+            paid_date,
+            notes.clone(),
+            project_id.clone(),
+            parent_planned_entry_id.clone(),
+        )
+        .await
+        {
+            eprintln!("[planned_entries] bulk pay failed for {entry_id}: {err}");
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    }
+
+    Redirect::to(safe_return_to(form.return_to.as_deref()).unwrap_or("/admin/planned_entries"))
+        .into_response()
 }
 
 pub async fn planned_entries_pay_form(
@@ -511,9 +740,16 @@ pub async fn planned_entries_pay_form(
     ensure_same_company(&entry.company_id, &company_id)?;
 
     let accounts = account_options(&state, None, &company_id).await?;
+    let projects = project_options(&state, &company_id, entry.project_id.as_ref()).await?;
+    let parent_entries = parent_entry_options(
+        &state,
+        &company_id,
+        entry.id.as_ref(),
+        entry.parent_planned_entry_id.as_ref(),
+    )
+    .await?;
 
     let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
-
     render(PayFormTemplate {
         entry_id: id,
         entry_name: entry.name,
@@ -521,6 +757,8 @@ pub async fn planned_entries_pay_form(
         amount: entry.amount_estimated.to_string(),
         original_amount: entry.original_amount_estimated.unwrap_or(0.0),
         accounts,
+        projects,
+        parent_entries,
         errors: None,
         return_to: safe_return_to(query.return_to.as_deref())
             .unwrap_or("/admin/planned_entries")
@@ -533,6 +771,10 @@ pub struct PayFormData {
     paid_at: String,
     amount: String,
     account_id: String,
+    #[serde(default)]
+    project_id: Option<String>,
+    #[serde(default)]
+    parent_planned_entry_id: Option<String>,
     #[serde(default)]
     notes: Option<String>,
     #[serde(default)]
@@ -613,8 +855,111 @@ pub async fn planned_entries_pay(
         }
     };
     let notes = clean_opt(form.notes.clone());
+    let project_id = match clean_opt(form.project_id.clone()) {
+        Some(value) => match parse_object_id(&value, "Proyecto") {
+            Ok(project_oid) => {
+                match get_project_by_id_for_company(&state, &project_oid, &company_id).await {
+                    Ok(Some(_)) => Some(project_oid),
+                    Ok(None) => {
+                        return render_pay_form_error(
+                            &state,
+                            &company_id,
+                            id,
+                            &entry.name,
+                            &form,
+                            entry.original_amount_estimated.unwrap_or(0.0),
+                            "Selecciona un proyecto válido",
+                        )
+                        .await
+                        .into_response();
+                    }
+                    Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+                }
+            }
+            Err(_) => {
+                return render_pay_form_error(
+                    &state,
+                    &company_id,
+                    id,
+                    &entry.name,
+                    &form,
+                    entry.original_amount_estimated.unwrap_or(0.0),
+                    "Selecciona un proyecto válido",
+                )
+                .await
+                .into_response();
+            }
+        },
+        None => entry.project_id.clone(),
+    };
+    let parent_planned_entry_id = match clean_opt(form.parent_planned_entry_id.clone()) {
+        Some(value) => match parse_object_id(&value, "Compromiso estimado") {
+            Ok(parent_id) => match get_planned_entry_by_id(&state, &parent_id).await {
+                Ok(Some(parent)) => {
+                    if parent.company_id != company_id || parent.id.as_ref() == Some(&oid) {
+                        return render_pay_form_error(
+                            &state,
+                            &company_id,
+                            id,
+                            &entry.name,
+                            &form,
+                            entry.original_amount_estimated.unwrap_or(0.0),
+                            "Selecciona un compromiso estimado válido",
+                        )
+                        .await
+                        .into_response();
+                    }
+                    if let (Some(parent_project), Some(project)) = (&parent.project_id, &project_id)
+                    {
+                        if parent_project != project {
+                            return render_pay_form_error(
+                                &state,
+                                &company_id,
+                                id,
+                                &entry.name,
+                                &form,
+                                entry.original_amount_estimated.unwrap_or(0.0),
+                                "El compromiso estimado debe pertenecer al proyecto seleccionado",
+                            )
+                            .await
+                            .into_response();
+                        }
+                    }
+                    Some(parent_id)
+                }
+                Ok(None) => {
+                    return render_pay_form_error(
+                        &state,
+                        &company_id,
+                        id,
+                        &entry.name,
+                        &form,
+                        entry.original_amount_estimated.unwrap_or(0.0),
+                        "Selecciona un compromiso estimado válido",
+                    )
+                    .await
+                    .into_response();
+                }
+                Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+            },
+            Err(_) => {
+                return render_pay_form_error(
+                    &state,
+                    &company_id,
+                    id,
+                    &entry.name,
+                    &form,
+                    entry.original_amount_estimated.unwrap_or(0.0),
+                    "Selecciona un compromiso estimado válido",
+                )
+                .await
+                .into_response();
+            }
+        },
+        None => entry.parent_planned_entry_id.clone(),
+    };
 
-    match pay_planned_entry(
+    match pay_planned_entry_with_project(
         &state,
         &oid,
         &company_id,
@@ -622,6 +967,8 @@ pub async fn planned_entries_pay(
         paid_amount,
         paid_date,
         notes,
+        project_id,
+        parent_planned_entry_id,
     )
     .await
     {
@@ -657,6 +1004,14 @@ async fn render_pay_form_error(
     message: &str,
 ) -> Result<Html<String>, StatusCode> {
     let accounts = account_options(state, None, company_id).await?;
+    let project_id = clean_opt(form.project_id.clone()).unwrap_or_default();
+    let parent_planned_entry_id =
+        clean_opt(form.parent_planned_entry_id.clone()).unwrap_or_default();
+    let selected_project = ObjectId::from_str(&project_id).ok();
+    let selected_parent = ObjectId::from_str(&parent_planned_entry_id).ok();
+    let projects = project_options(state, company_id, selected_project.as_ref()).await?;
+    let parent_entries =
+        parent_entry_options(state, company_id, None, selected_parent.as_ref()).await?;
     render(PayFormTemplate {
         entry_id,
         entry_name: entry_name.to_string(),
@@ -664,11 +1019,184 @@ async fn render_pay_form_error(
         amount: form.amount.clone(),
         original_amount,
         accounts,
+        projects,
+        parent_entries,
         errors: Some(message.to_string()),
         return_to: safe_return_to(form.return_to.as_deref())
             .unwrap_or("/admin/planned_entries")
             .to_string(),
     })
+}
+
+async fn render_bulk_pay_form_error(
+    state: &AppState,
+    company_id: &ObjectId,
+    form: &BulkPayFormData,
+    entries: &[crate::models::PlannedEntry],
+    message: &str,
+) -> Result<Html<String>, StatusCode> {
+    let selected_project =
+        clean_opt(form.project_id.clone()).and_then(|id| ObjectId::from_str(&id).ok());
+    let selected_parent =
+        clean_opt(form.parent_planned_entry_id.clone()).and_then(|id| ObjectId::from_str(&id).ok());
+    let accounts = account_options(state, None, company_id).await?;
+    let projects = project_options(state, company_id, selected_project.as_ref()).await?;
+    let parent_entries =
+        parent_entry_options(state, company_id, None, selected_parent.as_ref()).await?;
+    let total_amount = entries.iter().map(|entry| entry.amount_estimated).sum();
+    let rows = entries
+        .iter()
+        .map(|entry| BulkPayEntryRow {
+            name: entry.name.clone(),
+            amount: entry.amount_estimated,
+        })
+        .collect();
+
+    render(BulkPayFormTemplate {
+        entries: rows,
+        entry_ids: form.entry_ids.clone(),
+        paid_at: form.paid_at.clone(),
+        total_amount,
+        accounts,
+        projects,
+        parent_entries,
+        errors: Some(message.to_string()),
+        return_to: safe_return_to(form.return_to.as_deref())
+            .unwrap_or("/admin/planned_entries")
+            .to_string(),
+    })
+}
+
+fn parse_entry_ids(value: &str) -> Result<Vec<ObjectId>, ()> {
+    let mut ids = Vec::new();
+    for raw in value.split(',') {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let id = ObjectId::from_str(trimmed).map_err(|_| ())?;
+        if !ids.iter().any(|existing| existing == &id) {
+            ids.push(id);
+        }
+    }
+    if ids.is_empty() {
+        return Err(());
+    }
+    Ok(ids)
+}
+
+async fn load_payable_entries(
+    state: &AppState,
+    company_id: &ObjectId,
+    entry_ids: &[ObjectId],
+) -> Result<Vec<crate::models::PlannedEntry>, StatusCode> {
+    let mut entries = Vec::new();
+    for entry_id in entry_ids {
+        let entry = get_planned_entry_by_id(state, entry_id)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+            .ok_or(StatusCode::NOT_FOUND)?;
+        ensure_same_company(&entry.company_id, company_id)?;
+        match entry.status {
+            crate::models::PlannedStatus::Covered | crate::models::PlannedStatus::Cancelled => {
+                return Err(StatusCode::BAD_REQUEST);
+            }
+            _ => entries.push(entry),
+        }
+    }
+    Ok(entries)
+}
+
+async fn project_options(
+    state: &AppState,
+    company_id: &ObjectId,
+    selected: Option<&ObjectId>,
+) -> Result<Vec<SimpleOption>, StatusCode> {
+    let mut projects = list_projects(state, company_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    projects.sort_by(|a, b| a.title.cmp(&b.title));
+    Ok(projects
+        .into_iter()
+        .filter_map(|project| {
+            let id = project.id?;
+            Some(SimpleOption {
+                value: id.to_hex(),
+                label: project.title,
+                selected: selected == Some(&id),
+            })
+        })
+        .collect())
+}
+
+async fn parse_optional_project_id(
+    state: &AppState,
+    company_id: &ObjectId,
+    value: Option<&str>,
+) -> Result<Option<ObjectId>, StatusCode> {
+    let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    let project_id = ObjectId::from_str(value).map_err(|_| StatusCode::BAD_REQUEST)?;
+    match get_project_by_id_for_company(state, &project_id, company_id).await {
+        Ok(Some(_)) => Ok(Some(project_id)),
+        Ok(None) => Err(StatusCode::BAD_REQUEST),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
+}
+
+async fn parse_optional_parent_entry_id(
+    state: &AppState,
+    company_id: &ObjectId,
+    value: Option<&str>,
+    project_id: Option<&ObjectId>,
+) -> Result<Option<ObjectId>, StatusCode> {
+    let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    let parent_id = ObjectId::from_str(value).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let parent = get_planned_entry_by_id(state, &parent_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::BAD_REQUEST)?;
+    if parent.company_id != *company_id || parent.cfdi_uuid.is_some() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    if let (Some(parent_project), Some(project_id)) = (parent.project_id.as_ref(), project_id) {
+        if parent_project != project_id {
+            return Err(StatusCode::BAD_REQUEST);
+        }
+    }
+    Ok(Some(parent_id))
+}
+
+async fn parent_entry_options(
+    state: &AppState,
+    company_id: &ObjectId,
+    current_entry_id: Option<&ObjectId>,
+    selected: Option<&ObjectId>,
+) -> Result<Vec<SimpleOption>, StatusCode> {
+    let mut entries = list_planned_entries(state)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    entries.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(entries
+        .into_iter()
+        .filter(|entry| entry.company_id == *company_id)
+        .filter(|entry| entry.project_id.is_some())
+        .filter(|entry| entry.cfdi_uuid.is_none())
+        .filter_map(|entry| {
+            let id = entry.id?;
+            if current_entry_id == Some(&id) {
+                return None;
+            }
+            Some(SimpleOption {
+                value: id.to_hex(),
+                label: format!("{} (${:.2})", entry.name, entry.amount_estimated),
+                selected: selected == Some(&id),
+            })
+        })
+        .collect())
 }
 
 fn safe_return_to(value: Option<&str>) -> Option<&str> {

@@ -8,16 +8,23 @@
       <h1 class="text-2xl font-semibold text-slate-800">Compromisos planificados</h1>
       <p class="mt-1 text-sm text-slate-500">Entradas presupuestadas con fecha de vencimiento.</p>
     </div>
-    <a href="/admin/planned_entries/new"
-      class="inline-flex items-center rounded-md bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2">
-      Nuevo compromiso
-    </a>
+    <div class="flex items-center gap-2">
+      <button id="bulk-pay-btn" type="button"
+        class="hidden items-center rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700">
+        Pagar seleccionados
+      </button>
+      <a href="/admin/planned_entries/new"
+        class="inline-flex items-center rounded-md bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2">
+        Nuevo compromiso
+      </a>
+    </div>
   </div>
 
   <div class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
     <table class="min-w-full divide-y divide-slate-200 text-sm">
       <thead class="bg-slate-50 text-left font-semibold text-slate-600">
         <tr>
+          <th class="px-4 py-2 w-10"></th>
           <th class="px-4 py-2">Nombre</th>
           <th class="px-4 py-2">Compañía</th>
           <th class="px-4 py-2">Flujo</th>
@@ -29,6 +36,11 @@
       <tbody class="divide-y divide-slate-100">
         {% for entry in entries %}
         <tr class="transition hover:bg-slate-50">
+          <td class="px-4 py-3">
+            {% if entry.status != "covered" && entry.status != "cancelled" %}
+            <input type="checkbox" data-bulk-pay-entry value="{{ entry.id }}" class="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" />
+            {% endif %}
+          </td>
           <td class="px-4 py-3 font-medium text-slate-800">{{ entry.name }}</td>
           <td class="px-4 py-3 text-slate-600">{{ entry.company }}</td>
           <td class="px-4 py-3 text-slate-600">{{ entry.flow_type }}</td>
@@ -71,10 +83,30 @@
         </tr>
         {% else %}
         <tr>
-          <td colspan="6" class="px-4 py-6 text-center text-sm text-slate-500">Aún no hay compromisos registrados.</td>
+          <td colspan="7" class="px-4 py-6 text-center text-sm text-slate-500">Aún no hay compromisos registrados.</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
+  <script>
+    (() => {
+      const button = document.getElementById("bulk-pay-btn");
+      const checks = Array.from(document.querySelectorAll("[data-bulk-pay-entry]"));
+      if (!button || checks.length === 0) return;
+      const selectedIds = () => checks.filter((check) => check.checked).map((check) => check.value);
+      const refresh = () => {
+        const count = selectedIds().length;
+        button.classList.toggle("hidden", count === 0);
+        button.classList.toggle("inline-flex", count > 0);
+        button.textContent = count === 1 ? "Pagar seleccionado" : `Pagar seleccionados (${count})`;
+      };
+      checks.forEach((check) => check.addEventListener("change", refresh));
+      button.addEventListener("click", () => {
+        const ids = selectedIds();
+        if (ids.length === 0) return;
+        window.location.href = `/admin/planned_entries/bulk_pay?ids=${encodeURIComponent(ids.join(","))}&return_to=/admin/planned_entries`;
+      });
+    })();
+  </script>
 {% endblock %}

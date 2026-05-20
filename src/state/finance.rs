@@ -575,6 +575,8 @@ pub async fn create_planned_entry(
             recurring_plan_id,
             recurring_plan_version,
             service_order_id,
+            project_id: None,
+            parent_planned_entry_id: None,
             name: name.to_string(),
             flow_type,
             category_id: category_id.clone(),
@@ -588,6 +590,9 @@ pub async fn create_planned_entry(
             created_at: Some(DateTime::from_system_time(SystemTime::now())),
             updated_at: None,
             notes,
+            cfdi_uuid: None,
+            currency: None,
+            cfdi_folio: None,
         })
         .await?;
     res.inserted_id
@@ -636,9 +641,117 @@ pub async fn update_planned_entry(
     Ok(())
 }
 
+pub async fn update_planned_entry_project_links(
+    state: &AppState,
+    id: &ObjectId,
+    company_id: &ObjectId,
+    project_id: Option<ObjectId>,
+    parent_planned_entry_id: Option<ObjectId>,
+) -> Result<()> {
+    state
+        .planned_entries
+        .update_one(
+            doc! { "_id": id, "company_id": company_id },
+            doc! { "$set": {
+                "project_id": project_id,
+                "parent_planned_entry_id": parent_planned_entry_id,
+                "updated_at": DateTime::from_system_time(SystemTime::now()),
+            }},
+        )
+        .await?;
+    Ok(())
+}
+
 pub async fn delete_planned_entry(state: &AppState, id: &ObjectId) -> Result<()> {
     state.planned_entries.delete_one(doc! { "_id": id }).await?;
     Ok(())
+}
+
+pub async fn get_planned_entry_by_cfdi_uuid(
+    state: &AppState,
+    company_id: &ObjectId,
+    cfdi_uuid: &str,
+) -> Result<Option<PlannedEntry>> {
+    state
+        .planned_entries
+        .find_one(doc! { "company_id": company_id, "cfdi_uuid": cfdi_uuid })
+        .await
+        .map_err(Into::into)
+}
+
+pub async fn create_or_update_planned_entry_from_cfdi(
+    state: &AppState,
+    company_id: &ObjectId,
+    due_date: DateTime,
+    name: &str,
+    flow_type: FlowType,
+    category_id: &ObjectId,
+    account_expected_id: &ObjectId,
+    contact_id: Option<ObjectId>,
+    amount_estimated: f64,
+    cfdi_uuid: &str,
+    currency: Option<String>,
+    cfdi_folio: Option<String>,
+    notes: Option<String>,
+) -> Result<(ObjectId, bool)> {
+    if let Some(existing) = get_planned_entry_by_cfdi_uuid(state, company_id, cfdi_uuid).await? {
+        let id = existing.id.context("planned entry missing _id")?;
+        state
+            .planned_entries
+            .update_one(
+                doc! { "_id": &id, "company_id": company_id },
+                doc! { "$set": {
+                    "due_date": due_date,
+                    "name": name,
+                    "flow_type": flow_type.as_str(),
+                    "category_id": category_id,
+                    "account_expected_id": account_expected_id,
+                    "contact_id": contact_id,
+                    "amount_estimated": amount_estimated,
+                    "currency": currency,
+                    "cfdi_folio": cfdi_folio,
+                    "notes": notes,
+                    "updated_at": DateTime::from_system_time(SystemTime::now()),
+                }},
+            )
+            .await?;
+        let _ = recalculate_planned_entry_status(state, &id).await;
+        return Ok((id, false));
+    }
+
+    let res = state
+        .planned_entries
+        .insert_one(PlannedEntry {
+            id: None,
+            company_id: company_id.clone(),
+            recurring_plan_id: None,
+            recurring_plan_version: None,
+            service_order_id: None,
+            project_id: None,
+            parent_planned_entry_id: None,
+            name: name.to_string(),
+            flow_type,
+            category_id: category_id.clone(),
+            account_expected_id: account_expected_id.clone(),
+            contact_id,
+            amount_estimated,
+            original_amount_estimated: None,
+            due_date,
+            original_due_date: None,
+            status: PlannedStatus::Planned,
+            created_at: Some(DateTime::from_system_time(SystemTime::now())),
+            updated_at: None,
+            notes,
+            cfdi_uuid: Some(cfdi_uuid.to_string()),
+            currency,
+            cfdi_folio,
+        })
+        .await?;
+    let id = res
+        .inserted_id
+        .as_object_id()
+        .context("planned entry insert missing _id")?;
+    Ok((id, true))
 }
 
 /// Pay a planned entry: saves original values (first time only), aligns the entry
@@ -652,13 +765,52 @@ pub async fn pay_planned_entry(
     paid_date: DateTime,
     notes: Option<String>,
 ) -> Result<()> {
+    pay_planned_entry_with_project(
+        state,
+        id,
+        company_id,
+        account_id,
+        paid_amount,
+        paid_date,
+        notes,
+        None,
+        None,
+    )
+    .await
+}
+
+pub async fn pay_planned_entry_with_project(
+    state: &AppState,
+    id: &ObjectId,
+    company_id: &ObjectId,
+    account_id: &ObjectId,
+    paid_amount: f64,
+    paid_date: DateTime,
+    notes: Option<String>,
+    project_id: Option<ObjectId>,
+    parent_planned_entry_id: Option<ObjectId>,
+) -> Result<()> {
     let pe = state
         .planned_entries
-        .find_one(doc! { "_id": id })
+        .find_one(doc! { "_id": id, "company_id": company_id })
         .await?
         .context("planned entry not found")?;
 
     let now = DateTime::from_system_time(SystemTime::now());
+
+    if let Some(project_id) = project_id.as_ref() {
+        ensure_project_in_company(state, project_id, company_id).await?;
+    }
+    if let Some(parent_id) = parent_planned_entry_id.as_ref() {
+        ensure_parent_planned_entry_in_company(
+            state,
+            parent_id,
+            id,
+            company_id,
+            project_id.as_ref(),
+        )
+        .await?;
+    }
 
     // Snapshot originals only on the first payment
     let mut set_doc = doc! {
@@ -675,8 +827,24 @@ pub async fn pay_planned_entry(
 
     state
         .planned_entries
-        .update_one(doc! { "_id": id }, doc! { "$set": set_doc })
+        .update_one(
+            doc! { "_id": id, "company_id": company_id },
+            doc! { "$set": set_doc },
+        )
         .await?;
+
+    if project_id.is_some() || parent_planned_entry_id.is_some() {
+        state
+            .planned_entries
+            .update_one(
+                doc! { "_id": id, "company_id": company_id },
+                doc! { "$set": {
+                    "project_id": project_id.clone(),
+                    "parent_planned_entry_id": parent_planned_entry_id.clone(),
+                }},
+            )
+            .await?;
+    }
 
     let (account_from_id, account_to_id) = match pe.flow_type {
         FlowType::Expense => (Some(account_id.clone()), None),
@@ -698,12 +866,13 @@ pub async fn pay_planned_entry(
         account_to_id,
         paid_amount,
         Some(id.clone()),
+        project_id,
         true,
         notes,
-        None,
+        pe.cfdi_uuid,
         pe.contact_id,
-        None,
-        None,
+        pe.currency,
+        pe.cfdi_folio,
     )
     .await?;
 
@@ -738,6 +907,7 @@ pub async fn create_transaction(
     account_to_id: Option<ObjectId>,
     amount: f64,
     planned_entry_id: Option<ObjectId>,
+    project_id: Option<ObjectId>,
     is_confirmed: bool,
     notes: Option<String>,
     cfdi_uuid: Option<String>,
@@ -755,6 +925,9 @@ pub async fn create_transaction(
         planned_entry_id.as_ref(),
     )
     .await?;
+    if let Some(project_id) = project_id.as_ref() {
+        ensure_project_in_company(state, project_id, company_id).await?;
+    }
 
     let res = state
         .transactions
@@ -769,6 +942,7 @@ pub async fn create_transaction(
             account_to_id,
             amount,
             planned_entry_id,
+            project_id,
             is_confirmed,
             created_at: Some(DateTime::from_system_time(SystemTime::now())),
             updated_at: None,
@@ -814,6 +988,7 @@ pub async fn create_transaction_from_cfdi(
             account_to_id: None,
             amount,
             planned_entry_id: None,
+            project_id: None,
             is_confirmed: true,
             created_at: Some(DateTime::from_system_time(SystemTime::now())),
             updated_at: None,
@@ -1182,6 +1357,47 @@ async fn ensure_planned_entry_alignment(
     Ok(())
 }
 
+async fn ensure_project_in_company(
+    state: &AppState,
+    project_id: &ObjectId,
+    company_id: &ObjectId,
+) -> Result<()> {
+    let project = state
+        .projects
+        .find_one(doc! { "_id": project_id })
+        .await?
+        .context("project not found")?;
+
+    if &project.company_id != company_id {
+        bail!("project belongs to another company");
+    }
+    Ok(())
+}
+
+async fn ensure_parent_planned_entry_in_company(
+    state: &AppState,
+    parent_id: &ObjectId,
+    child_id: &ObjectId,
+    company_id: &ObjectId,
+    project_id: Option<&ObjectId>,
+) -> Result<()> {
+    if parent_id == child_id {
+        bail!("planned entry cannot cover itself");
+    }
+    let parent = state
+        .planned_entries
+        .find_one(doc! { "_id": parent_id, "company_id": company_id })
+        .await?
+        .context("parent planned entry not found")?;
+
+    if let (Some(parent_project), Some(project_id)) = (parent.project_id.as_ref(), project_id) {
+        if parent_project != project_id {
+            bail!("parent planned entry belongs to another project");
+        }
+    }
+    Ok(())
+}
+
 async fn recalculate_planned_entry_status(
     state: &AppState,
     planned_entry_id: &ObjectId,
@@ -1305,6 +1521,8 @@ async fn generate_planned_entries_for_plan(
                 recurring_plan_id: Some(plan_id.clone()),
                 recurring_plan_version: Some(plan.version),
                 service_order_id: None,
+                project_id: None,
+                parent_planned_entry_id: None,
                 name: format!("{} {}", plan.name, due.to_chrono().date_naive()),
                 flow_type: plan.flow_type.clone(),
                 category_id: plan.category_id.clone(),
@@ -1318,6 +1536,9 @@ async fn generate_planned_entries_for_plan(
                 created_at: Some(DateTime::from_system_time(SystemTime::now())),
                 updated_at: None,
                 notes: plan.notes.clone(),
+                cfdi_uuid: None,
+                currency: None,
+                cfdi_folio: None,
             })
             .await?;
     }

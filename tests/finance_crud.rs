@@ -2,10 +2,11 @@ use std::time::SystemTime;
 
 use alfredodev::models::{AccountType, ContactType, FlowType, PlannedStatus, TransactionType};
 use alfredodev::state::{
-    create_account, create_category, create_contact, create_forecast, create_planned_entry,
-    create_recurring_plan, create_transaction, delete_account, delete_category, delete_contact,
-    delete_forecast, delete_planned_entry, delete_recurring_plan, delete_transaction,
-    get_account_by_id, get_category_by_id, get_contact_by_id, get_forecast_by_id,
+    create_account, create_category, create_contact, create_forecast,
+    create_or_update_planned_entry_from_cfdi, create_planned_entry, create_recurring_plan,
+    create_transaction, delete_account, delete_category, delete_contact, delete_forecast,
+    delete_planned_entry, delete_recurring_plan, delete_transaction, get_account_by_id,
+    get_category_by_id, get_contact_by_id, get_forecast_by_id, get_planned_entry_by_cfdi_uuid,
     get_planned_entry_by_id, get_transaction_by_id, list_accounts, list_categories, list_companies,
     list_contacts, list_forecasts, list_planned_entries, list_recurring_plans, list_transactions,
     pay_planned_entry,
@@ -281,6 +282,7 @@ async fn transactions_crud_works() {
         None,
         25.0,
         None,
+        None,
         true,
         None,
         None,
@@ -305,6 +307,87 @@ async fn transactions_crud_works() {
             .unwrap()
             .is_none()
     );
+
+    common::teardown(Some(ctx)).await;
+}
+
+#[tokio::test]
+async fn cfdi_planned_entry_upsert_is_idempotent() {
+    let ctx = match common::setup_state().await {
+        Some(s) => s,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let company_id = list_companies(&state).await.unwrap()[0].id.clone().unwrap();
+
+    let cat_id = create_category(
+        &state,
+        &company_id,
+        "CFDI Planned Cat",
+        FlowType::Expense,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let acc_id = create_account(
+        &state,
+        &company_id,
+        "CFDI Planned Account",
+        AccountType::Cash,
+        "MXN",
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+    let due = DateTime::from_chrono(Utc::now());
+
+    let (first_id, created) = create_or_update_planned_entry_from_cfdi(
+        &state,
+        &company_id,
+        due,
+        "Proveedor CFDI - UUID-TEST",
+        FlowType::Expense,
+        &cat_id,
+        &acc_id,
+        None,
+        150.0,
+        "UUID-TEST",
+        Some("MXN".into()),
+        Some("A-1".into()),
+        None,
+    )
+    .await
+    .unwrap();
+    assert!(created);
+
+    let (second_id, created) = create_or_update_planned_entry_from_cfdi(
+        &state,
+        &company_id,
+        due,
+        "Proveedor CFDI - UUID-TEST actualizado",
+        FlowType::Expense,
+        &cat_id,
+        &acc_id,
+        None,
+        175.0,
+        "UUID-TEST",
+        Some("MXN".into()),
+        Some("A-2".into()),
+        None,
+    )
+    .await
+    .unwrap();
+    assert!(!created);
+    assert_eq!(first_id, second_id);
+
+    let entry = get_planned_entry_by_cfdi_uuid(&state, &company_id, "UUID-TEST")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(entry.amount_estimated, 175.0);
+    assert_eq!(entry.cfdi_folio.as_deref(), Some("A-2"));
 
     common::teardown(Some(ctx)).await;
 }

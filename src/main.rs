@@ -170,6 +170,10 @@ async fn main() {
             get(routes::planned_entries_new),
         )
         .route(
+            "/admin/planned_entries/bulk_pay",
+            get(routes::planned_entries_bulk_pay_form).post(routes::planned_entries_bulk_pay),
+        )
+        .route(
             "/admin/planned_entries/{id}/edit",
             get(routes::planned_entries_edit),
         )

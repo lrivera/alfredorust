@@ -435,6 +435,8 @@ pub(super) async fn seed_sample_finance(db: &Database, company_id: Option<Object
                 recurring_plan_id,
                 recurring_plan_version: pe.recurring_plan_version,
                 service_order_id: None,
+                project_id: None,
+                parent_planned_entry_id: None,
                 name: pe.name,
                 flow_type: pe.flow_type,
                 category_id,
@@ -448,6 +450,9 @@ pub(super) async fn seed_sample_finance(db: &Database, company_id: Option<Object
                 created_at: pe.created_at,
                 updated_at: pe.updated_at,
                 notes: pe.notes,
+                cfdi_uuid: None,
+                currency: None,
+                cfdi_folio: None,
             })
             .await?;
         let new_id = res
@@ -479,6 +484,7 @@ pub(super) async fn seed_sample_finance(db: &Database, company_id: Option<Object
                 account_to_id,
                 amount: tx.amount,
                 planned_entry_id,
+                project_id: None,
                 is_confirmed: tx.is_confirmed,
                 created_at: tx.created_at,
                 updated_at: tx.updated_at,

@@ -14,15 +14,15 @@ use axum::{
 use tower::ServiceExt; // for oneshot
 
 use alfredodev::{
-    models::{ProjectPriority, ResourceType, UserPermission, UserRole},
+    models::{FlowType, PlannedStatus, ProjectPriority, ResourceType, UserPermission, UserRole},
     routes,
     session::{SESSION_COOKIE_NAME, require_session},
     state::{
-        AppState, add_user_to_company, create_company, create_project, create_resource,
-        create_resource_log, create_session, create_user, create_user_with_permissions,
-        get_user_by_id, list_accounts, list_categories, list_companies, list_contacts,
-        list_forecasts, list_planned_entries, list_projects, list_recurring_plans,
-        list_resource_logs, list_resources, list_transactions, list_users,
+        AppState, add_user_to_company, create_company, create_planned_entry, create_project,
+        create_resource, create_resource_log, create_session, create_user,
+        create_user_with_permissions, get_user_by_id, list_accounts, list_categories,
+        list_companies, list_contacts, list_forecasts, list_planned_entries, list_projects,
+        list_recurring_plans, list_resource_logs, list_resources, list_transactions, list_users,
     },
 };
 use bson::DateTime;
@@ -111,6 +111,10 @@ fn build_app(state: Arc<AppState>) -> Router {
         .route(
             "/admin/planned_entries/{id}/pay",
             get(routes::planned_entries_pay_form).post(routes::planned_entries_pay),
+        )
+        .route(
+            "/admin/planned_entries/bulk_pay",
+            get(routes::planned_entries_bulk_pay_form).post(routes::planned_entries_bulk_pay),
         )
         // POST routes for planned entries omitted in tests (use private types)
         .route(
@@ -336,6 +340,20 @@ async fn planned_entry_pay_endpoint_creates_transaction() {
     let host = format!("{}.miapp.local", user.company_slug);
     let token = create_session(&state, &user.email).await.unwrap();
     let company_id = user.company_id.clone();
+    let project_id = create_project(
+        &state,
+        &company_id,
+        "Proyecto Pago CFDI",
+        None,
+        None,
+        None,
+        ProjectPriority::Medium,
+        Some(1000.0),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
 
     let entry = list_planned_entries(&state)
         .await
@@ -375,7 +393,10 @@ async fn planned_entry_pay_endpoint_creates_transaction() {
         &host,
         &format!("/admin/planned_entries/{entry_id}/pay"),
         &token,
-        format!("paid_at=2026-05-04&amount=123.45&account_id={account_id}&notes=Pago+de+prueba&return_to=/tiempo"),
+        format!(
+            "paid_at=2026-05-04&amount=123.45&account_id={account_id}&project_id={}&notes=Pago+de+prueba&return_to=/tiempo",
+            project_id.to_hex()
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::SEE_OTHER, "pay submit must redirect");
@@ -384,9 +405,9 @@ async fn planned_entry_pay_endpoint_creates_transaction() {
     let transactions = list_transactions(&state).await.unwrap();
     assert_eq!(transactions.len(), initial_transactions + 1);
     assert!(
-        transactions
-            .iter()
-            .any(|tx| tx.planned_entry_id == entry.id && (tx.amount - 123.45).abs() < f64::EPSILON),
+        transactions.iter().any(|tx| tx.planned_entry_id == entry.id
+            && tx.project_id == Some(project_id.clone())
+            && (tx.amount - 123.45).abs() < f64::EPSILON),
         "payment must create linked transaction"
     );
 
@@ -435,6 +456,109 @@ async fn planned_entry_pay_validation_rerenders_form_instead_of_blank_page() {
     assert_eq!(
         list_transactions(&state).await.unwrap().len(),
         initial_transactions
+    );
+
+    common::teardown(Some(ctx)).await;
+}
+
+#[tokio::test]
+async fn planned_entries_bulk_pay_creates_transactions() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let shared = Arc::new(state.clone());
+
+    let user = list_users(&state).await.unwrap().remove(0);
+    let host = format!("{}.miapp.local", user.company_slug);
+    let token = create_session(&state, &user.email).await.unwrap();
+    let company_id = user.company_id.clone();
+
+    let account = list_accounts(&state)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|account| {
+            account.company_id == company_id && account.is_active && account.id.is_some()
+        })
+        .expect("seeded active account for active company");
+    let account_id = account.id.as_ref().unwrap().to_hex();
+    let category = list_categories(&state)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|category| {
+            category.company_id == company_id && category.flow_type == FlowType::Expense
+        })
+        .expect("seeded expense category for active company");
+    create_planned_entry(
+        &state,
+        &company_id,
+        None,
+        None,
+        None,
+        "Pago masivo extra",
+        FlowType::Expense,
+        category.id.as_ref().unwrap(),
+        account.id.as_ref().unwrap(),
+        None,
+        345.67,
+        DateTime::parse_rfc3339_str("2026-05-05T00:00:00Z").unwrap(),
+        PlannedStatus::Planned,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let entries: Vec<_> = list_planned_entries(&state)
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|entry| entry.company_id == company_id && entry.id.is_some())
+        .filter(|entry| {
+            !matches!(
+                entry.status,
+                PlannedStatus::Covered | PlannedStatus::Cancelled
+            )
+        })
+        .take(2)
+        .collect();
+    assert_eq!(entries.len(), 2, "payable entries present");
+    let entry_ids = entries
+        .iter()
+        .map(|entry| entry.id.as_ref().unwrap().to_hex())
+        .collect::<Vec<_>>()
+        .join(",");
+    let initial_transactions = list_transactions(&state).await.unwrap().len();
+
+    let app = build_app(shared.clone());
+    let (status, body) = get_with_cookie(
+        app,
+        &host,
+        &format!("/admin/planned_entries/bulk_pay?ids={entry_ids}&return_to=/tiempo"),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains("Pagar compromisos seleccionados"));
+
+    let app = build_app(shared);
+    let (status, location, _body) = post_form_with_cookie_response(
+        app,
+        &host,
+        "/admin/planned_entries/bulk_pay",
+        &token,
+        format!(
+            "entry_ids={entry_ids}&paid_at=2026-05-04&account_id={account_id}&return_to=/tiempo"
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(location.as_deref(), Some("/tiempo"));
+    assert_eq!(
+        list_transactions(&state).await.unwrap().len(),
+        initial_transactions + 2
     );
 
     common::teardown(Some(ctx)).await;

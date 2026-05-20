@@ -28,6 +28,9 @@
     <button id="btnHoy" class="rounded-md bg-sky-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2">
       Ir a hoy
     </button>
+    <button id="bulkPayTimelineBtn" class="hidden rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700">
+      Pagar seleccionados
+    </button>
   </div>
 
   <div class="relative w-full flex flex-1 min-h-[24rem] max-h-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm flex-col">
@@ -54,6 +57,15 @@
     const BUFFER = 40;
     const MIDDLE = Math.floor(TOTAL / 2);
     const formatter = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 0 });
+    const selectedPlannedEntries = new Set();
+    const bulkPayTimelineBtn = document.getElementById("bulkPayTimelineBtn");
+
+    const updateBulkPayButton = () => {
+      if (!bulkPayTimelineBtn) return;
+      const count = selectedPlannedEntries.size;
+      bulkPayTimelineBtn.classList.toggle("hidden", count === 0);
+      bulkPayTimelineBtn.textContent = count === 1 ? "Pagar seleccionado" : `Pagar seleccionados (${count})`;
+    };
 
     const fmt = (d, opts) => new Intl.DateTimeFormat("es-MX", { ...opts, timeZone: "UTC" }).format(d);
 
@@ -273,7 +285,11 @@
                 const payBtn = (pe.status !== "covered" && pe.status !== "cancelled")
                   ? `<a href="/admin/planned_entries/${pe.id}/pay?return_to=/tiempo" class="ml-2 shrink-0 rounded px-2 py-0.5 text-[11px] font-semibold bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 hover:bg-emerald-100 transition">Pagar</a>`
                   : "";
+                const selectBox = (pe.status !== "covered" && pe.status !== "cancelled")
+                  ? `<input type="checkbox" data-timeline-bulk-pay value="${pe.id}" ${selectedPlannedEntries.has(pe.id) ? "checked" : ""} class="shrink-0 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" />`
+                  : "";
                 return `<div class="flex items-center justify-between gap-2 rounded border border-dashed border-slate-200 px-2 py-1">
+                  ${selectBox}
                   <span class="font-semibold shrink-0 ${pe.flow_type === "income" ? "text-emerald-700" : "text-rose-700"}">
                     ${pe.flow_type === "income" ? "+" : "-"}${formatter.format(pe.amount_estimated)}
                   </span>
@@ -323,7 +339,27 @@
         }
       });
       renderChart(visiblePoints);
+      updateBulkPayButton();
     };
+
+    document.addEventListener("change", (event) => {
+      const target = event.target;
+      if (!target || !target.matches || !target.matches("[data-timeline-bulk-pay]")) return;
+      if (target.checked) {
+        selectedPlannedEntries.add(target.value);
+      } else {
+        selectedPlannedEntries.delete(target.value);
+      }
+      updateBulkPayButton();
+    });
+
+    if (bulkPayTimelineBtn) {
+      bulkPayTimelineBtn.addEventListener("click", () => {
+        const ids = Array.from(selectedPlannedEntries);
+        if (ids.length === 0) return;
+        window.location.href = `/admin/planned_entries/bulk_pay?ids=${encodeURIComponent(ids.join(","))}&return_to=/tiempo`;
+      });
+    }
 
     const renderChart = (points) => {
       const chart = document.getElementById("timelineChart");

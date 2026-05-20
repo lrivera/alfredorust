@@ -114,11 +114,18 @@
         </div>
 
         <div class="space-y-2">
-          <label for="recurring_plan_version" class="block text-sm font-medium text-slate-600">Versión del plan (opcional)</label>
-          <input id="recurring_plan_version" name="recurring_plan_version" value="{{ recurring_plan_version }}" type="number" min="1"
-            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40" />
+          <label for="project_id" class="block text-sm font-medium text-slate-600">Proyecto (opcional)</label>
+          <select id="project_id" name="project_id"
+            class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40">
+            <option value="">General</option>
+            {% for option in projects %}
+            <option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>
+            {% endfor %}
+          </select>
         </div>
       </div>
+
+      <input type="hidden" name="recurring_plan_version" value="{{ recurring_plan_version }}" />
 
       <div class="space-y-2">
         <label for="notes" class="block text-sm font-medium text-slate-600">Notas</label>

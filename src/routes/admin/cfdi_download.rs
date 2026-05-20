@@ -14,16 +14,34 @@ use uuid::Uuid;
 
 use crate::{
     cfdi,
-    models::{ContactType, FlowType, TransactionType},
+    models::{ContactType, FlowType},
     sat::{CfdiDownloadRequest, DownloadType, download_cfdis},
     session::SessionUser,
     state::{
-        AppState, CfdiJob, CfdiJobStatus, create_transaction, get_or_create_category,
-        get_or_create_contact_by_rfc, get_or_create_sat_account, get_sat_config,
+        AppState, CfdiJob, CfdiJobStatus, create_or_update_planned_entry_from_cfdi,
+        get_or_create_category, get_or_create_contact_by_rfc, get_or_create_sat_account,
+        get_sat_config, pay_planned_entry,
     },
 };
 
-enum TxOutcome {
+fn require_company_admin(
+    session_user: &SessionUser,
+    company_id: &ObjectId,
+) -> Result<(), StatusCode> {
+    if session_user
+        .user()
+        .company_ids
+        .iter()
+        .zip(session_user.user().company_roles.iter())
+        .any(|(cid, role)| cid == company_id && role.is_admin())
+    {
+        Ok(())
+    } else {
+        Err(StatusCode::FORBIDDEN)
+    }
+}
+
+enum PlannedOutcome {
     Created,
     Updated,
 }
@@ -35,6 +53,8 @@ pub struct CfdiDownloadForm {
     pub end: String,
     #[serde(default = "default_both")]
     pub download_type: String,
+    #[serde(default)]
+    pub auto_create_payments: bool,
 }
 
 fn default_both() -> String {
@@ -55,7 +75,7 @@ pub struct StartedJobs {
 // ── POST: start download (one job per monthly chunk) ───────────────────────
 
 pub async fn company_cfdi_download(
-    _session_user: SessionUser,
+    session_user: SessionUser,
     State(state): State<Arc<AppState>>,
     Path(company_id): Path<String>,
     Form(form): Form<CfdiDownloadForm>,
@@ -82,6 +102,10 @@ pub async fn company_cfdi_download(
         }
     };
 
+    if let Err(status) = require_company_admin(&session_user, &company_object_id) {
+        return status.into_response();
+    }
+
     let config = match get_sat_config(&state, &config_id).await {
         Ok(Some(c)) => c,
         Ok(None) => {
@@ -99,6 +123,10 @@ pub async fn company_cfdi_download(
                 .into_response();
         }
     };
+
+    if config.company_id != company_object_id {
+        return StatusCode::FORBIDDEN.into_response();
+    }
 
     let dl_types: Vec<DownloadType> = match form.download_type.as_str() {
         "received" => vec![DownloadType::Received],
@@ -138,6 +166,7 @@ pub async fn company_cfdi_download(
         let pwd = config.key_password.clone();
         let rfc = config.rfc.clone();
         let sem = semaphore.clone();
+        let auto_create_payments = form.auto_create_payments;
 
         tokio::spawn(async move {
             let _permit = sem.acquire().await.unwrap();
@@ -159,6 +188,7 @@ pub async fn company_cfdi_download(
                 pwd.clone(),
                 rfc.clone(),
                 dl_types_bg.clone(),
+                auto_create_payments,
                 chunk_start.clone(),
                 chunk_end.clone(),
             )
@@ -176,6 +206,7 @@ pub async fn company_cfdi_download(
                     pwd,
                     rfc,
                     dl_types_bg,
+                    auto_create_payments,
                     chunk_start,
                     chunk_end,
                 )
@@ -199,10 +230,18 @@ pub async fn company_cfdi_download(
 // ── GET: list all jobs for a company ───────────────────────────────────────
 
 pub async fn company_cfdi_jobs_list(
-    _session_user: SessionUser,
+    session_user: SessionUser,
     State(state): State<Arc<AppState>>,
     Path(company_id): Path<String>,
 ) -> impl IntoResponse {
+    let company_object_id = match ObjectId::from_str(&company_id) {
+        Ok(id) => id,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    if let Err(status) = require_company_admin(&session_user, &company_object_id) {
+        return status.into_response();
+    }
+
     let jobs = state.jobs.lock().await;
     let mut result: Vec<&CfdiJob> = jobs
         .values()
@@ -215,13 +254,24 @@ pub async fn company_cfdi_jobs_list(
 // ── GET: single job status ─────────────────────────────────────────────────
 
 pub async fn company_cfdi_job_status(
-    _session_user: SessionUser,
+    session_user: SessionUser,
     State(state): State<Arc<AppState>>,
     Path((_company_id, job_id)): Path<(String, String)>,
 ) -> impl IntoResponse {
+    let company_object_id = match ObjectId::from_str(&_company_id) {
+        Ok(id) => id,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    if let Err(status) = require_company_admin(&session_user, &company_object_id) {
+        return status.into_response();
+    }
+
     let jobs = state.jobs.lock().await;
     match jobs.get(&job_id) {
-        Some(job) => (StatusCode::OK, Json(job.clone())).into_response(),
+        Some(job) if job.company_id == _company_id => {
+            (StatusCode::OK, Json(job.clone())).into_response()
+        }
+        Some(_) => StatusCode::FORBIDDEN.into_response(),
         None => (
             StatusCode::NOT_FOUND,
             Json(serde_json::json!({"error":"job no encontrado"})),
@@ -241,6 +291,7 @@ async fn run_download(
     key_password: String,
     rfc: String,
     dl_types: Vec<DownloadType>,
+    auto_create_payments: bool,
     start: String,
     end: String,
 ) -> CfdiJobStatus {
@@ -292,9 +343,9 @@ async fn run_download(
         }
     }
 
-    let mut tx_created = 0usize;
-    let mut tx_updated = 0usize;
-    let mut tx_skipped = 0usize;
+    let mut commitments_created = 0usize;
+    let mut commitments_updated = 0usize;
+    let mut commitments_skipped = 0usize;
 
     let income_category = get_or_create_category(
         state,
@@ -314,20 +365,20 @@ async fn run_download(
 
     for (dl_type, cfdi_item) in &all_imported {
         if cfdi_item.tipo_de_comprobante != "I" && cfdi_item.tipo_de_comprobante != "E" {
-            tx_skipped += 1;
+            commitments_skipped += 1;
             continue;
         }
 
-        let (tx_type, category_result) = match dl_type {
-            DownloadType::Issued => (TransactionType::Income, &income_category),
-            DownloadType::Received => (TransactionType::Expense, &expense_category),
+        let (flow_type, category_result) = match dl_type {
+            DownloadType::Issued => (FlowType::Income, &income_category),
+            DownloadType::Received => (FlowType::Expense, &expense_category),
         };
 
         let category_id = match category_result {
             Ok(id) => id,
             Err(e) => {
                 errors.push(format!("Error categoría para {}: {e}", cfdi_item.uuid));
-                tx_skipped += 1;
+                commitments_skipped += 1;
                 continue;
             }
         };
@@ -336,23 +387,17 @@ async fn run_download(
             Ok(id) => id.clone(),
             Err(e) => {
                 errors.push(format!("Error cuenta SAT: {e}"));
-                tx_skipped += 1;
+                commitments_skipped += 1;
                 continue;
             }
         };
 
         let amount: f64 = cfdi_item.total.parse().unwrap_or(0.0);
         if amount == 0.0 {
-            tx_skipped += 1;
+            commitments_skipped += 1;
             continue;
         }
         let date = parse_cfdi_date(&cfdi_item.fecha);
-
-        let (account_from_id, account_to_id) = match tx_type {
-            TransactionType::Income => (None, Some(sat_account_id)),
-            TransactionType::Expense => (Some(sat_account_id), None),
-            TransactionType::Transfer => (None, None),
-        };
 
         let (contact_rfc, contact_name, contact_type, description) = match dl_type {
             DownloadType::Issued => (
@@ -383,84 +428,74 @@ async fn run_download(
             None
         };
 
-        let existing = state
-            .transactions
-            .find_one(bson::doc! { "cfdi_uuid": &cfdi_item.uuid })
-            .await
-            .ok()
-            .flatten();
-
-        let outcome = if let Some(existing_tx) = existing {
-            let res = state
-                .transactions
-                .update_one(
-                    bson::doc! { "_id": &existing_tx.id },
-                    bson::doc! { "$set": {
-                        "amount": amount,
-                        "date": date,
-                        "description": &description,
-                        "transaction_type": tx_type.as_str(),
-                        "category_id": category_id,
-                        "account_from_id": &account_from_id,
-                        "account_to_id": &account_to_id,
-                        "contact_id": &contact_id,
-                        "currency": cfdi_item.moneda.as_str(),
-                        "cfdi_folio": cfdi_item.folio.as_str(),
-                        "updated_at": bson::DateTime::now(),
-                    }},
-                )
-                .await;
-            match res {
-                Ok(_) => TxOutcome::Updated,
-                Err(e) => {
-                    errors.push(format!("Error actualizando {}: {e}", cfdi_item.uuid));
-                    tx_skipped += 1;
-                    continue;
-                }
-            }
-        } else {
-            let currency = Some(cfdi_item.moneda.clone()).filter(|s| !s.is_empty());
-            let folio = Some(cfdi_item.folio.clone()).filter(|s| !s.is_empty());
-            match create_transaction(
-                state,
-                company_object_id,
-                date,
-                &description,
-                tx_type,
-                category_id,
-                account_from_id,
-                account_to_id,
-                amount,
-                None,
-                true,
-                None,
-                Some(cfdi_item.uuid.clone()),
-                contact_id,
-                currency,
-                folio,
-            )
-            .await
-            {
-                Ok(_) => TxOutcome::Created,
-                Err(e) => {
-                    errors.push(format!("Error transacción {}: {e}", cfdi_item.uuid));
-                    tx_skipped += 1;
-                    continue;
-                }
+        let currency = Some(cfdi_item.moneda.clone()).filter(|s| !s.is_empty());
+        let folio = Some(cfdi_item.folio.clone()).filter(|s| !s.is_empty());
+        let (planned_entry_id, created) = match create_or_update_planned_entry_from_cfdi(
+            state,
+            company_object_id,
+            date,
+            &description,
+            flow_type,
+            category_id,
+            &sat_account_id,
+            contact_id,
+            amount,
+            &cfdi_item.uuid,
+            currency,
+            folio,
+            None,
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(e) => {
+                errors.push(format!("Error compromiso CFDI {}: {e}", cfdi_item.uuid));
+                commitments_skipped += 1;
+                continue;
             }
         };
 
+        let outcome = if created {
+            PlannedOutcome::Created
+        } else {
+            PlannedOutcome::Updated
+        };
+
+        if auto_create_payments {
+            let existing_payment = state
+                .transactions
+                .find_one(bson::doc! { "company_id": company_object_id, "planned_entry_id": &planned_entry_id })
+                .await
+                .ok()
+                .flatten();
+            if existing_payment.is_none() {
+                if let Err(e) = pay_planned_entry(
+                    state,
+                    &planned_entry_id,
+                    company_object_id,
+                    &sat_account_id,
+                    amount,
+                    date,
+                    None,
+                )
+                .await
+                {
+                    errors.push(format!("Error pago automático {}: {e}", cfdi_item.uuid));
+                }
+            }
+        }
+
         match outcome {
-            TxOutcome::Created => tx_created += 1,
-            TxOutcome::Updated => tx_updated += 1,
+            PlannedOutcome::Created => commitments_created += 1,
+            PlannedOutcome::Updated => commitments_updated += 1,
         }
     }
 
     CfdiJobStatus::Done {
         imported: all_imported.len(),
-        transactions_created: tx_created,
-        transactions_updated: tx_updated,
-        transactions_skipped: tx_skipped,
+        transactions_created: commitments_created,
+        transactions_updated: commitments_updated,
+        transactions_skipped: commitments_skipped,
         errors,
     }
 }
