@@ -1,0 +1,19 @@
+project: alfredodev
+schema: spec-driven
+description: Multi-tenant Axum application for finance, operations, SAT/CFDI tooling, resources, time tracking, and PDF generation.
+
+principles:
+  - Tenant isolation is mandatory for business data.
+  - Route handlers must enforce permissions; templates are not authorization.
+  - Finance and SAT/CFDI changes must document side effects.
+  - Harness coverage should prefer isolated MongoDB and in-memory Axum routers.
+  - Failures should be explicit and noisy unless a spec calls for recovery.
+
+domains:
+  - auth
+  - tenancy
+  - finance
+  - cfdi
+  - projects
+  - resources
+  - harness

@@ -124,6 +124,8 @@ SAT download paths/passwords may be supplied through stored `SatConfig` records 
 - Use existing state helpers and route patterns before adding new abstractions.
 - Keep Askama templates consistent with the current Tailwind-based layout.
 - Add or update tests for behavior changes, especially tenant isolation, auth, finance side effects, and SAT/CFDI parsing.
+- For non-trivial features or security-sensitive changes, create or update an OpenSpec change under `openspec/changes/` and keep current behavior specs under `openspec/specs/`.
+- Treat `tests/common`, `tests/fixtures`, and integration tests as the local harness. Prefer real isolated MongoDB behavior and in-memory Axum routers over mocks.
 - Do not introduce backwards-compatibility code unless there is persisted data, shipped behavior, external usage, or an explicit requirement.
 - Never commit `.env`, FIEL keys, certificates, downloaded CFDI packages, credentials, or production secrets.
 

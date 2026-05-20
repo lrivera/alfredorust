@@ -58,3 +58,12 @@ http://0.0.0.0:8090
   - `/pdf`
   - `/tiempo`
 
+## Development workflow
+
+This repository uses OpenSpec-style spec-driven workflow for non-trivial changes. See:
+
+- `openspec/README.md`
+- `openspec/config.yaml`
+- `openspec/specs/`
+
+The harness is local: isolated MongoDB databases, in-memory Axum routers, safe fixtures, and integration tests. It does not use Harness.io.
