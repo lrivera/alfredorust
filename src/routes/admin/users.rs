@@ -131,6 +131,23 @@ fn parse_user_form(body: &str) -> Result<UserFormData, String> {
     })
 }
 
+fn admin_company_ids(session_user: &SessionUser) -> Vec<ObjectId> {
+    session_user
+        .user()
+        .company_ids
+        .iter()
+        .zip(session_user.user().company_roles.iter())
+        .filter(|(_, role)| role.is_admin())
+        .map(|(id, _)| id.clone())
+        .collect()
+}
+
+fn user_shares_admin_company(user_company_ids: &[ObjectId], admin_companies: &[ObjectId]) -> bool {
+    user_company_ids
+        .iter()
+        .any(|cid| admin_companies.contains(cid))
+}
+
 pub async fn users_index(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -176,14 +193,7 @@ pub async fn users_new(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let admin_companies: Vec<ObjectId> = session_user
-        .user()
-        .company_ids
-        .iter()
-        .zip(session_user.user().company_roles.iter())
-        .filter(|(_, role)| role.is_admin())
-        .map(|(id, _)| id.clone())
-        .collect();
+    let admin_companies = admin_company_ids(&session_user);
     if admin_companies.is_empty() {
         return Err(StatusCode::FORBIDDEN);
     }
@@ -219,14 +229,7 @@ pub async fn users_create(
         Err(message) => return (StatusCode::UNPROCESSABLE_ENTITY, message).into_response(),
     };
 
-    let admin_companies: Vec<ObjectId> = session_user
-        .user()
-        .company_ids
-        .iter()
-        .zip(session_user.user().company_roles.iter())
-        .filter(|(_, role)| role.is_admin())
-        .map(|(id, _)| id.clone())
-        .collect();
+    let admin_companies = admin_company_ids(&session_user);
     if admin_companies.is_empty() {
         return StatusCode::FORBIDDEN.into_response();
     }
@@ -252,14 +255,7 @@ pub async fn users_edit(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Html<String>, StatusCode> {
-    let admin_companies: Vec<ObjectId> = session_user
-        .user()
-        .company_ids
-        .iter()
-        .zip(session_user.user().company_roles.iter())
-        .filter(|(_, role)| role.is_admin())
-        .map(|(id, _)| id.clone())
-        .collect();
+    let admin_companies = admin_company_ids(&session_user);
     if admin_companies.is_empty() {
         return Err(StatusCode::FORBIDDEN);
     }
@@ -275,12 +271,7 @@ pub async fn users_edit(
     }
 
     let is_self = session_user.user_id() == &user.id;
-    if !is_self
-        && !user
-            .company_ids
-            .iter()
-            .any(|cid| admin_companies.contains(cid))
-    {
+    if !is_self && !user_shares_admin_company(&user.company_ids, &admin_companies) {
         return Err(StatusCode::FORBIDDEN);
     }
 
@@ -327,14 +318,7 @@ pub async fn users_update(
         Err(message) => return (StatusCode::UNPROCESSABLE_ENTITY, message).into_response(),
     };
 
-    let admin_companies: Vec<ObjectId> = session_user
-        .user()
-        .company_ids
-        .iter()
-        .zip(session_user.user().company_roles.iter())
-        .filter(|(_, role)| role.is_admin())
-        .map(|(id, _)| id.clone())
-        .collect();
+    let admin_companies = admin_company_ids(&session_user);
     if admin_companies.is_empty() {
         return StatusCode::FORBIDDEN.into_response();
     }
@@ -356,12 +340,7 @@ pub async fn users_update(
     }
 
     let is_self = session_user.user_id() == &object_id;
-    if !is_self
-        && !target_user
-            .company_ids
-            .iter()
-            .any(|cid| admin_companies.contains(cid))
-    {
+    if !is_self && !user_shares_admin_company(&target_user.company_ids, &admin_companies) {
         return StatusCode::FORBIDDEN.into_response();
     }
 
@@ -416,6 +395,18 @@ pub async fn users_delete(
         return StatusCode::FORBIDDEN.into_response();
     }
 
+    let target_user = match get_user_by_id(&state, &object_id).await {
+        Ok(Some(user)) => user,
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+    let admin_companies = admin_company_ids(&session_user);
+    if admin_companies.is_empty()
+        || !user_shares_admin_company(&target_user.company_ids, &admin_companies)
+    {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+
     match delete_user(&state, &object_id).await {
         Ok(_) => Redirect::to("/admin/users").into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
@@ -432,15 +423,21 @@ pub async fn users_qrcode(
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
 
-    if !session_user.can_edit_user(&object_id) {
-        return StatusCode::FORBIDDEN.into_response();
-    }
-
     let user = match get_user_by_id(&state, &object_id).await {
         Ok(Some(user)) => user,
         Ok(None) => return StatusCode::NOT_FOUND.into_response(),
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
+
+    let is_self = session_user.user_id() == &object_id;
+    if !is_self {
+        let admin_companies = admin_company_ids(&session_user);
+        if admin_companies.is_empty()
+            || !user_shares_admin_company(&user.company_ids, &admin_companies)
+        {
+            return StatusCode::FORBIDDEN.into_response();
+        }
+    }
 
     let totp = match build_totp(&user.company_name, &user.email, &user.secret) {
         Ok(totp) => totp,

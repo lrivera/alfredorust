@@ -75,13 +75,13 @@ pub async fn login(
                 .into_response(),
         },
         Ok(None) => (
-            StatusCode::NOT_FOUND,
-            Json(serde_json::json!({ "error": "user not found" })),
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({ "ok": false })),
         )
             .into_response(),
-        Err(e) => (
+        Err(_) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({ "error": format!("db error: {e}") })),
+            Json(serde_json::json!({ "error": "login failed" })),
         )
             .into_response(),
     }
@@ -152,12 +152,17 @@ fn compute_root_domain(base: &str) -> Option<String> {
         return None;
     }
     let parts: Vec<&str> = base.split('.').collect();
-    if parts.len() >= 3 {
+    if parts.len() >= 2
+        && parts
+            .last()
+            .is_some_and(|last| last.eq_ignore_ascii_case("local"))
+    {
         // Drop only the first label: foo.miapp.local -> miapp.local
-        return Some(parts[1..].join("."));
-    }
-    if parts.len() == 2 {
-        return Some(base.to_string());
+        return Some(if parts.len() >= 3 {
+            parts[1..].join(".")
+        } else {
+            base.to_string()
+        });
     }
     None
 }

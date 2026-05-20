@@ -1,7 +1,7 @@
 // session.rs
 // Session middleware to protect routes and extractor to access session data.
 
-use std::sync::Arc;
+use std::{env, sync::Arc};
 
 use axum::{
     extract::{FromRequestParts, Request, State},
@@ -54,19 +54,9 @@ pub async fn require_session(
     }
 
     if let Some((mut user, token)) = found {
-        // Select active company strictly by subdomain if present
+        // Select active company strictly by a trusted tenant subdomain if present.
         if let Some(host) = request.headers().get("host").and_then(|h| h.to_str().ok()) {
-            let host_no_port = host.split(':').next().unwrap_or(host);
-            let parts: Vec<&str> = host_no_port.split('.').collect();
-            let has_local_sub = parts.len() == 2 && parts[1].eq_ignore_ascii_case("localhost");
-            let has_std_sub = parts.len() >= 3;
-            let current_subdomain = if has_std_sub || has_local_sub {
-                Some(parts[0])
-            } else {
-                None
-            };
-
-            if let Some(sub) = current_subdomain {
+            if let Some(sub) = tenant_subdomain_from_host(host) {
                 if let Some(idx) = user
                     .company_slugs
                     .iter()
@@ -95,6 +85,36 @@ pub async fn require_session(
     } else {
         Err(unauthorized_response())
     }
+}
+
+pub fn tenant_subdomain_from_host(host: &str) -> Option<&str> {
+    let host_no_port = host.split(':').next().unwrap_or(host).trim_end_matches('.');
+    if host_no_port.is_empty() || host_no_port.parse::<std::net::IpAddr>().is_ok() {
+        return None;
+    }
+
+    if let Ok(base_domain) = env::var("BASE_DOMAIN") {
+        let base = base_domain
+            .trim()
+            .trim_start_matches('.')
+            .trim_end_matches('.');
+        if base.is_empty() || host_no_port.eq_ignore_ascii_case(base) {
+            return None;
+        }
+        let suffix = format!(".{base}");
+        return host_no_port
+            .strip_suffix(&suffix)
+            .filter(|sub| !sub.is_empty() && !sub.contains('.'));
+    }
+
+    let parts: Vec<&str> = host_no_port.split('.').collect();
+    if parts.len() == 2 && parts[1].eq_ignore_ascii_case("localhost") {
+        return Some(parts[0]);
+    }
+    if parts.len() == 3 && parts[2].eq_ignore_ascii_case("local") {
+        return Some(parts[0]);
+    }
+    None
 }
 
 pub struct SessionUser(pub SessionData);
@@ -184,4 +204,60 @@ fn extract_cookies(headers: &HeaderMap, name: &str) -> Vec<String> {
             }
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tenant_subdomain_from_host;
+    use std::sync::{Mutex, OnceLock};
+
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+    }
+
+    #[test]
+    fn tenant_subdomain_requires_trusted_base_domain() {
+        let _guard = env_lock();
+        unsafe {
+            std::env::set_var("BASE_DOMAIN", "alfredorivera.dev");
+        }
+
+        assert_eq!(
+            tenant_subdomain_from_host("acme.alfredorivera.dev"),
+            Some("acme")
+        );
+        assert_eq!(
+            tenant_subdomain_from_host("acme.alfredorivera.dev:8090"),
+            Some("acme")
+        );
+        assert_eq!(tenant_subdomain_from_host("acme.evil.test"), None);
+        assert_eq!(
+            tenant_subdomain_from_host("nested.acme.alfredorivera.dev"),
+            None
+        );
+
+        unsafe {
+            std::env::remove_var("BASE_DOMAIN");
+        }
+    }
+
+    #[test]
+    fn tenant_subdomain_allows_local_development_hosts_only_without_base_domain() {
+        let _guard = env_lock();
+        unsafe {
+            std::env::remove_var("BASE_DOMAIN");
+        }
+
+        assert_eq!(
+            tenant_subdomain_from_host("acme.localhost:8090"),
+            Some("acme")
+        );
+        assert_eq!(
+            tenant_subdomain_from_host("acme.miapp.local:8090"),
+            Some("acme")
+        );
+        assert_eq!(tenant_subdomain_from_host("acme.evil.test"), None);
+        assert_eq!(tenant_subdomain_from_host("127.0.0.1:8090"), None);
+    }
 }

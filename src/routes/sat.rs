@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{path::Path, sync::Arc};
 
 use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 use tokio::fs;
@@ -13,8 +13,29 @@ use crate::{
 pub async fn sat_cfdi_download(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
-    Json(payload): Json<CfdiDownloadRequest>,
+    Json(mut payload): Json<CfdiDownloadRequest>,
 ) -> impl IntoResponse {
+    if !session_user.is_admin() {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    if payload.output_dir.is_some() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error":"output_dir no se acepta desde la API"})),
+        )
+            .into_response();
+    }
+    if !is_allowed_sat_path(payload.cer_path.as_deref())
+        || !is_allowed_sat_path(payload.key_path.as_deref())
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error":"ruta de certificado inválida"})),
+        )
+            .into_response();
+    }
+    payload.output_dir = None;
+
     let slug = session_user.active_company_slug().to_string();
     match download_cfdis(&slug, payload).await {
         Ok(result) => {
@@ -52,4 +73,25 @@ pub async fn sat_cfdi_download(
             (status, Json(err.body())).into_response()
         }
     }
+}
+
+fn is_allowed_sat_path(path: Option<&str>) -> bool {
+    let Some(path) = path else {
+        return true;
+    };
+    let path = Path::new(path);
+    if path.is_absolute() {
+        return false;
+    }
+    let mut components = path.components();
+    matches!(components.next(), Some(std::path::Component::Normal(first)) if first == "uploads")
+        && matches!(components.next(), Some(std::path::Component::Normal(second)) if second == "sat")
+        && !components.any(|component| {
+            matches!(
+                component,
+                std::path::Component::ParentDir
+                    | std::path::Component::RootDir
+                    | std::path::Component::Prefix(_)
+            )
+        })
 }

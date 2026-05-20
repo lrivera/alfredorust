@@ -17,6 +17,39 @@ use crate::{
     state::{AppState, create_sat_config, delete_sat_config, get_company_by_id, list_sat_configs},
 };
 
+const MAX_SAT_FILE_BYTES: usize = 2 * 1024 * 1024;
+
+fn require_company_admin(
+    session_user: &SessionUser,
+    company_id: &ObjectId,
+) -> Result<(), StatusCode> {
+    if session_user
+        .user()
+        .company_ids
+        .iter()
+        .zip(session_user.user().company_roles.iter())
+        .any(|(cid, role)| cid == company_id && role.is_admin())
+    {
+        Ok(())
+    } else {
+        Err(StatusCode::FORBIDDEN)
+    }
+}
+
+fn safe_upload_filename(filename: Option<&str>, fallback: &str) -> String {
+    let name = filename
+        .and_then(|raw| raw.rsplit(['/', '\\']).next())
+        .unwrap_or(fallback)
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | '_'))
+        .collect::<String>();
+    if name.is_empty() || name == "." || name == ".." {
+        fallback.to_string()
+    } else {
+        name
+    }
+}
+
 fn render<T: Template>(tpl: T) -> Result<Html<String>, StatusCode> {
     tpl.render()
         .map(Html)
@@ -32,11 +65,12 @@ struct SatConfigFormTemplate {
 }
 
 pub async fn sat_configs_new(
-    _session_user: SessionUser,
+    session_user: SessionUser,
     State(state): State<Arc<AppState>>,
     Path(company_id): Path<String>,
 ) -> Result<Html<String>, StatusCode> {
     let object_id = ObjectId::from_str(&company_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    require_company_admin(&session_user, &object_id)?;
     let company = get_company_by_id(&state, &object_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
@@ -50,7 +84,7 @@ pub async fn sat_configs_new(
 }
 
 pub async fn sat_configs_create(
-    _session_user: SessionUser,
+    session_user: SessionUser,
     State(state): State<Arc<AppState>>,
     Path(company_id): Path<String>,
     mut multipart: Multipart,
@@ -59,6 +93,10 @@ pub async fn sat_configs_create(
         Ok(id) => id,
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
+
+    if let Err(status) = require_company_admin(&session_user, &company_object_id) {
+        return status.into_response();
+    }
 
     let mut rfc = String::new();
     let mut label = None::<String>;
@@ -83,15 +121,21 @@ pub async fn sat_configs_create(
                 key_password = field.text().await.unwrap_or_default();
             }
             "cer_file" => {
-                let filename = field.file_name().unwrap_or("cert.cer").to_string();
+                let filename = safe_upload_filename(field.file_name(), "cert.cer");
                 let data = field.bytes().await.unwrap_or_default().to_vec();
+                if data.len() > MAX_SAT_FILE_BYTES {
+                    return StatusCode::PAYLOAD_TOO_LARGE.into_response();
+                }
                 if !data.is_empty() {
                     cer_bytes = Some((filename, data));
                 }
             }
             "key_file" => {
-                let filename = field.file_name().unwrap_or("private.key").to_string();
+                let filename = safe_upload_filename(field.file_name(), "private.key");
                 let data = field.bytes().await.unwrap_or_default().to_vec();
+                if data.len() > MAX_SAT_FILE_BYTES {
+                    return StatusCode::PAYLOAD_TOO_LARGE.into_response();
+                }
                 if !data.is_empty() {
                     key_bytes = Some((filename, data));
                 }
@@ -161,7 +205,7 @@ pub async fn sat_configs_create(
 }
 
 pub async fn sat_configs_delete(
-    _session_user: SessionUser,
+    session_user: SessionUser,
     State(state): State<Arc<AppState>>,
     Path((company_id, config_id)): Path<(String, String)>,
 ) -> impl IntoResponse {
@@ -169,12 +213,26 @@ pub async fn sat_configs_delete(
         Ok(id) => id,
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
+    let company_object_id = match ObjectId::from_str(&company_id) {
+        Ok(id) => id,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+
+    if let Err(status) = require_company_admin(&session_user, &company_object_id) {
+        return status.into_response();
+    }
 
     // Optionally remove the files from disk
-    if let Ok(Some(config)) = state
+    let config = match state
         .sat_configs
-        .find_one(bson::doc! { "_id": &config_object_id })
+        .find_one(bson::doc! { "_id": &config_object_id, "company_id": &company_object_id })
         .await
+    {
+        Ok(Some(config)) => config,
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+
     {
         let _ = fs::remove_file(&config.cer_path).await;
         let _ = fs::remove_file(&config.key_path).await;

@@ -68,6 +68,9 @@ pub async fn cfdis_index(
     State(state): State<Arc<AppState>>,
     Query(q): Query<PageQuery>,
 ) -> Result<Html<String>, StatusCode> {
+    if !session_user.is_admin() {
+        return Err(StatusCode::FORBIDDEN);
+    }
     let active_company = session_user.active_company_id();
     let filter = bson::doc! { "company_id": active_company.to_hex() };
 
@@ -164,6 +167,9 @@ pub async fn cfdis_data_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<CfdiDataResponse>, StatusCode> {
+    if !session_user.is_admin() {
+        return Err(StatusCode::FORBIDDEN);
+    }
     let active_company = session_user.active_company_id();
 
     // Get known RFCs for this company from SAT configs

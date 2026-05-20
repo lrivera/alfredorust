@@ -1,8 +1,4 @@
-use std::{
-    fs,
-    process::{Command, Stdio},
-    sync::Arc,
-};
+use std::{process::Stdio, sync::Arc};
 
 use askama::Template;
 use axum::{
@@ -12,8 +8,12 @@ use axum::{
 };
 use rand::{Rng, distr::Alphanumeric};
 use serde::{Deserialize, Serialize};
+use tokio::{fs, process::Command, time};
 
 use crate::{session::SessionUser, state::AppState};
+
+const MAX_TYPST_SOURCE_BYTES: usize = 256 * 1024;
+const TYPST_TIMEOUT_SECONDS: u64 = 10;
 
 fn render<T: Template>(tpl: T) -> Result<Html<String>, StatusCode> {
     tpl.render()
@@ -68,22 +68,30 @@ pub async fn pdf_preview(
 }
 
 async fn compile_typst(source: &str) -> Result<Vec<u8>, String> {
-    let mut rng = rand::rng();
-    let suffix: String = (&mut rng)
-        .sample_iter(&Alphanumeric)
-        .take(12)
-        .map(char::from)
-        .collect();
+    if source.len() > MAX_TYPST_SOURCE_BYTES {
+        return Err("El documento es demasiado grande".to_string());
+    }
+
+    let suffix: String = {
+        let mut rng = rand::rng();
+        (&mut rng)
+            .sample_iter(&Alphanumeric)
+            .take(12)
+            .map(char::from)
+            .collect()
+    };
 
     let tmp_dir = std::env::temp_dir().join(format!("typst-{}", suffix));
-    fs::create_dir(&tmp_dir).map_err(|e| format!("No se pudo crear directorio temporal: {e}"))?;
+    fs::create_dir(&tmp_dir)
+        .await
+        .map_err(|e| format!("No se pudo crear directorio temporal: {e}"))?;
 
     let input_path = tmp_dir.join("input.typ");
     let output_path = tmp_dir.join("output.pdf");
 
-    let write_result = fs::write(&input_path, source);
+    let write_result = fs::write(&input_path, source).await;
     if let Err(err) = write_result {
-        let _ = fs::remove_dir_all(&tmp_dir);
+        let _ = fs::remove_dir_all(&tmp_dir).await;
         return Err(format!("No se pudo escribir archivo temporal: {err}"));
     }
 
@@ -91,13 +99,17 @@ async fn compile_typst(source: &str) -> Result<Vec<u8>, String> {
 
     let output = Command::new(&typst_bin)
         .arg("compile")
+        .arg("--root")
+        .arg(&tmp_dir)
         .arg(&input_path)
         .arg(&output_path)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .output()
-        .map_err(|err| {
-            let _ = fs::remove_dir_all(&tmp_dir);
+        .output();
+
+    let output = match time::timeout(time::Duration::from_secs(TYPST_TIMEOUT_SECONDS), output).await
+    {
+        Ok(result) => result.map_err(|err| {
             if err.kind() == std::io::ErrorKind::NotFound {
                 format!(
                     "No se encontró el binario `{}`. Instálalo y/o define la variable TYPST_BIN",
@@ -106,10 +118,20 @@ async fn compile_typst(source: &str) -> Result<Vec<u8>, String> {
             } else {
                 format!("Error ejecutando typst: {err}")
             }
-        })?;
+        }),
+        Err(_) => Err("Typst tardó demasiado en generar el PDF".to_string()),
+    };
+
+    let output = match output {
+        Ok(output) => output,
+        Err(err) => {
+            let _ = fs::remove_dir_all(&tmp_dir).await;
+            return Err(err);
+        }
+    };
 
     if !output.status.success() {
-        let _ = fs::remove_dir_all(&tmp_dir);
+        let _ = fs::remove_dir_all(&tmp_dir).await;
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
         return Err(if stderr.trim().is_empty() {
             "Fallo al ejecutar typst".to_string()
@@ -118,9 +140,10 @@ async fn compile_typst(source: &str) -> Result<Vec<u8>, String> {
         });
     }
 
-    let pdf_bytes =
-        fs::read(&output_path).map_err(|err| format!("No se pudo leer el PDF generado: {err}"))?;
+    let pdf_bytes = fs::read(&output_path)
+        .await
+        .map_err(|err| format!("No se pudo leer el PDF generado: {err}"))?;
 
-    let _ = fs::remove_dir_all(&tmp_dir);
+    let _ = fs::remove_dir_all(&tmp_dir).await;
     Ok(pdf_bytes)
 }
