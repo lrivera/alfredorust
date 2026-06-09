@@ -68,6 +68,7 @@ enum CompanyCommand {
 struct CliError {
     code: &'static str,
     message: String,
+    details: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -104,6 +105,7 @@ async fn main() -> ExitCode {
             let cli_error = CliError {
                 code: classify_error(&err),
                 message: err.to_string(),
+                details: err.chain().skip(1).map(|cause| cause.to_string()).collect(),
             };
             let rendered = serde_json::to_string_pretty(&cli_error)
                 .unwrap_or_else(|_| format!("{}", cli_error.message));
@@ -302,7 +304,7 @@ async fn ensure_session(state: &mut CredentialState) -> Result<()> {
 
 async fn get_with_session(state: &CredentialState, path: &str) -> Result<reqwest::Response> {
     let client = Client::new();
-    let url = endpoint(&state.base_url, path)?;
+    let url = endpoint(&request_base_url(state)?, path)?;
     let mut request = client
         .get(url)
         .header(header::COOKIE, session_cookie_header(state)?);
@@ -344,7 +346,7 @@ async fn refresh_login(state: &mut CredentialState) -> Result<()> {
 async fn post_logout(state: &CredentialState) -> Result<()> {
     let client = Client::new();
     let mut request = client
-        .post(endpoint(&state.base_url, "/logout")?)
+        .post(endpoint(&request_base_url(state)?, "/logout")?)
         .header(header::COOKIE, session_cookie_header(state)?);
     if let Some(host) = request_host(state) {
         request = request.header(header::HOST, host);
@@ -499,11 +501,26 @@ fn derive_tenant_host(base_url: &str, slug: &str) -> Result<String> {
     let host = url
         .host_str()
         .ok_or_else(|| anyhow!("base URL has no host"))?;
-    let tenant_host = format!("{slug}.{host}");
+    let root_host = host.strip_prefix("app.").unwrap_or(host);
+    let tenant_host = format!("{slug}.{root_host}");
     Ok(match url.port() {
         Some(port) => format!("{tenant_host}:{port}"),
         None => tenant_host,
     })
+}
+
+fn request_base_url(state: &CredentialState) -> Result<String> {
+    let mut url = reqwest::Url::parse(&state.base_url).context("base URL is invalid")?;
+    let host = request_host(state).ok_or_else(|| anyhow!("request host is unavailable"))?;
+    let (host_no_port, port) = host
+        .split_once(':')
+        .map(|(h, p)| (h, p.parse::<u16>().ok()))
+        .unwrap_or((host.as_str(), None));
+    url.set_host(Some(host_no_port))
+        .map_err(|_| anyhow!("failed to set request host"))?;
+    url.set_port(port)
+        .map_err(|_| anyhow!("failed to set request port"))?;
+    Ok(url.as_str().trim_end_matches('/').to_string())
 }
 
 fn request_host(state: &CredentialState) -> Option<String> {

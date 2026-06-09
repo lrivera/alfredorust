@@ -102,16 +102,22 @@ pub fn tenant_subdomain_from_host(host: &str) -> Option<&str> {
             return None;
         }
         let suffix = format!(".{base}");
-        return host_no_port
-            .strip_suffix(&suffix)
-            .filter(|sub| !sub.is_empty() && !sub.contains('.'));
+        return host_no_port.strip_suffix(&suffix).filter(|sub| {
+            !sub.is_empty() && !sub.contains('.') && !sub.eq_ignore_ascii_case("app")
+        });
     }
 
     let parts: Vec<&str> = host_no_port.split('.').collect();
-    if parts.len() == 2 && parts[1].eq_ignore_ascii_case("localhost") {
+    if parts.len() == 2
+        && parts[1].eq_ignore_ascii_case("localhost")
+        && !parts[0].eq_ignore_ascii_case("app")
+    {
         return Some(parts[0]);
     }
-    if parts.len() == 3 && parts[2].eq_ignore_ascii_case("local") {
+    if parts.len() == 3
+        && parts[2].eq_ignore_ascii_case("local")
+        && !parts[0].eq_ignore_ascii_case("app")
+    {
         return Some(parts[0]);
     }
     None
@@ -232,6 +238,7 @@ mod tests {
             Some("acme")
         );
         assert_eq!(tenant_subdomain_from_host("acme.evil.test"), None);
+        assert_eq!(tenant_subdomain_from_host("app.alfredorivera.dev"), None);
         assert_eq!(
             tenant_subdomain_from_host("nested.acme.alfredorivera.dev"),
             None
@@ -257,6 +264,8 @@ mod tests {
             tenant_subdomain_from_host("acme.miapp.local:8090"),
             Some("acme")
         );
+        assert_eq!(tenant_subdomain_from_host("app.localhost:8090"), None);
+        assert_eq!(tenant_subdomain_from_host("app.miapp.local:8090"), None);
         assert_eq!(tenant_subdomain_from_host("acme.evil.test"), None);
         assert_eq!(tenant_subdomain_from_host("127.0.0.1:8090"), None);
     }
