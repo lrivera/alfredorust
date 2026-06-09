@@ -1,0 +1,70 @@
+## ADDED Requirements
+
+### Requirement: CLI exposes admin commands only through explicit JSON APIs
+
+The system SHALL provide admin CLI commands for users, companies, account profile, and SAT configs only after backend JSON APIs exist for those capabilities.
+
+#### Scenario: User list is requested
+
+- **WHEN** the user runs `spcli admin users list` with admin privileges
+- **THEN** the CLI consumes a JSON user list endpoint
+- **AND** the endpoint returns users visible in the selected company context
+
+#### Scenario: Company metadata is updated
+
+- **WHEN** the user runs `spcli admin companies update <id>`
+- **THEN** the CLI consumes a JSON company update endpoint
+- **AND** the server enforces admin authorization and tenant constraints
+
+### Requirement: CLI admin commands avoid leaking sensitive setup data
+
+The system SHALL redact sensitive setup and SAT config fields from CLI output.
+
+#### Scenario: User setup data is returned
+
+- **WHEN** the CLI returns user setup or QR-related data
+- **THEN** it omits TOTP secrets, generated TOTP codes, cookies, and `otpauth_url` unless a future spec explicitly adds a one-time secret provisioning command
+
+#### Scenario: SAT config is returned
+
+- **WHEN** the CLI returns SAT config data
+- **THEN** it omits or redacts certificate passwords, key passwords, and other secret-bearing fields
+
+### Requirement: CLI admin destructive commands require confirmation
+
+The system SHALL require explicit confirmation flags for destructive admin commands.
+
+#### Scenario: Company delete is requested
+
+- **WHEN** the user runs `spcli admin companies delete <id>` without `--yes`
+- **THEN** the CLI rejects the command before sending the request
+
+#### Scenario: Company maintenance delete-all command is requested
+
+- **WHEN** the user runs a command that deletes all company CFDIs or transactions
+- **THEN** the CLI requires a confirmation flag and a typed company identifier confirmation before sending the request
+- **AND** the command documentation identifies the affected collection and irreversibility
+
+### Requirement: CLI admin commands document permission boundaries
+
+The system SHALL document role and permission requirements for each admin CLI command.
+
+#### Scenario: Staff user runs admin command
+
+- **WHEN** a staff user runs an admin-only CLI command
+- **THEN** the server rejects the request
+- **AND** the CLI returns a structured forbidden error
+
+### Requirement: Admin CLI behavior is covered by harness tests
+
+The system SHALL add harness coverage for representative admin CLI behavior.
+
+#### Scenario: User admin command is tested
+
+- **WHEN** the harness runs user admin commands as admin and staff users
+- **THEN** it verifies admin success and staff rejection
+
+#### Scenario: SAT config redaction is tested
+
+- **WHEN** the harness reads SAT config data through the CLI
+- **THEN** secret-bearing fields are absent or redacted in JSON output
