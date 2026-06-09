@@ -1,0 +1,83 @@
+# spcli
+
+`spcli` is the command-line client for the application APIs. It is designed for human operators first, with stable JSON output and command metadata so a future AI skill can automate it safely.
+
+## Authentication
+
+Configure the CLI once with the server URL, email, and TOTP secret:
+
+```bash
+cargo run --bin spcli -- login \
+  --base-url http://localhost:8090 \
+  --email alfredo@example.com \
+  --totp-secret YOUR_BASE32_TOTP_SECRET
+```
+
+The CLI stores credentials outside the repository at the user's config path, for example:
+
+```text
+~/.config/spcli/credentials.bin
+```
+
+The credential file is a binary encrypted envelope with restrictive permissions where supported. It is not plaintext JSON and should not reveal credentials when opened in a text editor.
+
+If a protected request receives `401 Unauthorized`, `spcli` generates a fresh TOTP code from the stored secret, logs in again, updates the local session cookie, and retries the request once.
+
+## Commands
+
+Check the current session:
+
+```bash
+cargo run --bin spcli -- status
+```
+
+List companies available to the user:
+
+```bash
+cargo run --bin spcli -- company list
+```
+
+Select active company context:
+
+```bash
+cargo run --bin spcli -- company use acme
+```
+
+Clear only the current session cookie:
+
+```bash
+cargo run --bin spcli -- logout
+```
+
+Remove the stored credential file:
+
+```bash
+cargo run --bin spcli -- reset-auth --yes
+```
+
+Print machine-readable command metadata:
+
+```bash
+cargo run --bin spcli -- --json manifest
+```
+
+## JSON Output
+
+Use `--json` for automation:
+
+```bash
+cargo run --bin spcli -- --json status
+cargo run --bin spcli -- --json company list
+```
+
+Errors are written as structured JSON to stderr with a stable `code` and `message` field.
+
+## Security Notes
+
+The stored TOTP secret can generate valid login codes. If the credential file is stolen and decrypted, rotate the user's TOTP secret server-side and run:
+
+```bash
+cargo run --bin spcli -- reset-auth
+```
+
+Do not commit `credentials.bin`, generated TOTP codes, session cookies, or real TOTP secrets.

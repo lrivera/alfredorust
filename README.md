@@ -67,3 +67,13 @@ This repository uses OpenSpec-style spec-driven workflow for non-trivial changes
 - `openspec/specs/`
 
 The harness is local: isolated MongoDB databases, in-memory Axum routers, safe fixtures, and integration tests. It does not use Harness.io.
+
+## CLI
+
+The repository includes `spcli`, a command-line client for authenticated API access:
+
+```bash
+cargo run --bin spcli -- --help
+```
+
+See `docs/spcli.md` for authentication, company selection, JSON output, and credential storage details.
