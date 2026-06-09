@@ -162,7 +162,7 @@ async fn status(json_output: bool) -> Result<()> {
     let value = authenticated_get(&mut state, "/setup").await?;
     save_state(&state)?;
     if json_output {
-        print_json(&value)?;
+        print_json(&sanitized_status(value))?;
     } else {
         println!(
             "Authenticated: {}",
@@ -175,6 +175,13 @@ async fn status(json_output: bool) -> Result<()> {
         println!("Role: {}", value["role"].as_str().unwrap_or("unknown"));
     }
     Ok(())
+}
+
+fn sanitized_status(mut value: Value) -> Value {
+    if let Some(object) = value.as_object_mut() {
+        object.remove("otpauth_url");
+    }
+    value
 }
 
 async fn logout(json_output: bool) -> Result<()> {
