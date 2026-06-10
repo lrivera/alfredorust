@@ -92,15 +92,15 @@ enum CompanyCommand {
 enum FinanceCommand {
     Accounts {
         #[command(subcommand)]
-        command: ListCommand,
+        command: ListGetCommand,
     },
     Categories {
         #[command(subcommand)]
-        command: ListCommand,
+        command: ListGetCommand,
     },
     Contacts {
         #[command(subcommand)]
-        command: ListCommand,
+        command: ListGetCommand,
     },
     Transactions {
         #[command(subcommand)]
@@ -179,6 +179,12 @@ enum ListCommand {
     List,
 }
 
+#[derive(Subcommand)]
+enum ListGetCommand {
+    List,
+    Get { id: String },
+}
+
 #[derive(Debug, Serialize)]
 struct CliError {
     code: &'static str,
@@ -242,18 +248,27 @@ async fn run(cli: Cli) -> Result<()> {
         },
         Command::Finance { command } => match command {
             FinanceCommand::Accounts { command } => match command {
-                ListCommand::List => {
+                ListGetCommand::List => {
                     json_get_command("/api/admin/accounts", cli.json, "accounts").await
+                }
+                ListGetCommand::Get { id } => {
+                    json_get_by_id_command("/api/admin/accounts", &id, cli.json, "account").await
                 }
             },
             FinanceCommand::Categories { command } => match command {
-                ListCommand::List => {
+                ListGetCommand::List => {
                     json_get_command("/api/admin/categories", cli.json, "categories").await
+                }
+                ListGetCommand::Get { id } => {
+                    json_get_by_id_command("/api/admin/categories", &id, cli.json, "category").await
                 }
             },
             FinanceCommand::Contacts { command } => match command {
-                ListCommand::List => {
+                ListGetCommand::List => {
                     json_get_command("/api/admin/contacts", cli.json, "contacts").await
+                }
+                ListGetCommand::Get { id } => {
+                    json_get_by_id_command("/api/admin/contacts", &id, cli.json, "contact").await
                 }
             },
             FinanceCommand::Transactions { command } => match command {
@@ -438,6 +453,17 @@ async fn json_get_command(path: &str, json_output: bool, label: &str) -> Result<
     print_value_output(&value, json_output, label)
 }
 
+async fn json_get_by_id_command(
+    base_path: &str,
+    id: &str,
+    json_output: bool,
+    label: &str,
+) -> Result<()> {
+    validate_object_id(id, "id")?;
+    let path = format!("{base_path}/{id}");
+    json_get_command(&path, json_output, label).await
+}
+
 async fn project_concepts_list(args: ProjectConceptsListArgs, json_output: bool) -> Result<()> {
     validate_object_id(&args.project_id, "project-id")?;
     let path = format!("/api/admin/projects/{}/concepts", args.project_id);
@@ -499,8 +525,11 @@ fn print_manifest(json_output: bool) -> Result<()> {
             { "name": "company list", "auth_required": true, "company_required": false, "destructive": false },
             { "name": "company use", "auth_required": true, "company_required": false, "destructive": false },
             { "name": "finance accounts list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "accounts" },
+            { "name": "finance accounts get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "account" },
             { "name": "finance categories list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "categories" },
+            { "name": "finance categories get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "category" },
             { "name": "finance contacts list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "contacts" },
+            { "name": "finance contacts get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "contact" },
             { "name": "finance transactions list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "transactions" },
             { "name": "cfdi list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "cfdi_data" },
             { "name": "projects statuses list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "concept_statuses" },

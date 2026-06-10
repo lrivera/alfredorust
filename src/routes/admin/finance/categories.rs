@@ -38,6 +38,18 @@ pub struct CategoryRow {
     pub parent: String,
 }
 
+#[derive(Serialize)]
+pub struct CategoryDetail {
+    pub id: String,
+    pub name: String,
+    pub company_id: String,
+    pub company: String,
+    pub flow_type: String,
+    pub parent_id: Option<String>,
+    pub parent: Option<String>,
+    pub notes: Option<String>,
+}
+
 pub async fn categories_data_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -74,6 +86,40 @@ pub async fn categories_data_api(
         .collect();
 
     Ok(Json(rows))
+}
+
+pub async fn category_data_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<CategoryDetail>, StatusCode> {
+    let active_company = require_admin_active(&session_user)?;
+    let object_id = ObjectId::from_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let category = get_category_by_id(&state, &object_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    ensure_same_company(&category.company_id, &active_company)?;
+
+    let parent = match category.parent_id.as_ref() {
+        Some(parent_id) => match get_category_by_id(&state, parent_id).await {
+            Ok(Some(parent)) => Some(parent.name),
+            Ok(None) => None,
+            Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+        },
+        None => None,
+    };
+
+    Ok(Json(CategoryDetail {
+        id,
+        name: category.name,
+        company_id: category.company_id.to_hex(),
+        company: session_user.user().company_name.clone(),
+        flow_type: flow_type_value(&category.flow_type).to_string(),
+        parent_id: category.parent_id.map(|id| id.to_hex()),
+        parent,
+        notes: category.notes,
+    }))
 }
 
 #[derive(Template)]

@@ -37,6 +37,19 @@ pub struct ContactRow {
     pub email: String,
 }
 
+#[derive(Serialize)]
+pub struct ContactDetail {
+    pub id: String,
+    pub name: String,
+    pub company_id: String,
+    pub company: String,
+    pub contact_type: String,
+    pub rfc: Option<String>,
+    pub email: Option<String>,
+    pub phone: Option<String>,
+    pub notes: Option<String>,
+}
+
 pub async fn contacts_data_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -62,6 +75,32 @@ pub async fn contacts_data_api(
         .collect();
 
     Ok(Json(rows))
+}
+
+pub async fn contact_data_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<ContactDetail>, StatusCode> {
+    let active_company = require_admin_active(&session_user)?;
+    let object_id = ObjectId::from_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let contact = get_contact_by_id(&state, &object_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    ensure_same_company(&contact.company_id, &active_company)?;
+
+    Ok(Json(ContactDetail {
+        id,
+        name: contact.name,
+        company_id: contact.company_id.to_hex(),
+        company: session_user.user().company_name.clone(),
+        contact_type: contact_type_value(&contact.contact_type).to_string(),
+        rfc: contact.rfc,
+        email: contact.email,
+        phone: contact.phone,
+        notes: contact.notes,
+    }))
 }
 
 #[derive(Template)]

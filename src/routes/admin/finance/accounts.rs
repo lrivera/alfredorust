@@ -38,6 +38,18 @@ pub struct AccountRow {
     pub is_active: bool,
 }
 
+#[derive(Serialize)]
+pub struct AccountDetail {
+    pub id: String,
+    pub name: String,
+    pub company_id: String,
+    pub company: String,
+    pub account_type: String,
+    pub currency: String,
+    pub is_active: bool,
+    pub notes: Option<String>,
+}
+
 pub async fn accounts_data_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -64,6 +76,31 @@ pub async fn accounts_data_api(
         .collect();
 
     Ok(Json(rows))
+}
+
+pub async fn account_data_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<AccountDetail>, StatusCode> {
+    let active_company = require_admin_active(&session_user)?;
+    let object_id = ObjectId::from_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let account = get_account_by_id(&state, &object_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    ensure_same_company(&account.company_id, &active_company)?;
+
+    Ok(Json(AccountDetail {
+        id,
+        name: account.name,
+        company_id: account.company_id.to_hex(),
+        company: session_user.user().company_name.clone(),
+        account_type: account_type_value(&account.account_type).to_string(),
+        currency: account.currency,
+        is_active: account.is_active,
+        notes: account.notes,
+    }))
 }
 
 #[derive(Template)]

@@ -74,6 +74,14 @@ cargo run --bin spcli -- projects concepts list --project-id 64f0000000000000000
 cargo run --bin spcli -- resources usages list
 ```
 
+Read one finance master-data record by MongoDB ObjectId:
+
+```bash
+cargo run --bin spcli -- finance accounts get 64f000000000000000000000
+cargo run --bin spcli -- finance categories get 64f000000000000000000000
+cargo run --bin spcli -- finance contacts get 64f000000000000000000000
+```
+
 Query the time timeline. `--from` and `--to` accept RFC3339 datetimes or `YYYY-MM-DD` dates, which are sent as midnight UTC:
 
 ```bash
