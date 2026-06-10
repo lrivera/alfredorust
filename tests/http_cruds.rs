@@ -14,11 +14,15 @@ use axum::{
 use tower::ServiceExt; // for oneshot
 
 use alfredodev::{
-    models::{FlowType, PlannedStatus, ProjectPriority, ResourceType, UserPermission, UserRole},
+    models::{
+        AccountType, FlowType, PlannedStatus, ProjectPriority, ResourceType, UserPermission,
+        UserRole,
+    },
     routes,
     session::{SESSION_COOKIE_NAME, require_session},
     state::{
-        AppState, add_user_to_company, create_company, create_planned_entry, create_project,
+        AppState, add_user_to_company, create_account, create_category, create_company,
+        create_forecast, create_planned_entry, create_project, create_recurring_plan,
         create_resource, create_resource_log, create_session, create_user,
         create_user_with_permissions, get_user_by_id, list_accounts, list_categories,
         list_companies, list_contacts, list_forecasts, list_planned_entries, list_projects,
@@ -57,6 +61,8 @@ fn build_app(state: Arc<AppState>) -> Router {
             "/admin/accounts",
             get(routes::accounts_index).post(routes::accounts_create),
         )
+        .route("/api/admin/accounts", get(routes::accounts_data_api))
+        .route("/api/admin/accounts/{id}", get(routes::account_data_api))
         .route("/admin/accounts/new", get(routes::accounts_new))
         .route("/admin/accounts/{id}/edit", get(routes::accounts_edit))
         .route("/admin/accounts/{id}/update", post(routes::accounts_update))
@@ -65,6 +71,8 @@ fn build_app(state: Arc<AppState>) -> Router {
             "/admin/categories",
             get(routes::categories_index).post(routes::categories_create),
         )
+        .route("/api/admin/categories", get(routes::categories_data_api))
+        .route("/api/admin/categories/{id}", get(routes::category_data_api))
         .route("/admin/categories/new", get(routes::categories_new))
         .route("/admin/categories/{id}/edit", get(routes::categories_edit))
         .route(
@@ -79,6 +87,8 @@ fn build_app(state: Arc<AppState>) -> Router {
             "/admin/contacts",
             get(routes::contacts_index).post(routes::contacts_create),
         )
+        .route("/api/admin/contacts", get(routes::contacts_data_api))
+        .route("/api/admin/contacts/{id}", get(routes::contact_data_api))
         .route("/admin/contacts/new", get(routes::contacts_new))
         .route("/admin/contacts/{id}/edit", get(routes::contacts_edit))
         .route("/admin/contacts/{id}/update", post(routes::contacts_update))
@@ -86,6 +96,14 @@ fn build_app(state: Arc<AppState>) -> Router {
         .route(
             "/admin/recurring_plans",
             get(routes::recurring_plans_index).post(routes::recurring_plans_create),
+        )
+        .route(
+            "/api/admin/recurring-plans",
+            get(routes::recurring_plans_data_api),
+        )
+        .route(
+            "/api/admin/recurring-plans/{id}",
+            get(routes::recurring_plan_data_api),
         )
         .route(
             "/admin/recurring_plans/new",
@@ -99,6 +117,14 @@ fn build_app(state: Arc<AppState>) -> Router {
         .route(
             "/admin/planned_entries",
             get(routes::planned_entries_index).post(routes::planned_entries_create),
+        )
+        .route(
+            "/api/admin/planned-entries",
+            get(routes::planned_entries_data_api),
+        )
+        .route(
+            "/api/admin/planned-entries/{id}",
+            get(routes::planned_entry_data_api),
         )
         .route(
             "/admin/planned_entries/new",
@@ -135,6 +161,8 @@ fn build_app(state: Arc<AppState>) -> Router {
             "/admin/forecasts",
             get(routes::forecasts_index).post(routes::forecasts_create),
         )
+        .route("/api/admin/forecasts", get(routes::forecasts_data_api))
+        .route("/api/admin/forecasts/{id}", get(routes::forecast_data_api))
         .route("/admin/forecasts/new", get(routes::forecasts_new))
         .route("/admin/forecasts/{id}/edit", get(routes::forecasts_edit))
         // POST routes for forecasts omitted in tests (use private types)
@@ -323,6 +351,334 @@ async fn finance_endpoints_render_seeded_data() {
             "page {path} should contain seeded data: {expected}"
         );
     }
+
+    common::teardown(Some(ctx)).await;
+}
+
+#[tokio::test]
+async fn finance_json_endpoints_scope_to_active_tenant() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let shared = Arc::new(state.clone());
+
+    let company_a = create_company(
+        &state,
+        "Finance JSON A",
+        "finance-json-a",
+        "MXN",
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+    let company_b = create_company(
+        &state,
+        "Finance JSON B",
+        "finance-json-b",
+        "MXN",
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+    let user_id = create_user(
+        &state,
+        "finance-json-admin@example.com",
+        "SECRET",
+        &[
+            (company_a.clone(), UserRole::Admin),
+            (company_b.clone(), UserRole::Admin),
+        ],
+    )
+    .await
+    .unwrap();
+    let user = get_user_by_id(&state, &user_id).await.unwrap().unwrap();
+    let token = create_session(&state, &user.email).await.unwrap();
+    let host_a = "finance-json-a.miapp.local";
+
+    let category_a = create_category(
+        &state,
+        &company_a,
+        "finance-json-category-a",
+        FlowType::Expense,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let category_b = create_category(
+        &state,
+        &company_b,
+        "finance-json-category-b",
+        FlowType::Expense,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let account_a = create_account(
+        &state,
+        &company_a,
+        "finance-json-account-a",
+        AccountType::Bank,
+        "MXN",
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+    let account_b = create_account(
+        &state,
+        &company_b,
+        "finance-json-account-b",
+        AccountType::Bank,
+        "MXN",
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+    let forecast_a = create_forecast(
+        &state,
+        &company_a,
+        DateTime::parse_rfc3339_str("2026-01-01T00:00:00Z").unwrap(),
+        None,
+        DateTime::parse_rfc3339_str("2026-01-01T00:00:00Z").unwrap(),
+        DateTime::parse_rfc3339_str("2026-12-31T00:00:00Z").unwrap(),
+        "MXN",
+        1000.0,
+        500.0,
+        500.0,
+        None,
+        None,
+        None,
+        Some("finance-json-forecast-a".into()),
+        None,
+    )
+    .await
+    .unwrap();
+    let forecast_b = create_forecast(
+        &state,
+        &company_b,
+        DateTime::parse_rfc3339_str("2026-01-01T00:00:00Z").unwrap(),
+        None,
+        DateTime::parse_rfc3339_str("2026-01-01T00:00:00Z").unwrap(),
+        DateTime::parse_rfc3339_str("2026-12-31T00:00:00Z").unwrap(),
+        "MXN",
+        1000.0,
+        500.0,
+        500.0,
+        None,
+        None,
+        None,
+        Some("finance-json-forecast-b".into()),
+        None,
+    )
+    .await
+    .unwrap();
+    let recurring_plan_a = create_recurring_plan(
+        &state,
+        &company_a,
+        "finance-json-plan-a",
+        FlowType::Expense,
+        &category_a,
+        &account_a,
+        None,
+        250.0,
+        "monthly",
+        Some(10),
+        DateTime::parse_rfc3339_str("2026-01-01T00:00:00Z").unwrap(),
+        None,
+        true,
+        1,
+        None,
+    )
+    .await
+    .unwrap();
+    let recurring_plan_b = create_recurring_plan(
+        &state,
+        &company_b,
+        "finance-json-plan-b",
+        FlowType::Expense,
+        &category_b,
+        &account_b,
+        None,
+        250.0,
+        "monthly",
+        Some(10),
+        DateTime::parse_rfc3339_str("2026-01-01T00:00:00Z").unwrap(),
+        None,
+        true,
+        1,
+        None,
+    )
+    .await
+    .unwrap();
+    let planned_entry_a = create_planned_entry(
+        &state,
+        &company_a,
+        None,
+        None,
+        None,
+        "finance-json-entry-a",
+        FlowType::Expense,
+        &category_a,
+        &account_a,
+        None,
+        75.0,
+        DateTime::parse_rfc3339_str("2026-02-01T00:00:00Z").unwrap(),
+        PlannedStatus::Planned,
+        None,
+    )
+    .await
+    .unwrap();
+    let planned_entry_b = create_planned_entry(
+        &state,
+        &company_b,
+        None,
+        None,
+        None,
+        "finance-json-entry-b",
+        FlowType::Expense,
+        &category_b,
+        &account_b,
+        None,
+        75.0,
+        DateTime::parse_rfc3339_str("2026-02-01T00:00:00Z").unwrap(),
+        PlannedStatus::Planned,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let list_cases = vec![
+        (
+            "/api/admin/accounts",
+            "finance-json-account-a",
+            "finance-json-account-b",
+        ),
+        (
+            "/api/admin/categories",
+            "finance-json-category-a",
+            "finance-json-category-b",
+        ),
+        (
+            "/api/admin/forecasts",
+            "finance-json-forecast-a",
+            "finance-json-forecast-b",
+        ),
+        (
+            "/api/admin/recurring-plans",
+            "finance-json-plan-a",
+            "finance-json-plan-b",
+        ),
+        (
+            "/api/admin/planned-entries",
+            "finance-json-entry-a",
+            "finance-json-entry-b",
+        ),
+    ];
+
+    for (path, visible, hidden) in list_cases {
+        let app = build_app(shared.clone());
+        let (status, body) = get_with_cookie(app, host_a, path, &token).await;
+        assert_eq!(status, StatusCode::OK, "GET {path} must return 200");
+        serde_json::from_str::<serde_json::Value>(&body).expect("response must be JSON");
+        assert!(
+            body.contains(visible),
+            "{path} must include active tenant data"
+        );
+        assert!(
+            !body.contains(hidden),
+            "{path} must not include other tenant data"
+        );
+    }
+
+    let detail_cases = vec![
+        (
+            format!("/api/admin/accounts/{}", account_a.to_hex()),
+            StatusCode::OK,
+            "finance-json-account-a",
+        ),
+        (
+            format!("/api/admin/accounts/{}", account_b.to_hex()),
+            StatusCode::FORBIDDEN,
+            "",
+        ),
+        (
+            format!("/api/admin/categories/{}", category_a.to_hex()),
+            StatusCode::OK,
+            "finance-json-category-a",
+        ),
+        (
+            format!("/api/admin/categories/{}", category_b.to_hex()),
+            StatusCode::FORBIDDEN,
+            "",
+        ),
+        (
+            format!("/api/admin/forecasts/{}", forecast_a.to_hex()),
+            StatusCode::OK,
+            "finance-json-forecast-a",
+        ),
+        (
+            format!("/api/admin/forecasts/{}", forecast_b.to_hex()),
+            StatusCode::FORBIDDEN,
+            "",
+        ),
+        (
+            format!("/api/admin/recurring-plans/{}", recurring_plan_a.to_hex()),
+            StatusCode::OK,
+            "finance-json-plan-a",
+        ),
+        (
+            format!("/api/admin/recurring-plans/{}", recurring_plan_b.to_hex()),
+            StatusCode::FORBIDDEN,
+            "",
+        ),
+        (
+            format!("/api/admin/planned-entries/{}", planned_entry_a.to_hex()),
+            StatusCode::OK,
+            "finance-json-entry-a",
+        ),
+        (
+            format!("/api/admin/planned-entries/{}", planned_entry_b.to_hex()),
+            StatusCode::FORBIDDEN,
+            "",
+        ),
+    ];
+
+    for (path, expected_status, expected_body) in detail_cases {
+        let app = build_app(shared.clone());
+        let (status, body) = get_with_cookie(app, host_a, &path, &token).await;
+        assert_eq!(
+            status, expected_status,
+            "GET {path} returned unexpected status"
+        );
+        if expected_status == StatusCode::OK {
+            serde_json::from_str::<serde_json::Value>(&body).expect("response must be JSON");
+            assert!(
+                body.contains(expected_body),
+                "{path} should return expected record"
+            );
+        }
+    }
+
+    let staff_id = create_user(
+        &state,
+        "finance-json-staff@example.com",
+        "SECRET",
+        &[(company_a.clone(), UserRole::Staff)],
+    )
+    .await
+    .unwrap();
+    let staff = get_user_by_id(&state, &staff_id).await.unwrap().unwrap();
+    let staff_token = create_session(&state, &staff.email).await.unwrap();
+    let app = build_app(shared);
+    let (status, _) = get_with_cookie(app, host_a, "/api/admin/accounts", &staff_token).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
 
     common::teardown(Some(ctx)).await;
 }

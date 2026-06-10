@@ -149,4 +149,4 @@
 - [x] 16.12 Add `finance forecasts list/get/create/update/delete` commands.
 - [x] 16.13 Add tenant-scoped JSON list/get APIs for recurring plans and planned entries.
 - [x] 16.14 Add `finance recurring-plans list/get` and `finance planned-entries list/get` commands.
-- [ ] 16.15 Add harness coverage for finance master data and forecast APIs and CLI commands.
+- [x] 16.15 Add harness coverage for finance master data, forecast, recurring plan, and planned entry JSON APIs.
