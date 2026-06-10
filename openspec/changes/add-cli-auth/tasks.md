@@ -91,7 +91,7 @@
 ## 11. SAT, CFDI, And PDF Commands
 
 - [ ] 11.1 Add SAT config list/get/create/update/delete commands where server APIs support them.
-- [ ] 11.2 Add CFDI list/query/detail commands.
+- [x] 11.2 Add CFDI list/detail commands.
 - [ ] 11.3 Add CFDI import/download/job list/job status commands.
 - [ ] 11.4 Add PDF preview/render commands where server APIs support them.
 

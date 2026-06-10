@@ -29,7 +29,7 @@ use alfredodev::{
         list_recurring_plans, list_resource_logs, list_resources, list_transactions, list_users,
     },
 };
-use bson::DateTime;
+use bson::{DateTime, doc};
 
 fn build_app(state: Arc<AppState>) -> Router {
     let protected = Router::new()
@@ -53,6 +53,9 @@ fn build_app(state: Arc<AppState>) -> Router {
         .route("/admin/companies", get(routes::companies_index))
         .route("/admin/companies/new", get(routes::companies_new))
         .route("/admin/companies/{id}/edit", get(routes::companies_edit))
+        .route("/admin/cfdis", get(routes::cfdis_index))
+        .route("/api/admin/cfdis/data", get(routes::cfdis_data_api))
+        .route("/api/admin/cfdis/{uuid}", get(routes::cfdi_data_api))
         .route(
             "/admin/companies/{id}/delete",
             post(routes::companies_delete),
@@ -739,6 +742,135 @@ async fn finance_json_endpoints_scope_to_active_tenant() {
     let staff_token = create_session(&state, &staff.email).await.unwrap();
     let app = build_app(shared);
     let (status, _) = get_with_cookie(app, host_a, "/api/admin/accounts", &staff_token).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    common::teardown(Some(ctx)).await;
+}
+
+#[tokio::test]
+async fn cfdi_json_endpoints_scope_to_active_tenant() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let shared = Arc::new(state.clone());
+
+    let company_a = create_company(&state, "CFDI JSON A", "cfdi-json-a", "MXN", true, None)
+        .await
+        .unwrap();
+    let company_b = create_company(&state, "CFDI JSON B", "cfdi-json-b", "MXN", true, None)
+        .await
+        .unwrap();
+    let user_id = create_user(
+        &state,
+        "cfdi-json-admin@example.com",
+        "SECRET",
+        &[
+            (company_a.clone(), UserRole::Admin),
+            (company_b.clone(), UserRole::Admin),
+        ],
+    )
+    .await
+    .unwrap();
+    let user = get_user_by_id(&state, &user_id).await.unwrap().unwrap();
+    let token = create_session(&state, &user.email).await.unwrap();
+    let host_a = "cfdi-json-a.miapp.local";
+    let uuid_a = "11111111-1111-1111-1111-111111111111";
+    let uuid_b = "22222222-2222-2222-2222-222222222222";
+
+    state
+        .cfdis
+        .insert_one(doc! {
+            "company_id": company_a.to_hex(),
+            "uuid": uuid_a,
+            "comprobante": {
+                "serie": "A",
+                "folio": "100",
+                "tipoDeComprobante": "I",
+                "fecha": "2026-01-01T00:00:00",
+                "subTotal": "100.00",
+                "total": "116.00",
+                "moneda": "MXN",
+                "formaPago": "03",
+                "metodoPago": "PUE",
+            },
+            "emisor": { "rfc": "AAA010101AAA", "nombre": "CFDI Emisor A" },
+            "receptor": { "rfc": "XAXX010101000", "nombre": "CFDI Receptor A" },
+            "impuestos": { "totalImpuestosTrasladados": "16.00" },
+            "conceptos": [{
+                "descripcion": "CFDI concepto A",
+                "cantidad": "1",
+                "valorUnitario": "100.00",
+                "importe": "100.00",
+            }],
+        })
+        .await
+        .unwrap();
+    state
+        .cfdis
+        .insert_one(doc! {
+            "company_id": company_b.to_hex(),
+            "uuid": uuid_b,
+            "comprobante": {
+                "serie": "B",
+                "folio": "200",
+                "tipoDeComprobante": "I",
+                "fecha": "2026-01-02T00:00:00",
+                "subTotal": "200.00",
+                "total": "232.00",
+                "moneda": "MXN",
+                "formaPago": "03",
+                "metodoPago": "PUE",
+            },
+            "emisor": { "rfc": "BBB010101BBB", "nombre": "CFDI Emisor B" },
+            "receptor": { "rfc": "XAXX010101000", "nombre": "CFDI Receptor B" },
+            "impuestos": { "totalImpuestosTrasladados": "32.00" },
+            "conceptos": [{
+                "descripcion": "CFDI concepto B",
+                "cantidad": "1",
+                "valorUnitario": "200.00",
+                "importe": "200.00",
+            }],
+        })
+        .await
+        .unwrap();
+
+    let app = build_app(shared.clone());
+    let (status, body) = get_with_cookie(app, host_a, "/api/admin/cfdis/data", &token).await;
+    assert_eq!(status, StatusCode::OK);
+    serde_json::from_str::<serde_json::Value>(&body).expect("response must be JSON");
+    assert!(body.contains(uuid_a));
+    assert!(body.contains("CFDI concepto A"));
+    assert!(!body.contains(uuid_b));
+    assert!(!body.contains("CFDI concepto B"));
+
+    let app = build_app(shared.clone());
+    let (status, body) =
+        get_with_cookie(app, host_a, &format!("/api/admin/cfdis/{uuid_a}"), &token).await;
+    assert_eq!(status, StatusCode::OK);
+    let detail: serde_json::Value = serde_json::from_str(&body).expect("detail must be JSON");
+    assert_eq!(detail["uuid"], uuid_a);
+    assert_eq!(detail["folio"], "100");
+    assert_eq!(detail["conceptos"][0]["descripcion"], "CFDI concepto A");
+
+    let app = build_app(shared.clone());
+    let (status, _body) =
+        get_with_cookie(app, host_a, &format!("/api/admin/cfdis/{uuid_b}"), &token).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let staff_id = create_user(
+        &state,
+        "cfdi-json-staff@example.com",
+        "SECRET",
+        &[(company_a.clone(), UserRole::Staff)],
+    )
+    .await
+    .unwrap();
+    let staff = get_user_by_id(&state, &staff_id).await.unwrap().unwrap();
+    let staff_token = create_session(&state, &staff.email).await.unwrap();
+    let app = build_app(shared);
+    let (status, _body) = get_with_cookie(app, host_a, "/api/admin/cfdis/data", &staff_token).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 
     common::teardown(Some(ctx)).await;

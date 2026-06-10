@@ -123,6 +123,7 @@ enum FinanceCommand {
 #[derive(Subcommand)]
 enum CfdiCommand {
     List,
+    Get { uuid: String },
 }
 
 #[derive(Subcommand)]
@@ -520,6 +521,7 @@ async fn run(cli: Cli) -> Result<()> {
         },
         Command::Cfdi { command } => match command {
             CfdiCommand::List => json_get_command("/api/admin/cfdis/data", cli.json, "CFDIs").await,
+            CfdiCommand::Get { uuid } => cfdi_get(&uuid, cli.json).await,
         },
         Command::Projects { command } => match command {
             ProjectsCommand::Statuses { command } => match command {
@@ -903,6 +905,12 @@ async fn project_concepts_list(args: ProjectConceptsListArgs, json_output: bool)
     json_get_command(&path, json_output, "project concepts").await
 }
 
+async fn cfdi_get(uuid: &str, json_output: bool) -> Result<()> {
+    validate_non_empty(uuid, "uuid")?;
+    let path = format!("/api/admin/cfdis/{}", uuid.trim());
+    json_get_command(&path, json_output, "CFDI").await
+}
+
 async fn timeline(args: TimelineArgs, json_output: bool) -> Result<()> {
     validate_timeline_mode(&args.mode)?;
     let from = normalize_timeline_bound(&args.from, "from")?;
@@ -984,6 +992,7 @@ fn print_manifest(json_output: bool) -> Result<()> {
             { "name": "finance transactions list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "transactions" },
             { "name": "finance transactions get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "transaction" },
             { "name": "cfdi list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "cfdi_data" },
+            { "name": "cfdi get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["uuid"], "output_schema": "cfdi_detail" },
             { "name": "projects statuses list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "concept_statuses" },
             { "name": "projects concepts list", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--project-id"], "output_schema": "project_concepts" },
             { "name": "resources usages list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "resource_usages" },

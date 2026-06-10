@@ -14,8 +14,9 @@ The system SHALL provide CFDI CLI read commands that use authenticated JSON APIs
 #### Scenario: CFDI detail is requested
 
 - **WHEN** the user runs `spcli cfdi get <uuid>`
-- **THEN** the backend SHALL provide a JSON detail endpoint before the CLI command is implemented
+- **THEN** the CLI consumes a tenant-scoped JSON detail endpoint
 - **AND** the endpoint SHALL enforce company ownership of the CFDI
+- **AND** the response SHALL include normalized fiscal fields and concepts without exposing SAT credential material
 
 ### Requirement: CLI exposes CFDI download jobs safely
 
@@ -61,6 +62,12 @@ The system SHALL add harness coverage for CFDI CLI behavior where local fixtures
 
 - **WHEN** fixture CFDIs exist for multiple companies
 - **THEN** `spcli cfdi list` returns only the selected company's CFDIs
+
+#### Scenario: CFDI detail is tested
+
+- **WHEN** fixture CFDIs exist for multiple companies
+- **THEN** the detail endpoint returns the active company's CFDI by UUID
+- **AND** rejects another company's CFDI UUID
 
 #### Scenario: CFDI download job authorization is tested
 

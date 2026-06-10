@@ -3,7 +3,7 @@ use std::{collections::HashSet, sync::Arc};
 use askama::Template;
 use axum::{
     Json,
-    extract::{Query, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::Html,
 };
@@ -159,6 +159,36 @@ pub struct CfdiDataResponse {
     pub items: Vec<CfdiApiItem>,
 }
 
+#[derive(Serialize)]
+pub struct CfdiConceptData {
+    pub descripcion: String,
+    pub cantidad: String,
+    pub valor_unitario: String,
+    pub importe: String,
+}
+
+#[derive(Serialize)]
+pub struct CfdiDetailResponse {
+    pub uuid: String,
+    pub company_id: String,
+    pub folio: String,
+    pub serie: String,
+    pub tipo: String,
+    pub fecha: String,
+    pub subtotal: f64,
+    pub iva: f64,
+    pub total: f64,
+    pub moneda: String,
+    pub forma_pago: String,
+    pub metodo_pago: String,
+    pub emisor_rfc: String,
+    pub emisor_nombre: String,
+    pub receptor_rfc: String,
+    pub receptor_nombre: String,
+    pub conceptos: Vec<CfdiConceptData>,
+    pub es_emitido: bool,
+}
+
 fn parse_f64(s: &str) -> f64 {
     s.trim().parse().unwrap_or(0.0)
 }
@@ -282,4 +312,111 @@ pub async fn cfdis_data_api(
         company_rfcs: company_rfcs_vec,
         items,
     }))
+}
+
+pub async fn cfdi_data_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(uuid): Path<String>,
+) -> Result<Json<CfdiDetailResponse>, StatusCode> {
+    if !session_user.is_admin() {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    let active_company = session_user.active_company_id();
+    let sat_configs = list_sat_configs(&state, &active_company)
+        .await
+        .unwrap_or_default();
+    let company_rfcs: HashSet<String> = sat_configs
+        .into_iter()
+        .map(|c| c.rfc.to_uppercase())
+        .collect();
+
+    let doc = state
+        .cfdis
+        .find_one(bson::doc! {
+            "company_id": active_company.to_hex(),
+            "uuid": uuid.trim(),
+        })
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    Ok(Json(cfdi_detail_response(
+        &doc,
+        active_company.to_hex(),
+        &company_rfcs,
+    )))
+}
+
+fn cfdi_detail_response(
+    doc: &bson::Document,
+    company_id: String,
+    company_rfcs: &HashSet<String>,
+) -> CfdiDetailResponse {
+    let comp = doc.get_document("comprobante").ok();
+    let impuestos = doc.get_document("impuestos").ok();
+    let tipo = comp
+        .map(|comp| str_field(comp, "tipoDeComprobante"))
+        .unwrap_or_default();
+    let emisor_rfc = nested_str(doc, "emisor", "rfc");
+    let es_emitido = if company_rfcs.is_empty() {
+        tipo == "I" || tipo == "N"
+    } else {
+        company_rfcs.contains(&emisor_rfc.to_uppercase())
+    };
+    let conceptos = doc
+        .get_array("conceptos")
+        .ok()
+        .into_iter()
+        .flatten()
+        .filter_map(|value| value.as_document())
+        .map(|concepto| CfdiConceptData {
+            descripcion: str_field(concepto, "descripcion"),
+            cantidad: str_field(concepto, "cantidad"),
+            valor_unitario: str_field(concepto, "valorUnitario"),
+            importe: str_field(concepto, "importe"),
+        })
+        .collect();
+
+    CfdiDetailResponse {
+        uuid: str_field(doc, "uuid"),
+        company_id,
+        folio: comp
+            .map(|comp| str_field(comp, "folio"))
+            .unwrap_or_default(),
+        serie: comp
+            .map(|comp| str_field(comp, "serie"))
+            .unwrap_or_default(),
+        tipo,
+        fecha: comp
+            .map(|comp| str_field(comp, "fecha"))
+            .unwrap_or_default(),
+        subtotal: comp
+            .and_then(|comp| comp.get_str("subTotal").ok())
+            .map(parse_f64)
+            .unwrap_or(0.0),
+        iva: impuestos
+            .and_then(|imp| imp.get_str("totalImpuestosTrasladados").ok())
+            .map(parse_f64)
+            .unwrap_or(0.0),
+        total: comp
+            .and_then(|comp| comp.get_str("total").ok())
+            .map(parse_f64)
+            .unwrap_or(0.0),
+        moneda: comp
+            .map(|comp| str_field(comp, "moneda"))
+            .unwrap_or_default(),
+        forma_pago: comp
+            .map(|comp| str_field(comp, "formaPago"))
+            .unwrap_or_default(),
+        metodo_pago: comp
+            .map(|comp| str_field(comp, "metodoPago"))
+            .unwrap_or_default(),
+        emisor_rfc,
+        emisor_nombre: nested_str(doc, "emisor", "nombre"),
+        receptor_rfc: nested_str(doc, "receptor", "rfc"),
+        receptor_nombre: nested_str(doc, "receptor", "nombre"),
+        conceptos,
+        es_emitido,
+    }
 }

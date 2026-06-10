@@ -83,6 +83,7 @@ async fn main() {
         )
         .route("/admin/cfdis", get(routes::cfdis_index))
         .route("/api/admin/cfdis/data", get(routes::cfdis_data_api))
+        .route("/api/admin/cfdis/{uuid}", get(routes::cfdi_data_api))
         .route(
             "/admin/companies/{id}/sat_configs",
             post(routes::sat_configs_create),
