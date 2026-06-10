@@ -385,6 +385,14 @@ async fn main() {
             "/admin/resource_logs",
             get(routes::resource_logs_index).post(routes::resource_logs_create),
         )
+        .route(
+            "/api/admin/resource_logs",
+            get(routes::resource_logs_data_api),
+        )
+        .route(
+            "/api/admin/resource_logs/{id}",
+            get(routes::resource_log_data_api),
+        )
         .route("/admin/resource_logs/new", get(routes::resource_logs_new))
         .route(
             "/admin/resource_logs/{id}/edit",

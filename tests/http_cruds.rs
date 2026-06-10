@@ -207,6 +207,14 @@ fn build_app(state: Arc<AppState>) -> Router {
             "/admin/resource_logs",
             get(routes::resource_logs_index).post(routes::resource_logs_create),
         )
+        .route(
+            "/api/admin/resource_logs",
+            get(routes::resource_logs_data_api),
+        )
+        .route(
+            "/api/admin/resource_logs/{id}",
+            get(routes::resource_log_data_api),
+        )
         .route("/admin/resource_logs/new", get(routes::resource_logs_new))
         .route(
             "/admin/resource_logs/{id}/edit",
@@ -1135,6 +1143,123 @@ async fn resource_json_endpoints_scope_to_active_tenant_and_admins() {
 
     let app = build_app(shared);
     let (status, _body) = get_with_cookie(app, host_a, "/api/admin/resources", &staff_token).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    common::teardown(Some(ctx)).await;
+}
+
+#[tokio::test]
+async fn resource_log_json_endpoints_scope_to_active_tenant_and_admins() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let shared = Arc::new(state.clone());
+
+    let company_a = create_company(
+        &state,
+        "Resource Log JSON A",
+        "resource-log-json-a",
+        "MXN",
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+    let company_b = create_company(
+        &state,
+        "Resource Log JSON B",
+        "resource-log-json-b",
+        "MXN",
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+    let admin_id = create_user(
+        &state,
+        "resource-log-json-admin@example.com",
+        "SECRET",
+        &[(company_a.clone(), UserRole::Admin)],
+    )
+    .await
+    .unwrap();
+    let staff_id = create_user(
+        &state,
+        "resource-log-json-staff@example.com",
+        "SECRET",
+        &[(company_a.clone(), UserRole::Staff)],
+    )
+    .await
+    .unwrap();
+    let admin = get_user_by_id(&state, &admin_id).await.unwrap().unwrap();
+    let staff = get_user_by_id(&state, &staff_id).await.unwrap().unwrap();
+    let admin_token = create_session(&state, &admin.email).await.unwrap();
+    let staff_token = create_session(&state, &staff.email).await.unwrap();
+    let host_a = "resource-log-json-a.miapp.local";
+
+    let log_a = create_resource_log(
+        &state,
+        &company_a,
+        None,
+        Some("Phase A".into()),
+        None,
+        Some("Resource Log JSON visible".into()),
+        DateTime::parse_rfc3339_str("2026-05-01T10:00:00Z").unwrap(),
+        Some("Operator A".into()),
+        Some("Visible notes".into()),
+    )
+    .await
+    .unwrap();
+    let log_b = create_resource_log(
+        &state,
+        &company_b,
+        None,
+        Some("Phase B".into()),
+        None,
+        Some("Resource Log JSON hidden".into()),
+        DateTime::parse_rfc3339_str("2026-05-02T10:00:00Z").unwrap(),
+        Some("Operator B".into()),
+        None,
+    )
+    .await
+    .unwrap();
+
+    let app = build_app(shared.clone());
+    let (status, body) =
+        get_with_cookie(app, host_a, "/api/admin/resource_logs", &admin_token).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains("Resource Log JSON visible"));
+    assert!(!body.contains("Resource Log JSON hidden"));
+
+    let app = build_app(shared.clone());
+    let (status, body) = get_with_cookie(
+        app,
+        host_a,
+        &format!("/api/admin/resource_logs/{}", log_a.to_hex()),
+        &admin_token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let log: serde_json::Value = serde_json::from_str(&body).expect("resource log must be JSON");
+    assert_eq!(log["phase"], "Phase A");
+    assert_eq!(log["resource_name"], "Resource Log JSON visible");
+    assert_eq!(log["operator_name"], "Operator A");
+
+    let app = build_app(shared.clone());
+    let (status, _body) = get_with_cookie(
+        app,
+        host_a,
+        &format!("/api/admin/resource_logs/{}", log_b.to_hex()),
+        &admin_token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let app = build_app(shared);
+    let (status, _body) =
+        get_with_cookie(app, host_a, "/api/admin/resource_logs", &staff_token).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 
     common::teardown(Some(ctx)).await;

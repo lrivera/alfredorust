@@ -161,10 +161,20 @@ enum ResourcesCommand {
     Get {
         id: String,
     },
+    Logs {
+        #[command(subcommand)]
+        command: ResourceLogsCommand,
+    },
     Usages {
         #[command(subcommand)]
         command: ListCommand,
     },
+}
+
+#[derive(Subcommand)]
+enum ResourceLogsCommand {
+    List,
+    Get { id: String },
 }
 
 #[derive(Subcommand)]
@@ -557,6 +567,20 @@ async fn run(cli: Cli) -> Result<()> {
             ResourcesCommand::Get { id } => {
                 json_get_by_id_command("/api/admin/resources", &id, cli.json, "resource").await
             }
+            ResourcesCommand::Logs { command } => match command {
+                ResourceLogsCommand::List => {
+                    json_get_command("/api/admin/resource_logs", cli.json, "resource logs").await
+                }
+                ResourceLogsCommand::Get { id } => {
+                    json_get_by_id_command(
+                        "/api/admin/resource_logs",
+                        &id,
+                        cli.json,
+                        "resource log",
+                    )
+                    .await
+                }
+            },
             ResourcesCommand::Usages { command } => match command {
                 ListCommand::List => {
                     json_get_command("/api/admin/resource_usages", cli.json, "resource usages")
@@ -1021,6 +1045,8 @@ fn print_manifest(json_output: bool) -> Result<()> {
             { "name": "projects concepts list", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--project-id"], "output_schema": "project_concepts" },
             { "name": "resources list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "resources" },
             { "name": "resources get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "resource" },
+            { "name": "resources logs list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "resource_logs" },
+            { "name": "resources logs get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "resource_log" },
             { "name": "resources usages list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "resource_usages" },
             { "name": "time timeline", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--mode", "--from", "--to"], "output_schema": "timeline_buckets" },
             { "name": "pdf preview", "auth_required": true, "company_required": false, "destructive": false, "arguments": ["--input", "--source", "--output"], "output_schema": "pdf_preview" },

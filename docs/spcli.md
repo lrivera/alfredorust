@@ -76,6 +76,7 @@ cargo run --bin spcli -- projects list
 cargo run --bin spcli -- projects statuses list
 cargo run --bin spcli -- projects concepts list --project-id 64f000000000000000000000
 cargo run --bin spcli -- resources list
+cargo run --bin spcli -- resources logs list
 cargo run --bin spcli -- resources usages list
 ```
 
@@ -92,6 +93,7 @@ cargo run --bin spcli -- finance transactions get 64f000000000000000000000
 cargo run --bin spcli -- cfdi get 12345678-1234-1234-1234-1234567890ab
 cargo run --bin spcli -- projects get 64f000000000000000000000
 cargo run --bin spcli -- resources get 64f000000000000000000000
+cargo run --bin spcli -- resources logs get 64f000000000000000000000
 ```
 
 Create finance master-data records:

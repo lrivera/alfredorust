@@ -2,23 +2,26 @@ use std::sync::Arc;
 
 use askama::Template;
 use axum::{
+    Json,
     extract::{Form, Path, State},
     http::StatusCode,
     response::{Html, IntoResponse, Redirect},
 };
 use bson::oid::ObjectId;
 use chrono::Utc;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[allow(unused_imports)]
 use crate::filters;
 
 use crate::{
+    models::ResourceLog,
     session::SessionUser,
     state::{
         AppState, create_resource_log, delete_resource_log, end_resource_log, get_project_by_id,
-        get_resource_by_id as get_resource_by_id_state, get_resource_log_by_id, list_projects,
-        list_resource_logs, list_resource_logs_for_project, list_resources as list_resources_state,
+        get_resource_by_id as get_resource_by_id_state, get_resource_log_by_id,
+        get_resource_log_by_id_for_company, list_projects, list_resource_logs,
+        list_resource_logs_for_project, list_resources as list_resources_state,
         update_resource_log,
     },
 };
@@ -29,6 +32,24 @@ fn render<T: Template>(tpl: T) -> Result<Html<String>, StatusCode> {
     tpl.render()
         .map(Html)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+fn resource_log_data(log: ResourceLog) -> Option<ResourceLogData> {
+    let id = log.id?.to_hex();
+    Some(ResourceLogData {
+        id,
+        company_id: log.company_id.to_hex(),
+        project_id: log.project_id.map(|id| id.to_hex()),
+        phase: log.phase,
+        resource_id: log.resource_id.map(|id| id.to_hex()),
+        resource_name: log.resource_name,
+        started_at: log.started_at.to_chrono().to_rfc3339(),
+        ended_at: log.ended_at.map(|date| date.to_chrono().to_rfc3339()),
+        duration_hours: log.duration_hours,
+        operator_name: log.operator_name,
+        notes: log.notes,
+        created_at: log.created_at.map(|date| date.to_chrono().to_rfc3339()),
+    })
 }
 
 #[derive(Template)]
@@ -48,6 +69,22 @@ struct ResourceLogRow {
     duration_hours: String,
     operator_name: String,
     notes: String,
+}
+
+#[derive(Serialize)]
+pub struct ResourceLogData {
+    pub id: String,
+    pub company_id: String,
+    pub project_id: Option<String>,
+    pub phase: Option<String>,
+    pub resource_id: Option<String>,
+    pub resource_name: Option<String>,
+    pub started_at: String,
+    pub ended_at: Option<String>,
+    pub duration_hours: Option<f64>,
+    pub operator_name: Option<String>,
+    pub notes: Option<String>,
+    pub created_at: Option<String>,
 }
 
 pub async fn resource_logs_index(
@@ -101,6 +138,45 @@ pub async fn resource_logs_index(
         logs: rows,
         project_filter: params.get("project_id").cloned(),
     })
+}
+
+pub async fn resource_logs_data_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<Vec<ResourceLogData>>, StatusCode> {
+    let company_id = require_admin_active(&session_user)?;
+    let logs = if let Some(project_id) = params.get("project_id") {
+        let oid = ObjectId::parse_str(project_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+        list_resource_logs_for_project(&state, &company_id, &oid)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    } else {
+        list_resource_logs(&state, &company_id)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    };
+
+    Ok(Json(
+        logs.into_iter().filter_map(resource_log_data).collect(),
+    ))
+}
+
+pub async fn resource_log_data_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<ResourceLogData>, StatusCode> {
+    let company_id = require_admin_active(&session_user)?;
+    let oid = ObjectId::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let log = get_resource_log_by_id_for_company(&state, &oid, &company_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    resource_log_data(log)
+        .map(Json)
+        .ok_or(StatusCode::INTERNAL_SERVER_ERROR)
 }
 
 #[derive(Template)]
