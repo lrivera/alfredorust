@@ -381,6 +381,29 @@ pub async fn api_resource_usages_index(
     }
 }
 
+pub async fn api_resource_usage_detail(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Response {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+    let id = match parse_oid(&id) {
+        Ok(id) => id,
+        Err(resp) => return resp,
+    };
+    match get_resource_usage_by_id_for_company(&state, &id, &company_id).await {
+        Ok(Some(item)) => Json(item).into_response(),
+        Ok(None) => json_error(StatusCode::NOT_FOUND, "resource usage not found"),
+        Err(_) => json_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "could not get resource usage",
+        ),
+    }
+}
+
 pub async fn api_resource_usages_create(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,

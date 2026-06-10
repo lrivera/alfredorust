@@ -167,12 +167,18 @@ enum ResourcesCommand {
     },
     Usages {
         #[command(subcommand)]
-        command: ListCommand,
+        command: ResourceUsagesCommand,
     },
 }
 
 #[derive(Subcommand)]
 enum ResourceLogsCommand {
+    List,
+    Get { id: String },
+}
+
+#[derive(Subcommand)]
+enum ResourceUsagesCommand {
     List,
     Get { id: String },
 }
@@ -582,9 +588,18 @@ async fn run(cli: Cli) -> Result<()> {
                 }
             },
             ResourcesCommand::Usages { command } => match command {
-                ListCommand::List => {
+                ResourceUsagesCommand::List => {
                     json_get_command("/api/admin/resource_usages", cli.json, "resource usages")
                         .await
+                }
+                ResourceUsagesCommand::Get { id } => {
+                    json_get_by_id_command(
+                        "/api/admin/resource_usages",
+                        &id,
+                        cli.json,
+                        "resource usage",
+                    )
+                    .await
                 }
             },
         },
@@ -1048,6 +1063,7 @@ fn print_manifest(json_output: bool) -> Result<()> {
             { "name": "resources logs list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "resource_logs" },
             { "name": "resources logs get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "resource_log" },
             { "name": "resources usages list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "resource_usages" },
+            { "name": "resources usages get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "resource_usage" },
             { "name": "time timeline", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--mode", "--from", "--to"], "output_schema": "timeline_buckets" },
             { "name": "pdf preview", "auth_required": true, "company_required": false, "destructive": false, "arguments": ["--input", "--source", "--output"], "output_schema": "pdf_preview" },
             { "name": "manifest", "auth_required": false, "company_required": false, "destructive": false }

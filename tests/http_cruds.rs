@@ -23,10 +23,11 @@ use alfredodev::{
     state::{
         AppState, add_user_to_company, create_account, create_category, create_company,
         create_forecast, create_planned_entry, create_project, create_recurring_plan,
-        create_resource, create_resource_log, create_session, create_transaction, create_user,
-        create_user_with_permissions, get_user_by_id, list_accounts, list_categories,
-        list_companies, list_contacts, list_forecasts, list_planned_entries, list_projects,
-        list_recurring_plans, list_resource_logs, list_resources, list_transactions, list_users,
+        create_resource, create_resource_log, create_resource_usage, create_session,
+        create_transaction, create_user, create_user_with_permissions, get_user_by_id,
+        list_accounts, list_categories, list_companies, list_contacts, list_forecasts,
+        list_planned_entries, list_projects, list_recurring_plans, list_resource_logs,
+        list_resources, list_transactions, list_users,
     },
 };
 use bson::{DateTime, doc};
@@ -235,6 +236,14 @@ fn build_app(state: Arc<AppState>) -> Router {
         .route(
             "/admin/resource_usages",
             get(routes::resource_usages_index).post(routes::resource_usages_save_grid),
+        )
+        .route(
+            "/api/admin/resource_usages",
+            get(routes::api_resource_usages_index).post(routes::api_resource_usages_create),
+        )
+        .route(
+            "/api/admin/resource_usages/{id}",
+            get(routes::api_resource_usage_detail),
         )
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
@@ -1260,6 +1269,141 @@ async fn resource_log_json_endpoints_scope_to_active_tenant_and_admins() {
     let app = build_app(shared);
     let (status, _body) =
         get_with_cookie(app, host_a, "/api/admin/resource_logs", &staff_token).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    common::teardown(Some(ctx)).await;
+}
+
+#[tokio::test]
+async fn resource_usage_json_get_scopes_to_active_tenant_and_admins() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let shared = Arc::new(state.clone());
+
+    let company_a = create_company(
+        &state,
+        "Resource Usage JSON A",
+        "resource-usage-json-a",
+        "MXN",
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+    let company_b = create_company(
+        &state,
+        "Resource Usage JSON B",
+        "resource-usage-json-b",
+        "MXN",
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+    let admin_id = create_user(
+        &state,
+        "resource-usage-json-admin@example.com",
+        "SECRET",
+        &[(company_a.clone(), UserRole::Admin)],
+    )
+    .await
+    .unwrap();
+    let staff_id = create_user(
+        &state,
+        "resource-usage-json-staff@example.com",
+        "SECRET",
+        &[(company_a.clone(), UserRole::Staff)],
+    )
+    .await
+    .unwrap();
+    let admin = get_user_by_id(&state, &admin_id).await.unwrap().unwrap();
+    let staff = get_user_by_id(&state, &staff_id).await.unwrap().unwrap();
+    let admin_token = create_session(&state, &admin.email).await.unwrap();
+    let staff_token = create_session(&state, &staff.email).await.unwrap();
+    let host_a = "resource-usage-json-a.miapp.local";
+
+    let resource_a = create_resource(
+        &state,
+        &company_a,
+        "Usage JSON visible resource",
+        ResourceType::Machinery,
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+    let resource_b = create_resource(
+        &state,
+        &company_b,
+        "Usage JSON hidden resource",
+        ResourceType::Vehicle,
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+    let usage_a = create_resource_usage(
+        &state,
+        &company_a,
+        &resource_a,
+        DateTime::parse_rfc3339_str("2026-06-01T10:00:00Z").unwrap(),
+        Some(DateTime::parse_rfc3339_str("2026-06-01T12:00:00Z").unwrap()),
+        Some("Operator A".into()),
+        Some("Visible usage".into()),
+    )
+    .await
+    .unwrap();
+    let usage_b = create_resource_usage(
+        &state,
+        &company_b,
+        &resource_b,
+        DateTime::parse_rfc3339_str("2026-06-02T10:00:00Z").unwrap(),
+        None,
+        Some("Operator B".into()),
+        None,
+    )
+    .await
+    .unwrap();
+
+    let app = build_app(shared.clone());
+    let (status, body) =
+        get_with_cookie(app, host_a, "/api/admin/resource_usages", &admin_token).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains("Usage JSON visible resource"));
+    assert!(!body.contains("Usage JSON hidden resource"));
+
+    let app = build_app(shared.clone());
+    let (status, body) = get_with_cookie(
+        app,
+        host_a,
+        &format!("/api/admin/resource_usages/{}", usage_a.to_hex()),
+        &admin_token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let usage: serde_json::Value = serde_json::from_str(&body).expect("usage must be JSON");
+    assert_eq!(
+        usage["resource_name_snapshot"],
+        "Usage JSON visible resource"
+    );
+    assert_eq!(usage["operator_name"], "Operator A");
+
+    let app = build_app(shared.clone());
+    let (status, _body) = get_with_cookie(
+        app,
+        host_a,
+        &format!("/api/admin/resource_usages/{}", usage_b.to_hex()),
+        &admin_token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let app = build_app(shared);
+    let (status, _body) =
+        get_with_cookie(app, host_a, "/api/admin/resource_usages", &staff_token).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 
     common::teardown(Some(ctx)).await;

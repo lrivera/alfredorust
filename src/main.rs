@@ -471,6 +471,10 @@ async fn main() {
             get(routes::api_resource_usages_index).post(routes::api_resource_usages_create),
         )
         .route(
+            "/api/admin/resource_usages/{id}",
+            get(routes::api_resource_usage_detail),
+        )
+        .route(
             "/api/admin/resource_usages/{id}/update",
             post(routes::api_resource_usages_update),
         )
