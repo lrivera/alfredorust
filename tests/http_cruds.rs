@@ -15,15 +15,15 @@ use tower::ServiceExt; // for oneshot
 
 use alfredodev::{
     models::{
-        AccountType, FlowType, PlannedStatus, ProjectPriority, ResourceType, UserPermission,
-        UserRole,
+        AccountType, FlowType, PlannedStatus, ProjectPriority, ResourceType, TransactionType,
+        UserPermission, UserRole,
     },
     routes,
     session::{SESSION_COOKIE_NAME, require_session},
     state::{
         AppState, add_user_to_company, create_account, create_category, create_company,
         create_forecast, create_planned_entry, create_project, create_recurring_plan,
-        create_resource, create_resource_log, create_session, create_user,
+        create_resource, create_resource_log, create_session, create_transaction, create_user,
         create_user_with_permissions, get_user_by_id, list_accounts, list_categories,
         list_companies, list_contacts, list_forecasts, list_planned_entries, list_projects,
         list_recurring_plans, list_resource_logs, list_resources, list_transactions, list_users,
@@ -156,6 +156,10 @@ fn build_app(state: Arc<AppState>) -> Router {
         .route(
             "/api/admin/transactions/data",
             get(routes::transactions_data_api),
+        )
+        .route(
+            "/api/admin/transactions/{id}",
+            get(routes::transaction_data_api),
         )
         .route(
             "/admin/forecasts",
@@ -553,6 +557,48 @@ async fn finance_json_endpoints_scope_to_active_tenant() {
     )
     .await
     .unwrap();
+    let transaction_a = create_transaction(
+        &state,
+        &company_a,
+        DateTime::parse_rfc3339_str("2026-03-01T00:00:00Z").unwrap(),
+        "finance-json-transaction-a",
+        TransactionType::Expense,
+        &category_a,
+        Some(account_a.clone()),
+        None,
+        42.0,
+        None,
+        None,
+        true,
+        None,
+        None,
+        None,
+        Some("MXN".into()),
+        None,
+    )
+    .await
+    .unwrap();
+    let transaction_b = create_transaction(
+        &state,
+        &company_b,
+        DateTime::parse_rfc3339_str("2026-03-01T00:00:00Z").unwrap(),
+        "finance-json-transaction-b",
+        TransactionType::Expense,
+        &category_b,
+        Some(account_b.clone()),
+        None,
+        42.0,
+        None,
+        None,
+        true,
+        None,
+        None,
+        None,
+        Some("MXN".into()),
+        None,
+    )
+    .await
+    .unwrap();
 
     let list_cases = vec![
         (
@@ -579,6 +625,11 @@ async fn finance_json_endpoints_scope_to_active_tenant() {
             "/api/admin/planned-entries",
             "finance-json-entry-a",
             "finance-json-entry-b",
+        ),
+        (
+            "/api/admin/transactions/data",
+            "finance-json-transaction-a",
+            "finance-json-transaction-b",
         ),
     ];
 
@@ -645,6 +696,16 @@ async fn finance_json_endpoints_scope_to_active_tenant() {
         ),
         (
             format!("/api/admin/planned-entries/{}", planned_entry_b.to_hex()),
+            StatusCode::FORBIDDEN,
+            "",
+        ),
+        (
+            format!("/api/admin/transactions/{}", transaction_a.to_hex()),
+            StatusCode::OK,
+            "finance-json-transaction-a",
+        ),
+        (
+            format!("/api/admin/transactions/{}", transaction_b.to_hex()),
             StatusCode::FORBIDDEN,
             "",
         ),

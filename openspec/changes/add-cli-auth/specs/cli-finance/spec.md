@@ -17,6 +17,12 @@ The system SHALL provide finance CLI read commands that use authenticated, tenan
 - **THEN** the CLI returns a JSON array of transaction rows for the active company
 - **AND** includes stable fields for id, date, description, type, amount, account names, category, contact, confirmation state, currency, CFDI folio, and notes
 
+#### Scenario: Finance transaction detail is requested
+
+- **WHEN** the user runs `spcli finance transactions get <id>` with a transaction from the active company
+- **THEN** the CLI returns a JSON object with the transaction's canonical ObjectId fields and financial attributes
+- **AND** rejects transaction IDs from another company with a forbidden response
+
 ### Requirement: CLI finance mutations require explicit backend APIs
 
 The system SHALL only implement finance create, update, delete, pay, generate, and bulk-pay CLI commands after backend JSON APIs exist for those actions.

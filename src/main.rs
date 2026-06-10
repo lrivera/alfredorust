@@ -249,6 +249,10 @@ async fn main() {
             get(routes::transactions_data_api),
         )
         .route(
+            "/api/admin/transactions/{id}",
+            get(routes::transaction_data_api),
+        )
+        .route(
             "/admin/transactions",
             get(routes::transactions_index).post(routes::transactions_create),
         )

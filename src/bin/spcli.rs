@@ -116,7 +116,7 @@ enum FinanceCommand {
     },
     Transactions {
         #[command(subcommand)]
-        command: ListCommand,
+        command: ListGetCommand,
     },
 }
 
@@ -509,8 +509,12 @@ async fn run(cli: Cli) -> Result<()> {
                 }
             },
             FinanceCommand::Transactions { command } => match command {
-                ListCommand::List => {
+                ListGetCommand::List => {
                     json_get_command("/api/admin/transactions/data", cli.json, "transactions").await
+                }
+                ListGetCommand::Get { id } => {
+                    json_get_by_id_command("/api/admin/transactions", &id, cli.json, "transaction")
+                        .await
                 }
             },
         },
@@ -978,6 +982,7 @@ fn print_manifest(json_output: bool) -> Result<()> {
             { "name": "finance planned-entries list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "planned_entries" },
             { "name": "finance planned-entries get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "planned_entry" },
             { "name": "finance transactions list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "transactions" },
+            { "name": "finance transactions get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "transaction" },
             { "name": "cfdi list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "cfdi_data" },
             { "name": "projects statuses list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "concept_statuses" },
             { "name": "projects concepts list", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--project-id"], "output_schema": "project_concepts" },

@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use crate::filters;
 
 use crate::{
+    models::Transaction,
     session::SessionUser,
     state::{
         AppState, create_transaction, delete_transaction, get_transaction_by_id, list_transactions,
@@ -545,6 +546,46 @@ pub struct TxApiItem {
     pub notes: String,
 }
 
+#[derive(Serialize)]
+pub struct TransactionData {
+    pub id: String,
+    pub company_id: String,
+    pub company: String,
+    pub date: String,
+    pub description: String,
+    pub transaction_type: String,
+    pub category_id: String,
+    pub account_from_id: Option<String>,
+    pub account_to_id: Option<String>,
+    pub amount: f64,
+    pub planned_entry_id: Option<String>,
+    pub project_id: Option<String>,
+    pub is_confirmed: bool,
+    pub contact_id: Option<String>,
+    pub cfdi_uuid: Option<String>,
+    pub currency: Option<String>,
+    pub cfdi_folio: Option<String>,
+    pub notes: Option<String>,
+}
+
+pub async fn transaction_data_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<TransactionData>, StatusCode> {
+    let active_company = require_admin_active(&session_user)?;
+    let object_id = ObjectId::from_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let tx = get_transaction_by_id(&state, &object_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    ensure_same_company(&tx.company_id, &active_company)?;
+
+    transaction_data(tx, session_user.user().company_name.clone())
+        .map(Json)
+        .ok_or(StatusCode::INTERNAL_SERVER_ERROR)
+}
+
 pub async fn transactions_data_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -663,4 +704,28 @@ pub async fn transactions_data_api(
         .collect();
 
     Ok(Json(items))
+}
+
+fn transaction_data(tx: Transaction, company: String) -> Option<TransactionData> {
+    let id = tx.id?.to_hex();
+    Some(TransactionData {
+        id,
+        company_id: tx.company_id.to_hex(),
+        company,
+        date: datetime_to_string(&tx.date),
+        description: tx.description,
+        transaction_type: transaction_type_value(&tx.transaction_type).to_string(),
+        category_id: tx.category_id.to_hex(),
+        account_from_id: tx.account_from_id.map(|id| id.to_hex()),
+        account_to_id: tx.account_to_id.map(|id| id.to_hex()),
+        amount: tx.amount,
+        planned_entry_id: tx.planned_entry_id.map(|id| id.to_hex()),
+        project_id: tx.project_id.map(|id| id.to_hex()),
+        is_confirmed: tx.is_confirmed,
+        contact_id: tx.contact_id.map(|id| id.to_hex()),
+        cfdi_uuid: tx.cfdi_uuid,
+        currency: tx.currency,
+        cfdi_folio: tx.cfdi_folio,
+        notes: tx.notes,
+    })
 }
