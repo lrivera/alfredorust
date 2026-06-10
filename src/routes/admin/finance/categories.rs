@@ -50,6 +50,14 @@ pub struct CategoryDetail {
     pub notes: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct CategoryCreatePayload {
+    pub name: String,
+    pub flow_type: String,
+    pub parent_id: Option<String>,
+    pub notes: Option<String>,
+}
+
 pub async fn categories_data_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -86,6 +94,77 @@ pub async fn categories_data_api(
         .collect();
 
     Ok(Json(rows))
+}
+
+pub async fn categories_create_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<CategoryCreatePayload>,
+) -> impl IntoResponse {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+    let flow_type = match parse_flow_type(&payload.flow_type) {
+        Ok(value) => value,
+        Err(message) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": message })),
+            )
+                .into_response();
+        }
+    };
+    let name = payload.name.trim();
+    if name.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "name is required" })),
+        )
+            .into_response();
+    }
+    let parent_id = match clean_opt(payload.parent_id) {
+        Some(parent_id) => match ObjectId::from_str(&parent_id) {
+            Ok(id) => {
+                match get_category_by_id(&state, &id).await {
+                    Ok(Some(parent)) => {
+                        if let Err(status) = ensure_same_company(&parent.company_id, &company_id) {
+                            return status.into_response();
+                        }
+                    }
+                    Ok(None) => return StatusCode::BAD_REQUEST.into_response(),
+                    Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+                }
+                Some(id)
+            }
+            Err(_) => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({ "error": "parent_id is invalid" })),
+                )
+                    .into_response();
+            }
+        },
+        None => None,
+    };
+
+    match create_category(
+        &state,
+        &company_id,
+        name,
+        flow_type,
+        parent_id,
+        clean_opt(payload.notes),
+    )
+    .await
+    {
+        Ok(id) => (
+            StatusCode::CREATED,
+            Json(serde_json::json!({ "id": id.to_hex() })),
+        )
+            .into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
 }
 
 pub async fn category_data_api(

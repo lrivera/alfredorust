@@ -111,7 +111,10 @@ async fn main() {
             "/admin/accounts",
             get(routes::accounts_index).post(routes::accounts_create),
         )
-        .route("/api/admin/accounts", get(routes::accounts_data_api))
+        .route(
+            "/api/admin/accounts",
+            get(routes::accounts_data_api).post(routes::accounts_create_api),
+        )
         .route("/api/admin/accounts/{id}", get(routes::account_data_api))
         .route("/admin/accounts/new", get(routes::accounts_new))
         .route("/admin/accounts/{id}/edit", get(routes::accounts_edit))
@@ -121,7 +124,10 @@ async fn main() {
             "/admin/categories",
             get(routes::categories_index).post(routes::categories_create),
         )
-        .route("/api/admin/categories", get(routes::categories_data_api))
+        .route(
+            "/api/admin/categories",
+            get(routes::categories_data_api).post(routes::categories_create_api),
+        )
         .route("/api/admin/categories/{id}", get(routes::category_data_api))
         .route("/admin/categories/new", get(routes::categories_new))
         .route("/admin/categories/{id}/edit", get(routes::categories_edit))
@@ -137,7 +143,10 @@ async fn main() {
             "/admin/contacts",
             get(routes::contacts_index).post(routes::contacts_create),
         )
-        .route("/api/admin/contacts", get(routes::contacts_data_api))
+        .route(
+            "/api/admin/contacts",
+            get(routes::contacts_data_api).post(routes::contacts_create_api),
+        )
         .route("/api/admin/contacts/{id}", get(routes::contact_data_api))
         .route("/admin/contacts/new", get(routes::contacts_new))
         .route("/admin/contacts/{id}/edit", get(routes::contacts_edit))

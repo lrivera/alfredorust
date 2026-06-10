@@ -50,6 +50,16 @@ pub struct ContactDetail {
     pub notes: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct ContactCreatePayload {
+    pub name: String,
+    pub contact_type: String,
+    pub rfc: Option<String>,
+    pub email: Option<String>,
+    pub phone: Option<String>,
+    pub notes: Option<String>,
+}
+
 pub async fn contacts_data_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -75,6 +85,55 @@ pub async fn contacts_data_api(
         .collect();
 
     Ok(Json(rows))
+}
+
+pub async fn contacts_create_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<ContactCreatePayload>,
+) -> impl IntoResponse {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+    let contact_type = match parse_contact_type(&payload.contact_type) {
+        Ok(value) => value,
+        Err(message) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": message })),
+            )
+                .into_response();
+        }
+    };
+    let name = payload.name.trim();
+    if name.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "name is required" })),
+        )
+            .into_response();
+    }
+
+    match create_contact(
+        &state,
+        &company_id,
+        name,
+        contact_type,
+        clean_opt(payload.rfc).map(|value| value.to_uppercase()),
+        clean_opt(payload.email),
+        clean_opt(payload.phone),
+        clean_opt(payload.notes),
+    )
+    .await
+    {
+        Ok(id) => (
+            StatusCode::CREATED,
+            Json(serde_json::json!({ "id": id.to_hex() })),
+        )
+            .into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
 }
 
 pub async fn contact_data_api(

@@ -82,6 +82,14 @@ cargo run --bin spcli -- finance categories get 64f000000000000000000000
 cargo run --bin spcli -- finance contacts get 64f000000000000000000000
 ```
 
+Create finance master-data records:
+
+```bash
+cargo run --bin spcli -- finance accounts create --name "BBVA" --account-type bank --currency MXN
+cargo run --bin spcli -- finance categories create --name "Services" --flow-type expense
+cargo run --bin spcli -- finance contacts create --name "Customer SA" --contact-type customer --rfc XAXX010101000
+```
+
 Query the time timeline. `--from` and `--to` accept RFC3339 datetimes or `YYYY-MM-DD` dates, which are sent as midnight UTC:
 
 ```bash

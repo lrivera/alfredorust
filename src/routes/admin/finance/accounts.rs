@@ -50,6 +50,20 @@ pub struct AccountDetail {
     pub notes: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct AccountCreatePayload {
+    pub name: String,
+    pub account_type: String,
+    pub currency: Option<String>,
+    #[serde(default = "default_true_payload")]
+    pub is_active: bool,
+    pub notes: Option<String>,
+}
+
+fn default_true_payload() -> bool {
+    true
+}
+
 pub async fn accounts_data_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -76,6 +90,61 @@ pub async fn accounts_data_api(
         .collect();
 
     Ok(Json(rows))
+}
+
+pub async fn accounts_create_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<AccountCreatePayload>,
+) -> impl IntoResponse {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+    let account_type = match parse_account_type(&payload.account_type) {
+        Ok(value) => value,
+        Err(message) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": message })),
+            )
+                .into_response();
+        }
+    };
+    let name = payload.name.trim();
+    if name.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "name is required" })),
+        )
+            .into_response();
+    }
+    let currency = payload
+        .currency
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("MXN")
+        .to_string();
+
+    match create_account(
+        &state,
+        &company_id,
+        name,
+        account_type,
+        &currency,
+        payload.is_active,
+        clean_opt(payload.notes),
+    )
+    .await
+    {
+        Ok(id) => (
+            StatusCode::CREATED,
+            Json(serde_json::json!({ "id": id.to_hex() })),
+        )
+            .into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
 }
 
 pub async fn account_data_api(
