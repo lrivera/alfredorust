@@ -50,3 +50,14 @@ pub async fn get_sat_config(state: &AppState, config_id: &ObjectId) -> Result<Op
         .find_one(doc! { "_id": config_id })
         .await?)
 }
+
+pub async fn get_sat_config_for_company(
+    state: &AppState,
+    config_id: &ObjectId,
+    company_id: &ObjectId,
+) -> Result<Option<SatConfig>> {
+    Ok(state
+        .sat_configs
+        .find_one(doc! { "_id": config_id, "company_id": company_id })
+        .await?)
+}

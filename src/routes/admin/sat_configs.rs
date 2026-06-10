@@ -2,20 +2,28 @@ use std::{path::PathBuf, str::FromStr, sync::Arc};
 
 use askama::Template;
 use axum::{
+    Json,
     extract::{Multipart, Path, State},
     http::StatusCode,
     response::{Html, IntoResponse, Redirect},
 };
 use bson::oid::ObjectId;
+use serde::Serialize;
 use tokio::fs;
 
 #[allow(unused_imports)]
 use crate::filters;
 
 use crate::{
+    models::SatConfig,
     session::SessionUser,
-    state::{AppState, create_sat_config, delete_sat_config, get_company_by_id, list_sat_configs},
+    state::{
+        AppState, create_sat_config, delete_sat_config, get_company_by_id,
+        get_sat_config_for_company, list_sat_configs,
+    },
 };
+
+use super::finance::helpers::require_admin_active;
 
 const MAX_SAT_FILE_BYTES: usize = 2 * 1024 * 1024;
 
@@ -54,6 +62,57 @@ fn render<T: Template>(tpl: T) -> Result<Html<String>, StatusCode> {
     tpl.render()
         .map(Html)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+#[derive(Serialize)]
+pub struct SatConfigData {
+    pub id: String,
+    pub company_id: String,
+    pub rfc: String,
+    pub label: Option<String>,
+    pub created_at: String,
+}
+
+fn sat_config_data(config: SatConfig) -> Option<SatConfigData> {
+    let id = config.id?.to_hex();
+    Some(SatConfigData {
+        id,
+        company_id: config.company_id.to_hex(),
+        rfc: config.rfc,
+        label: config.label,
+        created_at: config.created_at.to_chrono().to_rfc3339(),
+    })
+}
+
+pub async fn sat_configs_data_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<SatConfigData>>, StatusCode> {
+    let company_id = require_admin_active(&session_user)?;
+    let configs = list_sat_configs(&state, &company_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(
+        configs.into_iter().filter_map(sat_config_data).collect(),
+    ))
+}
+
+pub async fn sat_config_data_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<SatConfigData>, StatusCode> {
+    let company_id = require_admin_active(&session_user)?;
+    let oid = ObjectId::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let config = get_sat_config_for_company(&state, &oid, &company_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    sat_config_data(config)
+        .map(Json)
+        .ok_or(StatusCode::INTERNAL_SERVER_ERROR)
 }
 
 #[derive(Template)]

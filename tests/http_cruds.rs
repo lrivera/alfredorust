@@ -23,11 +23,11 @@ use alfredodev::{
     state::{
         AppState, add_user_to_company, create_account, create_category, create_company,
         create_forecast, create_planned_entry, create_project, create_recurring_plan,
-        create_resource, create_resource_log, create_resource_usage, create_session,
-        create_transaction, create_user, create_user_with_permissions, get_user_by_id,
-        list_accounts, list_categories, list_companies, list_contacts, list_forecasts,
-        list_planned_entries, list_projects, list_recurring_plans, list_resource_logs,
-        list_resources, list_transactions, list_users,
+        create_resource, create_resource_log, create_resource_usage, create_sat_config,
+        create_session, create_transaction, create_user, create_user_with_permissions,
+        get_user_by_id, list_accounts, list_categories, list_companies, list_contacts,
+        list_forecasts, list_planned_entries, list_projects, list_recurring_plans,
+        list_resource_logs, list_resources, list_transactions, list_users,
     },
 };
 use bson::{DateTime, doc};
@@ -57,6 +57,11 @@ fn build_app(state: Arc<AppState>) -> Router {
         .route("/admin/cfdis", get(routes::cfdis_index))
         .route("/api/admin/cfdis/data", get(routes::cfdis_data_api))
         .route("/api/admin/cfdis/{uuid}", get(routes::cfdi_data_api))
+        .route("/api/admin/sat-configs", get(routes::sat_configs_data_api))
+        .route(
+            "/api/admin/sat-configs/{id}",
+            get(routes::sat_config_data_api),
+        )
         .route(
             "/admin/companies/{id}/delete",
             post(routes::companies_delete),
@@ -892,6 +897,114 @@ async fn cfdi_json_endpoints_scope_to_active_tenant() {
     let staff_token = create_session(&state, &staff.email).await.unwrap();
     let app = build_app(shared);
     let (status, _body) = get_with_cookie(app, host_a, "/api/admin/cfdis/data", &staff_token).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    common::teardown(Some(ctx)).await;
+}
+
+#[tokio::test]
+async fn sat_config_json_endpoints_scope_and_redact_sensitive_fields() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let shared = Arc::new(state.clone());
+
+    let company_a = create_company(&state, "SAT JSON A", "sat-json-a", "MXN", true, None)
+        .await
+        .unwrap();
+    let company_b = create_company(&state, "SAT JSON B", "sat-json-b", "MXN", true, None)
+        .await
+        .unwrap();
+    let admin_id = create_user(
+        &state,
+        "sat-json-admin@example.com",
+        "SECRET",
+        &[(company_a.clone(), UserRole::Admin)],
+    )
+    .await
+    .unwrap();
+    let staff_id = create_user(
+        &state,
+        "sat-json-staff@example.com",
+        "SECRET",
+        &[(company_a.clone(), UserRole::Staff)],
+    )
+    .await
+    .unwrap();
+    let admin = get_user_by_id(&state, &admin_id).await.unwrap().unwrap();
+    let staff = get_user_by_id(&state, &staff_id).await.unwrap().unwrap();
+    let admin_token = create_session(&state, &admin.email).await.unwrap();
+    let staff_token = create_session(&state, &staff.email).await.unwrap();
+    let host_a = "sat-json-a.miapp.local";
+
+    let config_a = bson::oid::ObjectId::new();
+    create_sat_config(
+        &state,
+        config_a.clone(),
+        company_a,
+        "AAA010101AAA".into(),
+        "uploads/sat/company-a/cert.cer".into(),
+        "uploads/sat/company-a/private.key".into(),
+        "dummy-password-a".into(),
+        Some("Primary FIEL".into()),
+    )
+    .await
+    .unwrap();
+    let config_b = bson::oid::ObjectId::new();
+    create_sat_config(
+        &state,
+        config_b.clone(),
+        company_b,
+        "BBB010101BBB".into(),
+        "uploads/sat/company-b/cert.cer".into(),
+        "uploads/sat/company-b/private.key".into(),
+        "dummy-password-b".into(),
+        Some("Hidden FIEL".into()),
+    )
+    .await
+    .unwrap();
+
+    let app = build_app(shared.clone());
+    let (status, body) = get_with_cookie(app, host_a, "/api/admin/sat-configs", &admin_token).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains("AAA010101AAA"));
+    assert!(body.contains("Primary FIEL"));
+    assert!(!body.contains("BBB010101BBB"));
+    assert!(!body.contains("dummy-password-a"));
+    assert!(!body.contains("private.key"));
+    assert!(!body.contains("cert.cer"));
+
+    let app = build_app(shared.clone());
+    let (status, body) = get_with_cookie(
+        app,
+        host_a,
+        &format!("/api/admin/sat-configs/{}", config_a.to_hex()),
+        &admin_token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let config: serde_json::Value = serde_json::from_str(&body).expect("config must be JSON");
+    assert_eq!(config["rfc"], "AAA010101AAA");
+    assert_eq!(config["label"], "Primary FIEL");
+    assert!(config.get("key_password").is_none());
+    assert!(config.get("key_path").is_none());
+    assert!(config.get("cer_path").is_none());
+
+    let app = build_app(shared.clone());
+    let (status, _body) = get_with_cookie(
+        app,
+        host_a,
+        &format!("/api/admin/sat-configs/{}", config_b.to_hex()),
+        &admin_token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let app = build_app(shared);
+    let (status, _body) =
+        get_with_cookie(app, host_a, "/api/admin/sat-configs", &staff_token).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 
     common::teardown(Some(ctx)).await;

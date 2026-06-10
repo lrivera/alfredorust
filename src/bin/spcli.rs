@@ -49,6 +49,10 @@ enum Command {
         #[command(subcommand)]
         command: CfdiCommand,
     },
+    Sat {
+        #[command(subcommand)]
+        command: SatCommand,
+    },
     Projects {
         #[command(subcommand)]
         command: ProjectsCommand,
@@ -126,6 +130,20 @@ enum FinanceCommand {
 enum CfdiCommand {
     List,
     Get { uuid: String },
+}
+
+#[derive(Subcommand)]
+enum SatCommand {
+    Configs {
+        #[command(subcommand)]
+        command: SatConfigsCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum SatConfigsCommand {
+    List,
+    Get { id: String },
 }
 
 #[derive(Subcommand)]
@@ -548,6 +566,17 @@ async fn run(cli: Cli) -> Result<()> {
         Command::Cfdi { command } => match command {
             CfdiCommand::List => json_get_command("/api/admin/cfdis/data", cli.json, "CFDIs").await,
             CfdiCommand::Get { uuid } => cfdi_get(&uuid, cli.json).await,
+        },
+        Command::Sat { command } => match command {
+            SatCommand::Configs { command } => match command {
+                SatConfigsCommand::List => {
+                    json_get_command("/api/admin/sat-configs", cli.json, "SAT configs").await
+                }
+                SatConfigsCommand::Get { id } => {
+                    json_get_by_id_command("/api/admin/sat-configs", &id, cli.json, "SAT config")
+                        .await
+                }
+            },
         },
         Command::Projects { command } => match command {
             ProjectsCommand::List => {
@@ -1054,6 +1083,8 @@ fn print_manifest(json_output: bool) -> Result<()> {
             { "name": "finance transactions get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "transaction" },
             { "name": "cfdi list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "cfdi_data" },
             { "name": "cfdi get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["uuid"], "output_schema": "cfdi_detail" },
+            { "name": "sat configs list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "sat_configs" },
+            { "name": "sat configs get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "sat_config" },
             { "name": "projects list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "projects" },
             { "name": "projects get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "project" },
             { "name": "projects statuses list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "concept_statuses" },

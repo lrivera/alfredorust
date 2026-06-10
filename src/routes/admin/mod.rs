@@ -19,5 +19,8 @@ pub use project_backend::*;
 pub use projects::*;
 pub use resource_logs::*;
 pub use resources::*;
-pub use sat_configs::{sat_configs_create, sat_configs_delete, sat_configs_new};
+pub use sat_configs::{
+    sat_config_data_api, sat_configs_create, sat_configs_data_api, sat_configs_delete,
+    sat_configs_new,
+};
 pub use users::*;
