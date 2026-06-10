@@ -78,6 +78,7 @@
 
 - [ ] 9.1 Add service order list/get/create/update/delete/complete commands.
 - [ ] 9.2 Add project list/get/create/update/delete commands.
+- [x] 9.2.1 Add project list/get JSON APIs and CLI commands.
 - [ ] 9.3 Add project concept list/create/update/delete/advance commands.
 - [ ] 9.4 Add concept status list/create/update/delete commands.
 

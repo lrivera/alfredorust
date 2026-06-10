@@ -2,18 +2,19 @@ use std::sync::Arc;
 
 use askama::Template;
 use axum::{
+    Json,
     extract::{Form, Path, State},
     http::StatusCode,
     response::{Html, IntoResponse, Redirect},
 };
 use bson::oid::ObjectId;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[allow(unused_imports)]
 use crate::filters;
 
 use crate::{
-    models::{ProjectPriority, UserPermission},
+    models::{Project, ProjectPriority, UserPermission},
     session::SessionUser,
     state::{
         AppState, advance_project_phase, create_project, delete_project,
@@ -53,6 +54,24 @@ struct ProjectRow {
     total_budget: String,
     scheduled_at: String,
     completed_at: String,
+}
+
+#[derive(Serialize)]
+pub struct ProjectData {
+    pub id: String,
+    pub company_id: String,
+    pub contact_id: Option<String>,
+    pub category_id: Option<String>,
+    pub title: String,
+    pub description: Option<String>,
+    pub status: String,
+    pub status_label: String,
+    pub priority: String,
+    pub priority_label: String,
+    pub total_budget: Option<f64>,
+    pub scheduled_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub notes: Option<String>,
 }
 
 pub async fn projects_index(
@@ -134,6 +153,48 @@ pub async fn projects_index(
         can_edit,
         can_view_money,
     })
+}
+
+pub async fn projects_data_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<ProjectData>>, StatusCode> {
+    if !session_user.has_permission(UserPermission::ViewProjects) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    let company_id = require_active_company(&session_user);
+    let can_view_money = session_user.has_permission(UserPermission::ViewProjectMoney);
+    let projects = list_projects(&state, &company_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(
+        projects
+            .into_iter()
+            .filter_map(|project| project_data(project, can_view_money))
+            .collect(),
+    ))
+}
+
+pub async fn project_data_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<ProjectData>, StatusCode> {
+    if !session_user.has_permission(UserPermission::ViewProjects) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    let company_id = require_active_company(&session_user);
+    let oid = ObjectId::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let project = get_project_by_id_for_company(&state, &oid, &company_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let can_view_money = session_user.has_permission(UserPermission::ViewProjectMoney);
+
+    project_data(project, can_view_money)
+        .map(Json)
+        .ok_or(StatusCode::INTERNAL_SERVER_ERROR)
 }
 
 #[derive(Template)]
@@ -478,6 +539,34 @@ fn parse_datetime(s: &str) -> Option<bson::DateTime> {
             let dt = chrono::NaiveDateTime::new(d, chrono::NaiveTime::from_hms_opt(0, 0, 0)?);
             Some(bson::DateTime::from_millis(dt.and_utc().timestamp_millis()))
         })
+}
+
+fn project_data(project: Project, can_view_money: bool) -> Option<ProjectData> {
+    let id = project.id?.to_hex();
+    Some(ProjectData {
+        id,
+        company_id: project.company_id.to_hex(),
+        contact_id: project.contact_id.map(|id| id.to_hex()),
+        category_id: project.category_id.map(|id| id.to_hex()),
+        title: project.title,
+        description: project.description,
+        status: project.status.as_str().to_string(),
+        status_label: project.status.label().to_string(),
+        priority: project.priority.as_str().to_string(),
+        priority_label: project.priority.label().to_string(),
+        total_budget: if can_view_money {
+            project.total_budget
+        } else {
+            None
+        },
+        scheduled_at: project
+            .scheduled_at
+            .map(|date| date.to_chrono().to_rfc3339()),
+        completed_at: project
+            .completed_at
+            .map(|date| date.to_chrono().to_rfc3339()),
+        notes: project.notes,
+    })
 }
 
 #[cfg(test)]

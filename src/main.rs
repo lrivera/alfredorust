@@ -310,6 +310,8 @@ async fn main() {
             "/admin/projects",
             get(routes::projects_index).post(routes::projects_create),
         )
+        .route("/api/admin/projects", get(routes::projects_data_api))
+        .route("/api/admin/projects/{id}", get(routes::project_data_api))
         .route("/admin/projects/new", get(routes::projects_new))
         .route("/admin/projects/{id}", get(routes::project_detail))
         .route("/admin/projects/{id}/edit", get(routes::projects_edit))
