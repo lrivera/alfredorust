@@ -181,6 +181,14 @@ async fn main() {
             get(routes::recurring_plans_index).post(routes::recurring_plans_create),
         )
         .route(
+            "/api/admin/recurring-plans",
+            get(routes::recurring_plans_data_api),
+        )
+        .route(
+            "/api/admin/recurring-plans/{id}",
+            get(routes::recurring_plan_data_api),
+        )
+        .route(
             "/admin/recurring_plans/new",
             get(routes::recurring_plans_new),
         )
@@ -203,6 +211,14 @@ async fn main() {
         .route(
             "/admin/planned_entries",
             get(routes::planned_entries_index).post(routes::planned_entries_create),
+        )
+        .route(
+            "/api/admin/planned-entries",
+            get(routes::planned_entries_data_api),
+        )
+        .route(
+            "/api/admin/planned-entries/{id}",
+            get(routes::planned_entry_data_api),
         )
         .route(
             "/admin/planned_entries/new",

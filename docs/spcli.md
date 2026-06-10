@@ -68,6 +68,8 @@ cargo run --bin spcli -- finance accounts list
 cargo run --bin spcli -- finance categories list
 cargo run --bin spcli -- finance contacts list
 cargo run --bin spcli -- finance forecasts list
+cargo run --bin spcli -- finance recurring-plans list
+cargo run --bin spcli -- finance planned-entries list
 cargo run --bin spcli -- finance transactions list
 cargo run --bin spcli -- cfdi list
 cargo run --bin spcli -- projects statuses list
@@ -82,6 +84,8 @@ cargo run --bin spcli -- finance accounts get 64f000000000000000000000
 cargo run --bin spcli -- finance categories get 64f000000000000000000000
 cargo run --bin spcli -- finance contacts get 64f000000000000000000000
 cargo run --bin spcli -- finance forecasts get 64f000000000000000000000
+cargo run --bin spcli -- finance recurring-plans get 64f000000000000000000000
+cargo run --bin spcli -- finance planned-entries get 64f000000000000000000000
 ```
 
 Create finance master-data records:

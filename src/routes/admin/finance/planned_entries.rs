@@ -2,17 +2,19 @@ use std::{str::FromStr, sync::Arc};
 
 use askama::Template;
 use axum::{
+    Json,
     extract::{Form, Path, Query, State},
     http::StatusCode,
     response::{Html, IntoResponse, Redirect},
 };
 use mongodb::bson::oid::ObjectId;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[allow(unused_imports)]
 use crate::filters;
 
 use crate::{
+    models::PlannedEntry,
     session::SessionUser,
     state::{
         AppState, create_planned_entry, delete_planned_entry, get_planned_entry_by_id,
@@ -39,6 +41,33 @@ struct PlannedEntryRow {
     original_amount: f64,
     status: String,
     status_label: String,
+}
+
+#[derive(Serialize)]
+pub struct PlannedEntryData {
+    pub id: String,
+    pub company_id: String,
+    pub company: String,
+    pub recurring_plan_id: Option<String>,
+    pub recurring_plan_version: Option<i32>,
+    pub service_order_id: Option<String>,
+    pub project_id: Option<String>,
+    pub parent_planned_entry_id: Option<String>,
+    pub name: String,
+    pub flow_type: String,
+    pub category_id: String,
+    pub account_expected_id: String,
+    pub contact_id: Option<String>,
+    pub amount_estimated: f64,
+    pub original_amount_estimated: Option<f64>,
+    pub due_date: String,
+    pub original_due_date: Option<String>,
+    pub status: String,
+    pub status_label: String,
+    pub notes: Option<String>,
+    pub cfdi_uuid: Option<String>,
+    pub currency: Option<String>,
+    pub cfdi_folio: Option<String>,
 }
 
 #[derive(Template)]
@@ -114,6 +143,43 @@ pub async fn planned_entries_index(
         .collect();
 
     render(PlannedEntriesIndexTemplate { entries: rows })
+}
+
+pub async fn planned_entries_data_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<PlannedEntryData>>, StatusCode> {
+    let active_company = require_admin_active(&session_user)?;
+    let active_name = session_user.user().company_name.clone();
+    let entries = list_planned_entries(&state)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let rows = entries
+        .into_iter()
+        .filter(|entry| entry.company_id == active_company)
+        .filter_map(|entry| planned_entry_data(entry, active_name.clone()))
+        .collect();
+
+    Ok(Json(rows))
+}
+
+pub async fn planned_entry_data_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<PlannedEntryData>, StatusCode> {
+    let active_company = require_admin_active(&session_user)?;
+    let object_id = ObjectId::from_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let entry = get_planned_entry_by_id(&state, &object_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    ensure_same_company(&entry.company_id, &active_company)?;
+
+    planned_entry_data(entry, session_user.user().company_name.clone())
+        .map(Json)
+        .ok_or(StatusCode::INTERNAL_SERVER_ERROR)
 }
 
 pub async fn planned_entries_new(
@@ -1205,4 +1271,35 @@ fn safe_return_to(value: Option<&str>) -> Option<&str> {
         Some("/admin/planned_entries") => Some("/admin/planned_entries"),
         _ => None,
     }
+}
+
+fn planned_entry_data(entry: PlannedEntry, company: String) -> Option<PlannedEntryData> {
+    let id = entry.id?.to_hex();
+    Some(PlannedEntryData {
+        id,
+        company_id: entry.company_id.to_hex(),
+        company,
+        recurring_plan_id: entry.recurring_plan_id.map(|id| id.to_hex()),
+        recurring_plan_version: entry.recurring_plan_version,
+        service_order_id: entry.service_order_id.map(|id| id.to_hex()),
+        project_id: entry.project_id.map(|id| id.to_hex()),
+        parent_planned_entry_id: entry.parent_planned_entry_id.map(|id| id.to_hex()),
+        name: entry.name,
+        flow_type: flow_type_value(&entry.flow_type).to_string(),
+        category_id: entry.category_id.to_hex(),
+        account_expected_id: entry.account_expected_id.to_hex(),
+        contact_id: entry.contact_id.map(|id| id.to_hex()),
+        amount_estimated: entry.amount_estimated,
+        original_amount_estimated: entry.original_amount_estimated,
+        due_date: datetime_to_string(&entry.due_date),
+        original_due_date: entry
+            .original_due_date
+            .map(|date| datetime_to_string(&date)),
+        status: planned_status_value(&entry.status).to_string(),
+        status_label: planned_status_label(&entry.status).to_string(),
+        notes: entry.notes,
+        cfdi_uuid: entry.cfdi_uuid,
+        currency: entry.currency,
+        cfdi_folio: entry.cfdi_folio,
+    })
 }

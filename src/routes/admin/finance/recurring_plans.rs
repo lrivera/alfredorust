@@ -2,17 +2,19 @@ use std::{str::FromStr, sync::Arc};
 
 use askama::Template;
 use axum::{
+    Json,
     extract::{Form, Path, State},
     http::StatusCode,
     response::{Html, IntoResponse, Redirect},
 };
 use mongodb::bson::oid::ObjectId;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[allow(unused_imports)]
 use crate::filters;
 
 use crate::{
+    models::RecurringPlan,
     session::SessionUser,
     state::{
         AppState, create_recurring_plan, delete_recurring_plan, get_recurring_plan_by_id,
@@ -36,6 +38,26 @@ struct RecurringPlanRow {
     flow_type: String,
     amount: f64,
     active: bool,
+}
+
+#[derive(Serialize)]
+pub struct RecurringPlanData {
+    pub id: String,
+    pub company_id: String,
+    pub company: String,
+    pub name: String,
+    pub flow_type: String,
+    pub category_id: String,
+    pub account_expected_id: String,
+    pub contact_id: Option<String>,
+    pub amount_estimated: f64,
+    pub frequency: String,
+    pub day_of_month: Option<i32>,
+    pub start_date: String,
+    pub end_date: Option<String>,
+    pub is_active: bool,
+    pub version: i32,
+    pub notes: Option<String>,
 }
 
 #[derive(Template)]
@@ -113,6 +135,43 @@ pub async fn recurring_plans_index(
         .collect();
 
     render(RecurringPlansIndexTemplate { plans: rows })
+}
+
+pub async fn recurring_plans_data_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<RecurringPlanData>>, StatusCode> {
+    let active_company = require_admin_active(&session_user)?;
+    let active_name = session_user.user().company_name.clone();
+    let plans = list_recurring_plans(&state)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let rows = plans
+        .into_iter()
+        .filter(|plan| plan.company_id == active_company)
+        .filter_map(|plan| recurring_plan_data(plan, active_name.clone()))
+        .collect();
+
+    Ok(Json(rows))
+}
+
+pub async fn recurring_plan_data_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<RecurringPlanData>, StatusCode> {
+    let active_company = require_admin_active(&session_user)?;
+    let object_id = ObjectId::from_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let plan = get_recurring_plan_by_id(&state, &object_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    ensure_same_company(&plan.company_id, &active_company)?;
+
+    recurring_plan_data(plan, session_user.user().company_name.clone())
+        .map(Json)
+        .ok_or(StatusCode::INTERNAL_SERVER_ERROR)
 }
 
 pub async fn recurring_plans_new(
@@ -702,4 +761,26 @@ pub async fn recurring_plans_generate(
         Ok(_) => Redirect::to("/admin/recurring_plans").into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
+}
+
+fn recurring_plan_data(plan: RecurringPlan, company: String) -> Option<RecurringPlanData> {
+    let id = plan.id?.to_hex();
+    Some(RecurringPlanData {
+        id,
+        company_id: plan.company_id.to_hex(),
+        company,
+        name: plan.name,
+        flow_type: flow_type_value(&plan.flow_type).to_string(),
+        category_id: plan.category_id.to_hex(),
+        account_expected_id: plan.account_expected_id.to_hex(),
+        contact_id: plan.contact_id.map(|id| id.to_hex()),
+        amount_estimated: plan.amount_estimated,
+        frequency: plan.frequency,
+        day_of_month: plan.day_of_month,
+        start_date: datetime_to_string(&plan.start_date),
+        end_date: plan.end_date.map(|date| datetime_to_string(&date)),
+        is_active: plan.is_active,
+        version: plan.version,
+        notes: plan.notes,
+    })
 }

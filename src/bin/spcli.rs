@@ -106,6 +106,14 @@ enum FinanceCommand {
         #[command(subcommand)]
         command: ForecastCommand,
     },
+    RecurringPlans {
+        #[command(subcommand)]
+        command: ListGetCommand,
+    },
+    PlannedEntries {
+        #[command(subcommand)]
+        command: ListGetCommand,
+    },
     Transactions {
         #[command(subcommand)]
         command: ListCommand,
@@ -468,6 +476,36 @@ async fn run(cli: Cli) -> Result<()> {
                 ForecastCommand::Update(args) => forecast_update(args, cli.json).await,
                 ForecastCommand::Delete(args) => {
                     delete_command("/api/admin/forecasts", args, cli.json, "forecast").await
+                }
+            },
+            FinanceCommand::RecurringPlans { command } => match command {
+                ListGetCommand::List => {
+                    json_get_command("/api/admin/recurring-plans", cli.json, "recurring plans")
+                        .await
+                }
+                ListGetCommand::Get { id } => {
+                    json_get_by_id_command(
+                        "/api/admin/recurring-plans",
+                        &id,
+                        cli.json,
+                        "recurring plan",
+                    )
+                    .await
+                }
+            },
+            FinanceCommand::PlannedEntries { command } => match command {
+                ListGetCommand::List => {
+                    json_get_command("/api/admin/planned-entries", cli.json, "planned entries")
+                        .await
+                }
+                ListGetCommand::Get { id } => {
+                    json_get_by_id_command(
+                        "/api/admin/planned-entries",
+                        &id,
+                        cli.json,
+                        "planned entry",
+                    )
+                    .await
                 }
             },
             FinanceCommand::Transactions { command } => match command {
@@ -935,6 +973,10 @@ fn print_manifest(json_output: bool) -> Result<()> {
             { "name": "finance forecasts create", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--generated-at", "--start-date", "--end-date", "--currency", "--projected-income-total", "--projected-expense-total", "--projected-net"], "output_schema": "created_id" },
             { "name": "finance forecasts update", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id", "--generated-at", "--start-date", "--end-date", "--currency", "--projected-income-total", "--projected-expense-total", "--projected-net"], "output_schema": "ok" },
             { "name": "finance forecasts delete", "auth_required": true, "company_required": true, "destructive": true, "confirmation_flag": "--yes", "arguments": ["id"], "output_schema": "ok" },
+            { "name": "finance recurring-plans list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "recurring_plans" },
+            { "name": "finance recurring-plans get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "recurring_plan" },
+            { "name": "finance planned-entries list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "planned_entries" },
+            { "name": "finance planned-entries get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "planned_entry" },
             { "name": "finance transactions list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "transactions" },
             { "name": "cfdi list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "cfdi_data" },
             { "name": "projects statuses list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "concept_statuses" },
