@@ -1,4 +1,4 @@
-use std::{env, fs, path::PathBuf, process::ExitCode};
+use std::{env, fs, io::Read, path::PathBuf, process::ExitCode};
 
 use aes_gcm::{
     Aes256Gcm, Nonce,
@@ -39,6 +39,30 @@ enum Command {
         #[command(subcommand)]
         command: CompanyCommand,
     },
+    Finance {
+        #[command(subcommand)]
+        command: FinanceCommand,
+    },
+    Cfdi {
+        #[command(subcommand)]
+        command: CfdiCommand,
+    },
+    Projects {
+        #[command(subcommand)]
+        command: ProjectsCommand,
+    },
+    Resources {
+        #[command(subcommand)]
+        command: ResourcesCommand,
+    },
+    Time {
+        #[command(subcommand)]
+        command: TimeCommand,
+    },
+    Pdf {
+        #[command(subcommand)]
+        command: PdfCommand,
+    },
     Manifest,
 }
 
@@ -62,6 +86,97 @@ struct ResetAuthArgs {
 enum CompanyCommand {
     List,
     Use { slug: String },
+}
+
+#[derive(Subcommand)]
+enum FinanceCommand {
+    Accounts {
+        #[command(subcommand)]
+        command: ListCommand,
+    },
+    Categories {
+        #[command(subcommand)]
+        command: ListCommand,
+    },
+    Contacts {
+        #[command(subcommand)]
+        command: ListCommand,
+    },
+    Transactions {
+        #[command(subcommand)]
+        command: ListCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum CfdiCommand {
+    List,
+}
+
+#[derive(Subcommand)]
+enum ProjectsCommand {
+    Statuses {
+        #[command(subcommand)]
+        command: ListCommand,
+    },
+    Concepts {
+        #[command(subcommand)]
+        command: ProjectConceptsCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum ProjectConceptsCommand {
+    List(ProjectConceptsListArgs),
+}
+
+#[derive(Args)]
+struct ProjectConceptsListArgs {
+    #[arg(long)]
+    project_id: String,
+}
+
+#[derive(Subcommand)]
+enum ResourcesCommand {
+    Usages {
+        #[command(subcommand)]
+        command: ListCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum TimeCommand {
+    Timeline(TimelineArgs),
+}
+
+#[derive(Args)]
+struct TimelineArgs {
+    #[arg(long)]
+    mode: String,
+    #[arg(long)]
+    from: String,
+    #[arg(long)]
+    to: String,
+}
+
+#[derive(Subcommand)]
+enum PdfCommand {
+    Preview(PdfPreviewArgs),
+}
+
+#[derive(Args)]
+struct PdfPreviewArgs {
+    #[arg(long, conflicts_with = "source")]
+    input: Option<PathBuf>,
+    #[arg(long)]
+    source: Option<String>,
+    #[arg(long)]
+    output: Option<PathBuf>,
+}
+
+#[derive(Subcommand)]
+enum ListCommand {
+    List,
 }
 
 #[derive(Debug, Serialize)]
@@ -110,7 +225,7 @@ async fn main() -> ExitCode {
             let rendered = serde_json::to_string_pretty(&cli_error)
                 .unwrap_or_else(|_| format!("{}", cli_error.message));
             eprintln!("{rendered}");
-            ExitCode::from(1)
+            ExitCode::from(exit_code(cli_error.code))
         }
     }
 }
@@ -124,6 +239,56 @@ async fn run(cli: Cli) -> Result<()> {
         Command::Company { command } => match command {
             CompanyCommand::List => company_list(cli.json).await,
             CompanyCommand::Use { slug } => company_use(&slug, cli.json).await,
+        },
+        Command::Finance { command } => match command {
+            FinanceCommand::Accounts { command } => match command {
+                ListCommand::List => {
+                    json_get_command("/api/admin/accounts", cli.json, "accounts").await
+                }
+            },
+            FinanceCommand::Categories { command } => match command {
+                ListCommand::List => {
+                    json_get_command("/api/admin/categories", cli.json, "categories").await
+                }
+            },
+            FinanceCommand::Contacts { command } => match command {
+                ListCommand::List => {
+                    json_get_command("/api/admin/contacts", cli.json, "contacts").await
+                }
+            },
+            FinanceCommand::Transactions { command } => match command {
+                ListCommand::List => {
+                    json_get_command("/api/admin/transactions/data", cli.json, "transactions").await
+                }
+            },
+        },
+        Command::Cfdi { command } => match command {
+            CfdiCommand::List => json_get_command("/api/admin/cfdis/data", cli.json, "CFDIs").await,
+        },
+        Command::Projects { command } => match command {
+            ProjectsCommand::Statuses { command } => match command {
+                ListCommand::List => {
+                    json_get_command("/api/admin/concept_statuses", cli.json, "concept statuses")
+                        .await
+                }
+            },
+            ProjectsCommand::Concepts { command } => match command {
+                ProjectConceptsCommand::List(args) => project_concepts_list(args, cli.json).await,
+            },
+        },
+        Command::Resources { command } => match command {
+            ResourcesCommand::Usages { command } => match command {
+                ListCommand::List => {
+                    json_get_command("/api/admin/resource_usages", cli.json, "resource usages")
+                        .await
+                }
+            },
+        },
+        Command::Time { command } => match command {
+            TimeCommand::Timeline(args) => timeline(args, cli.json).await,
+        },
+        Command::Pdf { command } => match command {
+            PdfCommand::Preview(args) => pdf_preview(args, cli.json).await,
         },
         Command::Manifest => print_manifest(cli.json),
     }
@@ -266,9 +431,66 @@ async fn company_use(slug: &str, json_output: bool) -> Result<()> {
     Ok(())
 }
 
+async fn json_get_command(path: &str, json_output: bool, label: &str) -> Result<()> {
+    let mut state = load_state()?;
+    let value = authenticated_get(&mut state, path).await?;
+    save_state(&state)?;
+    print_value_output(&value, json_output, label)
+}
+
+async fn project_concepts_list(args: ProjectConceptsListArgs, json_output: bool) -> Result<()> {
+    validate_object_id(&args.project_id, "project-id")?;
+    let path = format!("/api/admin/projects/{}/concepts", args.project_id);
+    json_get_command(&path, json_output, "project concepts").await
+}
+
+async fn timeline(args: TimelineArgs, json_output: bool) -> Result<()> {
+    validate_timeline_mode(&args.mode)?;
+    let from = normalize_timeline_bound(&args.from, "from")?;
+    let to = normalize_timeline_bound(&args.to, "to")?;
+    let path = format!("/api/tiempo?mode={}&from={}&to={}", args.mode, from, to);
+    json_get_command(&path, json_output, "timeline buckets").await
+}
+
+async fn pdf_preview(args: PdfPreviewArgs, json_output: bool) -> Result<()> {
+    let source = read_pdf_source(args.input.as_ref(), args.source.as_deref())?;
+    let mut state = load_state()?;
+    let value =
+        authenticated_post_json(&mut state, "/pdf/preview", &json!({ "source": source })).await?;
+    save_state(&state)?;
+
+    if json_output {
+        print_json(&value)?;
+        return Ok(());
+    }
+
+    if value["ok"].as_bool() != Some(true) {
+        bail!(
+            "PDF preview failed: {}",
+            value["error"].as_str().unwrap_or("unknown error")
+        );
+    }
+
+    let pdf_base64 = value["pdf_base64"]
+        .as_str()
+        .ok_or_else(|| anyhow!("PDF preview response did not include pdf_base64"))?;
+    if let Some(output) = args.output {
+        let bytes = data_encoding::BASE64
+            .decode(pdf_base64.as_bytes())
+            .map_err(|_| anyhow!("PDF preview response contained invalid base64"))?;
+        fs::write(&output, bytes)
+            .with_context(|| format!("failed to write {}", output.display()))?;
+        println!("PDF written to {}", output.display());
+    } else {
+        println!("PDF preview succeeded ({} base64 bytes).", pdf_base64.len());
+    }
+    Ok(())
+}
+
 fn print_manifest(json_output: bool) -> Result<()> {
     let manifest = json!({
         "name": "spcli",
+        "schema_version": "1",
         "commands": [
             { "name": "login", "auth_required": false, "company_required": false, "destructive": false },
             { "name": "status", "auth_required": true, "company_required": false, "destructive": false },
@@ -276,6 +498,16 @@ fn print_manifest(json_output: bool) -> Result<()> {
             { "name": "reset-auth", "auth_required": false, "company_required": false, "destructive": true, "confirmation_flag": "--yes" },
             { "name": "company list", "auth_required": true, "company_required": false, "destructive": false },
             { "name": "company use", "auth_required": true, "company_required": false, "destructive": false },
+            { "name": "finance accounts list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "accounts" },
+            { "name": "finance categories list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "categories" },
+            { "name": "finance contacts list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "contacts" },
+            { "name": "finance transactions list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "transactions" },
+            { "name": "cfdi list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "cfdi_data" },
+            { "name": "projects statuses list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "concept_statuses" },
+            { "name": "projects concepts list", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--project-id"], "output_schema": "project_concepts" },
+            { "name": "resources usages list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "resource_usages" },
+            { "name": "time timeline", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--mode", "--from", "--to"], "output_schema": "timeline_buckets" },
+            { "name": "pdf preview", "auth_required": true, "company_required": false, "destructive": false, "arguments": ["--input", "--source", "--output"], "output_schema": "pdf_preview" },
             { "name": "manifest", "auth_required": false, "company_required": false, "destructive": false }
         ],
         "output": { "human_default": true, "json_flag": "--json" }
@@ -284,7 +516,7 @@ fn print_manifest(json_output: bool) -> Result<()> {
         print_json(&manifest)?;
     } else {
         println!(
-            "spcli commands: login, status, logout, reset-auth, company list, company use, manifest"
+            "spcli commands: login, status, logout, reset-auth, company, finance, cfdi, projects, resources, time, pdf, manifest"
         );
         println!("Use --json for machine-readable output.");
     }
@@ -297,6 +529,21 @@ async fn authenticated_get(state: &mut CredentialState, path: &str) -> Result<Va
     if response.status() == StatusCode::UNAUTHORIZED {
         refresh_login(state).await?;
         let retry = get_with_session(state, path).await?;
+        return parse_json_response(retry).await;
+    }
+    parse_json_response(response).await
+}
+
+async fn authenticated_post_json<T: Serialize>(
+    state: &mut CredentialState,
+    path: &str,
+    payload: &T,
+) -> Result<Value> {
+    ensure_session(state).await?;
+    let response = post_json_with_session(state, path, payload).await?;
+    if response.status() == StatusCode::UNAUTHORIZED {
+        refresh_login(state).await?;
+        let retry = post_json_with_session(state, path, payload).await?;
         return parse_json_response(retry).await;
     }
     parse_json_response(response).await
@@ -315,6 +562,23 @@ async fn get_with_session(state: &CredentialState, path: &str) -> Result<reqwest
     let mut request = client
         .get(url)
         .header(header::COOKIE, session_cookie_header(state)?);
+    if let Some(host) = request_host(state) {
+        request = request.header(header::HOST, host);
+    }
+    request.send().await.context("request failed")
+}
+
+async fn post_json_with_session<T: Serialize>(
+    state: &CredentialState,
+    path: &str,
+    payload: &T,
+) -> Result<reqwest::Response> {
+    let client = Client::new();
+    let url = endpoint(&request_base_url(state)?, path)?;
+    let mut request = client
+        .post(url)
+        .header(header::COOKIE, session_cookie_header(state)?)
+        .json(payload);
     if let Some(host) = request_host(state) {
         request = request.header(header::HOST, host);
     }
@@ -563,16 +827,109 @@ fn print_json<T: Serialize>(value: &T) -> Result<()> {
     Ok(())
 }
 
+fn print_value_output(value: &Value, json_output: bool, label: &str) -> Result<()> {
+    if json_output {
+        print_json(value)?;
+        return Ok(());
+    }
+
+    if let Some(items) = value.as_array() {
+        println!("{}: {}", label, items.len());
+    } else if let Some(items) = value.get("items").and_then(Value::as_array) {
+        println!("{}: {}", label, items.len());
+    } else if let Some(object) = value.as_object() {
+        println!("{} fields: {}", label, object.len());
+    } else {
+        println!("{} returned.", label);
+    }
+    Ok(())
+}
+
+fn validate_object_id(value: &str, name: &str) -> Result<()> {
+    if value.len() == 24 && value.chars().all(|c| c.is_ascii_hexdigit()) {
+        Ok(())
+    } else {
+        bail!("{name} must be a 24-character ObjectId")
+    }
+}
+
+fn validate_timeline_mode(value: &str) -> Result<()> {
+    match value {
+        "day" | "week" | "month" | "year" => Ok(()),
+        _ => bail!("mode must be one of: day, week, month, year"),
+    }
+}
+
+fn normalize_timeline_bound(value: &str, name: &str) -> Result<String> {
+    if chrono::DateTime::parse_from_rfc3339(value).is_ok() {
+        return Ok(value.to_string());
+    }
+    let date = chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d")
+        .with_context(|| format!("{name} must be YYYY-MM-DD or RFC3339"))?;
+    let datetime = date
+        .and_hms_opt(0, 0, 0)
+        .ok_or_else(|| anyhow!("{name} is out of range"))?;
+    Ok(format!("{}Z", datetime.format("%Y-%m-%dT%H:%M:%S")))
+}
+
+fn read_pdf_source(input: Option<&PathBuf>, source: Option<&str>) -> Result<String> {
+    if let Some(source) = source {
+        return Ok(source.to_string());
+    }
+    if let Some(input) = input {
+        return fs::read_to_string(input)
+            .with_context(|| format!("failed to read {}", input.display()));
+    }
+    let mut source = String::new();
+    std::io::stdin()
+        .read_to_string(&mut source)
+        .context("failed to read Typst source from stdin")?;
+    if source.trim().is_empty() {
+        bail!("Typst source is required via --source, --input, or stdin");
+    }
+    Ok(source)
+}
+
 fn classify_error(err: &anyhow::Error) -> &'static str {
-    let message = err.to_string();
-    if message.contains("credential") {
-        "credential_error"
-    } else if message.contains("login") || message.contains("unauthorized") {
-        "auth_error"
-    } else if message.contains("company") {
-        "company_error"
+    let message = err.to_string().to_lowercase();
+    if message.contains("credential file not found") || message.contains("missing session cookie") {
+        "not_authenticated"
+    } else if message.contains("login failed") {
+        "invalid_credentials"
+    } else if message.contains("unauthorized") || message.contains("status 401") {
+        "unauthorized"
+    } else if message.contains("forbidden") || message.contains("status 403") {
+        "forbidden"
+    } else if message.contains("not found") || message.contains("status 404") {
+        "not_found"
+    } else if message.contains("conflict") || message.contains("status 409") {
+        "conflict"
+    } else if message.contains("--yes") || message.contains("confirm") {
+        "confirmation_required"
+    } else if message.contains("must be")
+        || message.contains("invalid")
+        || message.contains("required")
+        || message.contains("unsupported")
+    {
+        "validation_error"
+    } else if message.contains("request failed") || message.contains("network") {
+        "network_error"
+    } else if message.contains("status 5") || message.contains("server") {
+        "server_error"
     } else {
         "spcli_error"
+    }
+}
+
+fn exit_code(code: &str) -> u8 {
+    match code {
+        "validation_error" | "confirmation_required" => 2,
+        "not_authenticated" | "unauthorized" | "invalid_credentials" => 3,
+        "forbidden" => 4,
+        "not_found" => 5,
+        "conflict" => 6,
+        "network_error" | "server_error" => 7,
+        _ => 1,
     }
 }
 

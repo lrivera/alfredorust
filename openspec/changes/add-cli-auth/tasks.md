@@ -120,3 +120,23 @@
 - [ ] 14.6 Add representative harness coverage for each CLI command group.
 - [ ] 14.7 Add tests for JSON output, structured errors, exit codes, and destructive command confirmation behavior.
 - [x] 14.8 Run `openspec validate --all` and relevant Rust tests.
+
+## 15. First Read-Only JSON API Slice
+
+- [x] 15.1 Add shared authenticated JSON `GET` and `POST` helpers with transparent re-login retry.
+- [x] 15.2 Add `schema_version` and read-only command entries to the manifest.
+- [x] 15.3 Add `finance transactions list` using the existing transaction dashboard JSON API.
+- [x] 15.4 Add `cfdi list` using the existing CFDI dashboard JSON API.
+- [x] 15.5 Add `projects statuses list` and `projects concepts list --project-id` using existing project JSON APIs.
+- [x] 15.6 Add `resources usages list` using the existing resource usage JSON API.
+- [x] 15.7 Add `time timeline` using the existing timeline JSON API.
+- [x] 15.8 Add `pdf preview` using the existing PDF preview JSON API.
+- [ ] 15.9 Add harness coverage for the first read-only JSON API slice.
+
+## 16. Finance Master Data JSON API Slice
+
+- [x] 16.1 Add tenant-scoped JSON list APIs for accounts, categories, and contacts.
+- [x] 16.2 Add `finance accounts list` using the accounts JSON API.
+- [x] 16.3 Add `finance categories list` using the categories JSON API.
+- [x] 16.4 Add `finance contacts list` using the contacts JSON API.
+- [ ] 16.5 Add harness coverage for finance master data list APIs and CLI commands.

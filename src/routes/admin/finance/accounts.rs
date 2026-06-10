@@ -2,12 +2,13 @@ use std::{str::FromStr, sync::Arc};
 
 use askama::Template;
 use axum::{
+    Json,
     extract::{Form, Path, State},
     http::StatusCode,
     response::{Html, IntoResponse, Redirect},
 };
 use mongodb::bson::oid::ObjectId;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[allow(unused_imports)]
 use crate::filters;
@@ -27,13 +28,42 @@ struct AccountsIndexTemplate {
     accounts: Vec<AccountRow>,
 }
 
-struct AccountRow {
-    id: String,
-    name: String,
-    company: String,
-    account_type: String,
-    currency: String,
-    is_active: bool,
+#[derive(Serialize)]
+pub struct AccountRow {
+    pub id: String,
+    pub name: String,
+    pub company: String,
+    pub account_type: String,
+    pub currency: String,
+    pub is_active: bool,
+}
+
+pub async fn accounts_data_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<AccountRow>>, StatusCode> {
+    let active_company = require_admin_active(&session_user)?;
+    let active_name = session_user.user().company_name.clone();
+    let accounts = list_accounts(&state)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let rows = accounts
+        .into_iter()
+        .filter(|acc| acc.company_id == active_company)
+        .filter_map(|acc| {
+            acc.id.map(|id| AccountRow {
+                id: id.to_hex(),
+                name: acc.name,
+                company: active_name.clone(),
+                account_type: account_type_value(&acc.account_type).to_string(),
+                currency: acc.currency,
+                is_active: acc.is_active,
+            })
+        })
+        .collect();
+
+    Ok(Json(rows))
 }
 
 #[derive(Template)]

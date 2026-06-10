@@ -2,12 +2,13 @@ use std::{str::FromStr, sync::Arc};
 
 use askama::Template;
 use axum::{
+    Json,
     extract::{Form, Path, State},
     http::StatusCode,
     response::{Html, IntoResponse, Redirect},
 };
 use mongodb::bson::oid::ObjectId;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[allow(unused_imports)]
 use crate::filters;
@@ -28,12 +29,51 @@ struct CategoriesIndexTemplate {
     categories: Vec<CategoryRow>,
 }
 
-struct CategoryRow {
-    id: String,
-    name: String,
-    company: String,
-    flow_type: String,
-    parent: String,
+#[derive(Serialize)]
+pub struct CategoryRow {
+    pub id: String,
+    pub name: String,
+    pub company: String,
+    pub flow_type: String,
+    pub parent: String,
+}
+
+pub async fn categories_data_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<CategoryRow>>, StatusCode> {
+    let active_company = require_admin_active(&session_user)?;
+    let categories = list_categories(&state)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .into_iter()
+        .filter(|c| c.company_id == active_company)
+        .collect::<Vec<_>>();
+    let category_map = build_lookup_map(
+        categories
+            .iter()
+            .filter_map(|c| c.id.map(|id| (id, c.name.clone())))
+            .collect(),
+    );
+    let active_name = session_user.user().company_name.clone();
+
+    let rows = categories
+        .into_iter()
+        .filter_map(|cat| {
+            cat.id.map(|id| CategoryRow {
+                id: id.to_hex(),
+                name: cat.name,
+                company: active_name.clone(),
+                flow_type: flow_type_value(&cat.flow_type).to_string(),
+                parent: cat
+                    .parent_id
+                    .and_then(|pid| category_map.get(&pid).cloned())
+                    .unwrap_or_else(|| "-".into()),
+            })
+        })
+        .collect();
+
+    Ok(Json(rows))
 }
 
 #[derive(Template)]

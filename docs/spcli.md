@@ -61,6 +61,32 @@ Print machine-readable command metadata:
 cargo run --bin spcli -- --json manifest
 ```
 
+List read-only API data for the selected company:
+
+```bash
+cargo run --bin spcli -- finance accounts list
+cargo run --bin spcli -- finance categories list
+cargo run --bin spcli -- finance contacts list
+cargo run --bin spcli -- finance transactions list
+cargo run --bin spcli -- cfdi list
+cargo run --bin spcli -- projects statuses list
+cargo run --bin spcli -- projects concepts list --project-id 64f000000000000000000000
+cargo run --bin spcli -- resources usages list
+```
+
+Query the time timeline. `--from` and `--to` accept RFC3339 datetimes or `YYYY-MM-DD` dates, which are sent as midnight UTC:
+
+```bash
+cargo run --bin spcli -- time timeline --mode month --from 2026-01-01 --to 2026-12-31
+```
+
+Preview Typst PDF content from a file, inline string, or stdin:
+
+```bash
+cargo run --bin spcli -- pdf preview --input invoice.typ --output invoice.pdf
+cargo run --bin spcli -- pdf preview --source "= Hello"
+```
+
 ## JSON Output
 
 Use `--json` for automation:
@@ -68,6 +94,9 @@ Use `--json` for automation:
 ```bash
 cargo run --bin spcli -- --json status
 cargo run --bin spcli -- --json company list
+cargo run --bin spcli -- --json finance accounts list
+cargo run --bin spcli -- --json finance transactions list
+cargo run --bin spcli -- --json cfdi list
 ```
 
 Errors are written as structured JSON to stderr with a stable `code` and `message` field.
