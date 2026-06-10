@@ -190,10 +190,27 @@ enum AccountCommand {
     List,
     Get { id: String },
     Create(AccountCreateArgs),
+    Update(AccountUpdateArgs),
+    Delete(DeleteArgs),
 }
 
 #[derive(Args)]
 struct AccountCreateArgs {
+    #[arg(long)]
+    name: String,
+    #[arg(long)]
+    account_type: String,
+    #[arg(long)]
+    currency: Option<String>,
+    #[arg(long)]
+    inactive: bool,
+    #[arg(long)]
+    notes: Option<String>,
+}
+
+#[derive(Args)]
+struct AccountUpdateArgs {
+    id: String,
     #[arg(long)]
     name: String,
     #[arg(long)]
@@ -211,10 +228,25 @@ enum CategoryCommand {
     List,
     Get { id: String },
     Create(CategoryCreateArgs),
+    Update(CategoryUpdateArgs),
+    Delete(DeleteArgs),
 }
 
 #[derive(Args)]
 struct CategoryCreateArgs {
+    #[arg(long)]
+    name: String,
+    #[arg(long)]
+    flow_type: String,
+    #[arg(long)]
+    parent_id: Option<String>,
+    #[arg(long)]
+    notes: Option<String>,
+}
+
+#[derive(Args)]
+struct CategoryUpdateArgs {
+    id: String,
     #[arg(long)]
     name: String,
     #[arg(long)]
@@ -230,6 +262,8 @@ enum ContactCommand {
     List,
     Get { id: String },
     Create(ContactCreateArgs),
+    Update(ContactUpdateArgs),
+    Delete(DeleteArgs),
 }
 
 #[derive(Args)]
@@ -246,6 +280,30 @@ struct ContactCreateArgs {
     phone: Option<String>,
     #[arg(long)]
     notes: Option<String>,
+}
+
+#[derive(Args)]
+struct ContactUpdateArgs {
+    id: String,
+    #[arg(long)]
+    name: String,
+    #[arg(long)]
+    contact_type: String,
+    #[arg(long)]
+    rfc: Option<String>,
+    #[arg(long)]
+    email: Option<String>,
+    #[arg(long)]
+    phone: Option<String>,
+    #[arg(long)]
+    notes: Option<String>,
+}
+
+#[derive(Args)]
+struct DeleteArgs {
+    id: String,
+    #[arg(long)]
+    yes: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -318,6 +376,10 @@ async fn run(cli: Cli) -> Result<()> {
                     json_get_by_id_command("/api/admin/accounts", &id, cli.json, "account").await
                 }
                 AccountCommand::Create(args) => account_create(args, cli.json).await,
+                AccountCommand::Update(args) => account_update(args, cli.json).await,
+                AccountCommand::Delete(args) => {
+                    delete_command("/api/admin/accounts", args, cli.json, "account").await
+                }
             },
             FinanceCommand::Categories { command } => match command {
                 CategoryCommand::List => {
@@ -327,6 +389,10 @@ async fn run(cli: Cli) -> Result<()> {
                     json_get_by_id_command("/api/admin/categories", &id, cli.json, "category").await
                 }
                 CategoryCommand::Create(args) => category_create(args, cli.json).await,
+                CategoryCommand::Update(args) => category_update(args, cli.json).await,
+                CategoryCommand::Delete(args) => {
+                    delete_command("/api/admin/categories", args, cli.json, "category").await
+                }
             },
             FinanceCommand::Contacts { command } => match command {
                 ContactCommand::List => {
@@ -336,6 +402,10 @@ async fn run(cli: Cli) -> Result<()> {
                     json_get_by_id_command("/api/admin/contacts", &id, cli.json, "contact").await
                 }
                 ContactCommand::Create(args) => contact_create(args, cli.json).await,
+                ContactCommand::Update(args) => contact_update(args, cli.json).await,
+                ContactCommand::Delete(args) => {
+                    delete_command("/api/admin/contacts", args, cli.json, "contact").await
+                }
             },
             FinanceCommand::Transactions { command } => match command {
                 ListCommand::List => {
@@ -550,6 +620,28 @@ async fn account_create(args: AccountCreateArgs, json_output: bool) -> Result<()
     print_created_output(&value, json_output, "account")
 }
 
+async fn account_update(args: AccountUpdateArgs, json_output: bool) -> Result<()> {
+    validate_object_id(&args.id, "id")?;
+    validate_non_empty(&args.name, "name")?;
+    validate_non_empty(&args.account_type, "account-type")?;
+    let path = format!("/api/admin/accounts/{}/update", args.id);
+    let mut state = load_state()?;
+    let value = authenticated_post_json(
+        &mut state,
+        &path,
+        &json!({
+            "name": args.name,
+            "account_type": args.account_type,
+            "currency": args.currency,
+            "is_active": !args.inactive,
+            "notes": args.notes,
+        }),
+    )
+    .await?;
+    save_state(&state)?;
+    print_ok_output(&value, json_output, "account updated")
+}
+
 async fn category_create(args: CategoryCreateArgs, json_output: bool) -> Result<()> {
     validate_non_empty(&args.name, "name")?;
     validate_non_empty(&args.flow_type, "flow-type")?;
@@ -572,6 +664,30 @@ async fn category_create(args: CategoryCreateArgs, json_output: bool) -> Result<
     print_created_output(&value, json_output, "category")
 }
 
+async fn category_update(args: CategoryUpdateArgs, json_output: bool) -> Result<()> {
+    validate_object_id(&args.id, "id")?;
+    validate_non_empty(&args.name, "name")?;
+    validate_non_empty(&args.flow_type, "flow-type")?;
+    if let Some(parent_id) = args.parent_id.as_deref() {
+        validate_object_id(parent_id, "parent-id")?;
+    }
+    let path = format!("/api/admin/categories/{}/update", args.id);
+    let mut state = load_state()?;
+    let value = authenticated_post_json(
+        &mut state,
+        &path,
+        &json!({
+            "name": args.name,
+            "flow_type": args.flow_type,
+            "parent_id": args.parent_id,
+            "notes": args.notes,
+        }),
+    )
+    .await?;
+    save_state(&state)?;
+    print_ok_output(&value, json_output, "category updated")
+}
+
 async fn contact_create(args: ContactCreateArgs, json_output: bool) -> Result<()> {
     validate_non_empty(&args.name, "name")?;
     validate_non_empty(&args.contact_type, "contact-type")?;
@@ -591,6 +707,46 @@ async fn contact_create(args: ContactCreateArgs, json_output: bool) -> Result<()
     .await?;
     save_state(&state)?;
     print_created_output(&value, json_output, "contact")
+}
+
+async fn contact_update(args: ContactUpdateArgs, json_output: bool) -> Result<()> {
+    validate_object_id(&args.id, "id")?;
+    validate_non_empty(&args.name, "name")?;
+    validate_non_empty(&args.contact_type, "contact-type")?;
+    let path = format!("/api/admin/contacts/{}/update", args.id);
+    let mut state = load_state()?;
+    let value = authenticated_post_json(
+        &mut state,
+        &path,
+        &json!({
+            "name": args.name,
+            "contact_type": args.contact_type,
+            "rfc": args.rfc,
+            "email": args.email,
+            "phone": args.phone,
+            "notes": args.notes,
+        }),
+    )
+    .await?;
+    save_state(&state)?;
+    print_ok_output(&value, json_output, "contact updated")
+}
+
+async fn delete_command(
+    base_path: &str,
+    args: DeleteArgs,
+    json_output: bool,
+    label: &str,
+) -> Result<()> {
+    if !args.yes {
+        bail!("{label} delete is destructive; rerun with --yes to confirm");
+    }
+    validate_object_id(&args.id, "id")?;
+    let path = format!("{base_path}/{}/delete", args.id);
+    let mut state = load_state()?;
+    let value = authenticated_post_json(&mut state, &path, &json!({})).await?;
+    save_state(&state)?;
+    print_ok_output(&value, json_output, &format!("{label} deleted"))
 }
 
 async fn project_concepts_list(args: ProjectConceptsListArgs, json_output: bool) -> Result<()> {
@@ -656,12 +812,18 @@ fn print_manifest(json_output: bool) -> Result<()> {
             { "name": "finance accounts list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "accounts" },
             { "name": "finance accounts get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "account" },
             { "name": "finance accounts create", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--name", "--account-type", "--currency", "--inactive", "--notes"], "output_schema": "created_id" },
+            { "name": "finance accounts update", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id", "--name", "--account-type", "--currency", "--inactive", "--notes"], "output_schema": "ok" },
+            { "name": "finance accounts delete", "auth_required": true, "company_required": true, "destructive": true, "confirmation_flag": "--yes", "arguments": ["id"], "output_schema": "ok" },
             { "name": "finance categories list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "categories" },
             { "name": "finance categories get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "category" },
             { "name": "finance categories create", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--name", "--flow-type", "--parent-id", "--notes"], "output_schema": "created_id" },
+            { "name": "finance categories update", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id", "--name", "--flow-type", "--parent-id", "--notes"], "output_schema": "ok" },
+            { "name": "finance categories delete", "auth_required": true, "company_required": true, "destructive": true, "confirmation_flag": "--yes", "arguments": ["id"], "output_schema": "ok" },
             { "name": "finance contacts list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "contacts" },
             { "name": "finance contacts get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "contact" },
             { "name": "finance contacts create", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--name", "--contact-type", "--rfc", "--email", "--phone", "--notes"], "output_schema": "created_id" },
+            { "name": "finance contacts update", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id", "--name", "--contact-type", "--rfc", "--email", "--phone", "--notes"], "output_schema": "ok" },
+            { "name": "finance contacts delete", "auth_required": true, "company_required": true, "destructive": true, "confirmation_flag": "--yes", "arguments": ["id"], "output_schema": "ok" },
             { "name": "finance transactions list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "transactions" },
             { "name": "cfdi list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "cfdi_data" },
             { "name": "projects statuses list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "concept_statuses" },
@@ -1015,6 +1177,15 @@ fn print_created_output(value: &Value, json_output: bool, label: &str) -> Result
             label,
             value["id"].as_str().unwrap_or("unknown")
         );
+    }
+    Ok(())
+}
+
+fn print_ok_output(value: &Value, json_output: bool, message: &str) -> Result<()> {
+    if json_output {
+        print_json(value)?;
+    } else {
+        println!("{message}");
     }
     Ok(())
 }

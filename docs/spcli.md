@@ -90,6 +90,15 @@ cargo run --bin spcli -- finance categories create --name "Services" --flow-type
 cargo run --bin spcli -- finance contacts create --name "Customer SA" --contact-type customer --rfc XAXX010101000
 ```
 
+Update or delete finance master-data records:
+
+```bash
+cargo run --bin spcli -- finance accounts update 64f000000000000000000000 --name "BBVA" --account-type bank --currency MXN
+cargo run --bin spcli -- finance categories update 64f000000000000000000000 --name "Services" --flow-type expense
+cargo run --bin spcli -- finance contacts update 64f000000000000000000000 --name "Customer SA" --contact-type customer
+cargo run --bin spcli -- finance contacts delete 64f000000000000000000000 --yes
+```
+
 Query the time timeline. `--from` and `--to` accept RFC3339 datetimes or `YYYY-MM-DD` dates, which are sent as midnight UTC:
 
 ```bash

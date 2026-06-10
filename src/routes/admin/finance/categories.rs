@@ -58,6 +58,14 @@ pub struct CategoryCreatePayload {
     pub notes: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct CategoryUpdatePayload {
+    pub name: String,
+    pub flow_type: String,
+    pub parent_id: Option<String>,
+    pub notes: Option<String>,
+}
+
 pub async fn categories_data_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -199,6 +207,127 @@ pub async fn category_data_api(
         parent,
         notes: category.notes,
     }))
+}
+
+pub async fn category_update_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(payload): Json<CategoryUpdatePayload>,
+) -> impl IntoResponse {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+    let object_id = match ObjectId::from_str(&id) {
+        Ok(id) => id,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    match get_category_by_id(&state, &object_id).await {
+        Ok(Some(category)) => {
+            if let Err(status) = ensure_same_company(&category.company_id, &company_id) {
+                return status.into_response();
+            }
+        }
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+    let flow_type = match parse_flow_type(&payload.flow_type) {
+        Ok(value) => value,
+        Err(message) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": message })),
+            )
+                .into_response();
+        }
+    };
+    let name = payload.name.trim();
+    if name.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "name is required" })),
+        )
+            .into_response();
+    }
+    let parent_id = match clean_opt(payload.parent_id) {
+        Some(parent_id) => match ObjectId::from_str(&parent_id) {
+            Ok(parent_id) => {
+                if parent_id == object_id {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(serde_json::json!({ "error": "parent_id cannot be the category itself" })),
+                    )
+                    .into_response();
+                }
+                match get_category_by_id(&state, &parent_id).await {
+                    Ok(Some(parent)) => {
+                        if let Err(status) = ensure_same_company(&parent.company_id, &company_id) {
+                            return status.into_response();
+                        }
+                    }
+                    Ok(None) => return StatusCode::BAD_REQUEST.into_response(),
+                    Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+                }
+                Some(parent_id)
+            }
+            Err(_) => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({ "error": "parent_id is invalid" })),
+                )
+                    .into_response();
+            }
+        },
+        None => None,
+    };
+
+    match update_category(
+        &state,
+        &object_id,
+        &company_id,
+        name,
+        flow_type,
+        parent_id,
+        clean_opt(payload.notes),
+    )
+    .await
+    {
+        Ok(_) => Json(serde_json::json!({ "ok": true })).into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+pub async fn category_delete_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+    let object_id = match ObjectId::from_str(&id) {
+        Ok(id) => id,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    match get_category_by_id(&state, &object_id).await {
+        Ok(Some(category)) => {
+            if let Err(status) = ensure_same_company(&category.company_id, &company_id) {
+                return status.into_response();
+            }
+        }
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+    match delete_category(&state, &object_id).await {
+        Ok(_) => Json(serde_json::json!({ "ok": true })).into_response(),
+        Err(err) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": err.to_string() })),
+        )
+            .into_response(),
+    }
 }
 
 #[derive(Template)]

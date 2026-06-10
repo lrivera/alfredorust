@@ -60,6 +60,16 @@ pub struct AccountCreatePayload {
     pub notes: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct AccountUpdatePayload {
+    pub name: String,
+    pub account_type: String,
+    pub currency: Option<String>,
+    #[serde(default = "default_true_payload")]
+    pub is_active: bool,
+    pub notes: Option<String>,
+}
+
 fn default_true_payload() -> bool {
     true
 }
@@ -170,6 +180,104 @@ pub async fn account_data_api(
         is_active: account.is_active,
         notes: account.notes,
     }))
+}
+
+pub async fn account_update_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(payload): Json<AccountUpdatePayload>,
+) -> impl IntoResponse {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+    let object_id = match ObjectId::from_str(&id) {
+        Ok(id) => id,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    match get_account_by_id(&state, &object_id).await {
+        Ok(Some(account)) => {
+            if let Err(status) = ensure_same_company(&account.company_id, &company_id) {
+                return status.into_response();
+            }
+        }
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+    let account_type = match parse_account_type(&payload.account_type) {
+        Ok(value) => value,
+        Err(message) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": message })),
+            )
+                .into_response();
+        }
+    };
+    let name = payload.name.trim();
+    if name.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "name is required" })),
+        )
+            .into_response();
+    }
+    let currency = payload
+        .currency
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("MXN")
+        .to_string();
+
+    match update_account(
+        &state,
+        &object_id,
+        &company_id,
+        name,
+        account_type,
+        &currency,
+        payload.is_active,
+        clean_opt(payload.notes),
+    )
+    .await
+    {
+        Ok(_) => Json(serde_json::json!({ "ok": true })).into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+pub async fn account_delete_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+    let object_id = match ObjectId::from_str(&id) {
+        Ok(id) => id,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    match get_account_by_id(&state, &object_id).await {
+        Ok(Some(account)) => {
+            if let Err(status) = ensure_same_company(&account.company_id, &company_id) {
+                return status.into_response();
+            }
+        }
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+    match delete_account(&state, &object_id).await {
+        Ok(_) => Json(serde_json::json!({ "ok": true })).into_response(),
+        Err(err) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": err.to_string() })),
+        )
+            .into_response(),
+    }
 }
 
 #[derive(Template)]

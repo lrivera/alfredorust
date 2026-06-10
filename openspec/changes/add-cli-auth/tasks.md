@@ -143,4 +143,6 @@
 - [x] 16.6 Add `finance accounts get <id>`, `finance categories get <id>`, and `finance contacts get <id>` commands.
 - [x] 16.7 Add tenant-scoped JSON create APIs for accounts, categories, and contacts.
 - [x] 16.8 Add `finance accounts create`, `finance categories create`, and `finance contacts create` commands.
-- [ ] 16.9 Add harness coverage for finance master data list/get/create APIs and CLI commands.
+- [x] 16.9 Add tenant-scoped JSON update/delete APIs for accounts, categories, and contacts.
+- [x] 16.10 Add `finance accounts/categories/contacts update` and `delete --yes` commands.
+- [ ] 16.11 Add harness coverage for finance master data list/get/create/update/delete APIs and CLI commands.
