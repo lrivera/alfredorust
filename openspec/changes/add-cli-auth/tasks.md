@@ -85,6 +85,7 @@
 ## 10. Resource And Time Commands
 
 - [ ] 10.1 Add resource list/get/create/update/delete commands.
+- [x] 10.1.1 Add resource list/get JSON APIs and CLI commands.
 - [ ] 10.2 Add resource log list/get/create/update/delete/start/end commands.
 - [ ] 10.3 Add resource usage list/get/create/update/delete commands.
 - [ ] 10.4 Add timeline query commands equivalent to `/tiempo` API data access.

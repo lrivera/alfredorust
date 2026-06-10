@@ -369,6 +369,8 @@ async fn main() {
             "/admin/resources",
             get(routes::resources_index).post(routes::resources_create),
         )
+        .route("/api/admin/resources", get(routes::resources_data_api))
+        .route("/api/admin/resources/{id}", get(routes::resource_data_api))
         .route("/admin/resources/new", get(routes::resources_new))
         .route("/admin/resources/{id}/edit", get(routes::resources_edit))
         .route(

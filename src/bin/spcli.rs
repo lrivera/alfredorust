@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 use std::{env, fs, io::Read, path::PathBuf, process::ExitCode};
 
 use aes_gcm::{
@@ -155,6 +157,10 @@ struct ProjectConceptsListArgs {
 
 #[derive(Subcommand)]
 enum ResourcesCommand {
+    List,
+    Get {
+        id: String,
+    },
     Usages {
         #[command(subcommand)]
         command: ListCommand,
@@ -545,6 +551,12 @@ async fn run(cli: Cli) -> Result<()> {
             },
         },
         Command::Resources { command } => match command {
+            ResourcesCommand::List => {
+                json_get_command("/api/admin/resources", cli.json, "resources").await
+            }
+            ResourcesCommand::Get { id } => {
+                json_get_by_id_command("/api/admin/resources", &id, cli.json, "resource").await
+            }
             ResourcesCommand::Usages { command } => match command {
                 ListCommand::List => {
                     json_get_command("/api/admin/resource_usages", cli.json, "resource usages")
@@ -1007,6 +1019,8 @@ fn print_manifest(json_output: bool) -> Result<()> {
             { "name": "projects get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "project" },
             { "name": "projects statuses list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "concept_statuses" },
             { "name": "projects concepts list", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--project-id"], "output_schema": "project_concepts" },
+            { "name": "resources list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "resources" },
+            { "name": "resources get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "resource" },
             { "name": "resources usages list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "resource_usages" },
             { "name": "time timeline", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--mode", "--from", "--to"], "output_schema": "timeline_buckets" },
             { "name": "pdf preview", "auth_required": true, "company_required": false, "destructive": false, "arguments": ["--input", "--source", "--output"], "output_schema": "pdf_preview" },

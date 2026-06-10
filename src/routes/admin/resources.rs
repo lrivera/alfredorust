@@ -2,23 +2,24 @@ use std::sync::Arc;
 
 use askama::Template;
 use axum::{
+    Json,
     extract::{Form, Path, State},
     http::StatusCode,
     response::{Html, IntoResponse, Redirect},
 };
 use bson::oid::ObjectId;
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize};
 
 #[allow(unused_imports)]
 use crate::filters;
 
 use crate::{
-    models::ResourceType,
+    models::{Resource, ResourceType},
     session::SessionUser,
     state::{
         AppState, create_resource_with_cost, delete_resource, get_resource_by_id,
-        list_concept_statuses, list_resources, update_resource, update_resource_allowed_statuses,
-        update_resource_cost,
+        get_resource_by_id_for_company, list_concept_statuses, list_resources, update_resource,
+        update_resource_allowed_statuses, update_resource_cost,
     },
 };
 
@@ -46,6 +47,22 @@ struct ResourceRow {
     currency: String,
     allowed_statuses: String,
     notes: String,
+}
+
+#[derive(Serialize)]
+pub struct ResourceData {
+    pub id: String,
+    pub company_id: String,
+    pub name: String,
+    pub resource_type: String,
+    pub resource_type_label: String,
+    pub is_active: bool,
+    pub hourly_cost: f64,
+    pub currency: String,
+    pub allowed_status_ids: Vec<String>,
+    pub notes: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
 }
 
 pub async fn resources_index(
@@ -94,6 +111,37 @@ pub async fn resources_index(
     render(ResourcesIndexTemplate { resources: rows })
 }
 
+pub async fn resources_data_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<ResourceData>>, StatusCode> {
+    let company_id = require_admin_active(&session_user)?;
+    let resources = list_resources(&state, &company_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(
+        resources.into_iter().filter_map(resource_data).collect(),
+    ))
+}
+
+pub async fn resource_data_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<ResourceData>, StatusCode> {
+    let company_id = require_admin_active(&session_user)?;
+    let oid = ObjectId::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let resource = get_resource_by_id_for_company(&state, &oid, &company_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    resource_data(resource)
+        .map(Json)
+        .ok_or(StatusCode::INTERNAL_SERVER_ERROR)
+}
+
 #[derive(Template)]
 #[template(path = "admin/resources/form.html")]
 struct ResourceFormTemplate {
@@ -118,6 +166,32 @@ fn resource_type_options() -> Vec<(String, String)> {
         ("equipment".into(), "Equipo".into()),
         ("other".into(), "Otro".into()),
     ]
+}
+
+fn resource_data(resource: Resource) -> Option<ResourceData> {
+    let id = resource.id?.to_hex();
+    Some(ResourceData {
+        id,
+        company_id: resource.company_id.to_hex(),
+        name: resource.name,
+        resource_type: resource.resource_type.as_str().to_string(),
+        resource_type_label: resource.resource_type.label().to_string(),
+        is_active: resource.is_active,
+        hourly_cost: resource.hourly_cost,
+        currency: resource.currency,
+        allowed_status_ids: resource
+            .allowed_status_ids
+            .into_iter()
+            .map(|id| id.to_hex())
+            .collect(),
+        notes: resource.notes,
+        created_at: resource
+            .created_at
+            .map(|date| date.to_chrono().to_rfc3339()),
+        updated_at: resource
+            .updated_at
+            .map(|date| date.to_chrono().to_rfc3339()),
+    })
 }
 
 fn parse_resource_type(s: &str) -> ResourceType {
