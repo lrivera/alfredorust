@@ -36,7 +36,7 @@ The system SHALL expose CFDI download job commands only with explicit company co
 
 ### Requirement: CLI protects SAT and CFDI secret material
 
-The system SHALL avoid exposing certificate passwords, key material, local certificate paths, TOTP secrets, cookies, or generated TOTP codes in CLI output.
+The system SHALL avoid exposing certificate passwords, key material, certificate paths, key paths, TOTP secrets, cookies, `otpauth_url`, or generated TOTP codes in CLI output.
 
 #### Scenario: SAT config data is returned for CFDI workflows
 

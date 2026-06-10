@@ -88,16 +88,25 @@ These routes currently render Askama templates or consume browser form submissio
 
 1. Add shared HTTP helpers first: JSON `GET`, JSON `POST`, form `POST` only where unavoidable, tenant-aware base URL, transparent re-login retry, response status mapping, and destructive confirmation enforcement.
 2. Add read-only commands for existing JSON APIs: `time timeline`, `cfdi list`, `transactions list`, project concept/status reads, resource usage reads, PDF preview.
-3. Add JSON backend endpoints for finance master data: accounts, categories, contacts. These unlock most finance create/update flows.
-4. Add JSON backend endpoints for transactions, planned entries, recurring plans, forecasts, and service orders, documenting finance side effects.
-5. Add JSON backend endpoints for projects, resources, resource logs, users, companies, and SAT configs.
-6. Add SAT/CFDI job commands only after documenting secret handling, job persistence limitations, and payment/planned-entry side effects.
-7. Expand `spcli manifest` after each command group with arguments, permissions, output schemas, destructive flags, and examples.
+3. Expand `spcli manifest` with schema version, arguments, permissions, output schemas, destructive flags, and examples for every implemented command.
+4. Add harness coverage for read-only commands, JSON output, structured errors, transparent re-login, tenant isolation, and forbidden cases.
+5. Add JSON backend endpoints for finance master data: accounts, categories, contacts. These unlock most finance create/update flows.
+6. Add JSON backend endpoints for transactions, planned entries, recurring plans, forecasts, and service orders, documenting finance side effects.
+7. Add JSON backend endpoints for projects, resources, resource logs, users, companies, and SAT configs.
+8. Add SAT/CFDI job commands after documenting secret handling, in-memory job limitations, and payment/planned-entry side effects.
+9. Add higher-risk mutations after their APIs, side-effect responses, destructive confirmations, and harness tests exist.
 
-## Open Questions Before Implementation
+## Resolved Design Decisions
 
-1. Should CLI command names mirror URL nouns (`planned-entries`) or product nouns (`commitments`/`plans`) where the UI language differs?
-2. Should form-only routes be converted to JSON-only `/api/admin/*` routes, or should handlers support content negotiation? Prefer separate JSON APIs for clarity.
-3. Should destructive company maintenance commands be exposed in CLI at all, or reserved for the web UI?
-4. Should SAT config reads redact all secret-bearing fields by default, including paths and password references?
-5. Should CFDI download jobs remain in-memory for CLI status, or should CLI work require persistent jobs first?
+1. Command names use canonical English nouns only; no Spanish or shorthand aliases in the initial CLI coverage.
+2. New backend APIs should be explicit JSON routes, preferably under `/api/admin/*` for administrative capabilities, instead of content negotiation on HTML routes.
+3. `spcli` must not scrape HTML, submit browser forms as a stable contract, or depend on redirects as command behavior.
+4. Dangerous company maintenance commands, including company delete, delete all CFDIs, and delete all transactions, stay out of the CLI for now.
+5. SAT config reads return redacted metadata only. Do not print certificate paths, key paths, passwords, certificate/key contents, TOTP secrets, cookies, generated TOTP codes, or `otpauth_url`.
+6. CFDI job commands may use current in-memory jobs, but documentation must state that job status is lost on server restart. Persistent jobs are a separate future improvement.
+7. List commands use explicit pagination and filters. Default limit is 100 and maximum limit is at most 5000 unless a command-specific spec says otherwise.
+8. MongoDB `ObjectId` is the canonical identifier for records. Name/slug lookup can be added later only where there is a stable model field or a future spec requires it.
+9. Human output should be concise tables or summaries. `--json` output should return the complete stable structured response.
+10. Mutations should support simple flags where practical and `--input <file.json>` for large or nested payloads.
+11. Financial/admin dry-run, idempotency keys, and audit logging are future requirements for higher-risk mutations, not blockers for read-only JSON-ready commands.
+12. Backend handlers remain the authority for permissions, tenant isolation, validation, and side effects. CLI validation is only a client-side convenience.

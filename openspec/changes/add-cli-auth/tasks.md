@@ -4,7 +4,7 @@
 - [x] 0.2 Identify current `spcli` coverage and backend routes consumed by existing commands.
 - [x] 0.3 Identify backend API gaps that must be filled before implementing full CLI parity with the web UI.
 - [x] 0.4 Add domain specs for finance, projects, resources, CFDI/SAT, admin, PDF, and time CLI coverage.
-- [ ] 0.5 Resolve open product/API questions before implementing broad command groups.
+- [x] 0.5 Resolve open product/API questions before implementing broad command groups.
 
 ## 1. CLI Shape
 

@@ -30,20 +30,21 @@ The system SHALL redact sensitive setup and SAT config fields from CLI output.
 - **WHEN** the CLI returns SAT config data
 - **THEN** it omits or redacts certificate passwords, key passwords, and other secret-bearing fields
 
-### Requirement: CLI admin destructive commands require confirmation
+### Requirement: CLI admin destructive commands require confirmation or remain unsupported
 
-The system SHALL require explicit confirmation flags for destructive admin commands.
+The system SHALL require explicit confirmation flags for supported destructive admin commands and SHALL keep dangerous company-wide maintenance commands unsupported until a future spec adds audit and recovery requirements.
 
-#### Scenario: Company delete is requested
+#### Scenario: Supported admin delete is requested
 
-- **WHEN** the user runs `spcli admin companies delete <id>` without `--yes`
+- **WHEN** the user runs a supported admin delete command without `--yes`
 - **THEN** the CLI rejects the command before sending the request
 
 #### Scenario: Company maintenance delete-all command is requested
 
-- **WHEN** the user runs a command that deletes all company CFDIs or transactions
-- **THEN** the CLI requires a confirmation flag and a typed company identifier confirmation before sending the request
-- **AND** the command documentation identifies the affected collection and irreversibility
+- **WHEN** a user attempts to delete a company, delete all company CFDIs, or delete all company transactions through `spcli`
+- **THEN** the CLI reports that the command is unsupported
+- **AND** no backend request is sent
+- **AND** a future spec SHALL be required before exposing those operations through the CLI
 
 ### Requirement: CLI admin commands document permission boundaries
 
