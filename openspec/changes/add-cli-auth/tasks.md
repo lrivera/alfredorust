@@ -118,7 +118,7 @@
 - [ ] 14.4 Add harness coverage for transparent re-login and single retry behavior after unauthorized responses.
 - [ ] 14.5 Add harness coverage for company list and company switch.
 - [ ] 14.6 Add representative harness coverage for each CLI command group.
-- [ ] 14.7 Add tests for JSON output, structured errors, exit codes, and destructive command confirmation behavior.
+- [x] 14.7 Add tests for JSON output, structured errors, exit codes, and destructive command confirmation behavior.
 - [x] 14.8 Run `openspec validate --all` and relevant Rust tests.
 
 ## 15. First Read-Only JSON API Slice
