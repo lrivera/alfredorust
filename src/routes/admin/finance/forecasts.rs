@@ -2,17 +2,19 @@ use std::{str::FromStr, sync::Arc};
 
 use askama::Template;
 use axum::{
+    Json,
     extract::{Form, Path, State},
     http::StatusCode,
     response::{Html, IntoResponse, Redirect},
 };
 use mongodb::bson::oid::ObjectId;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[allow(unused_imports)]
 use crate::filters;
 
 use crate::{
+    models::Forecast,
     session::SessionUser,
     state::{
         AppState, create_forecast, delete_forecast, get_forecast_by_id, list_forecasts,
@@ -29,11 +31,52 @@ struct ForecastsIndexTemplate {
     forecasts: Vec<ForecastRow>,
 }
 
-struct ForecastRow {
-    id: String,
-    company: String,
-    currency: String,
-    projected_net: f64,
+#[derive(Serialize)]
+pub struct ForecastRow {
+    pub id: String,
+    pub company: String,
+    pub currency: String,
+    pub projected_net: f64,
+    pub start_date: String,
+    pub end_date: String,
+    pub scenario_name: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct ForecastDetail {
+    pub id: String,
+    pub company_id: String,
+    pub company: String,
+    pub generated_at: String,
+    pub generated_by_user_id: Option<String>,
+    pub start_date: String,
+    pub end_date: String,
+    pub currency: String,
+    pub projected_income_total: f64,
+    pub projected_expense_total: f64,
+    pub projected_net: f64,
+    pub initial_balance: Option<f64>,
+    pub final_balance: Option<f64>,
+    pub details: Option<String>,
+    pub scenario_name: Option<String>,
+    pub notes: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct ForecastPayload {
+    pub generated_at: String,
+    pub generated_by_user_id: Option<String>,
+    pub start_date: String,
+    pub end_date: String,
+    pub currency: String,
+    pub projected_income_total: f64,
+    pub projected_expense_total: f64,
+    pub projected_net: f64,
+    pub initial_balance: Option<f64>,
+    pub final_balance: Option<f64>,
+    pub details: Option<String>,
+    pub scenario_name: Option<String>,
+    pub notes: Option<String>,
 }
 
 #[derive(Template)]
@@ -103,11 +146,273 @@ pub async fn forecasts_index(
                 company: active_name.clone(),
                 currency: f.currency,
                 projected_net: f.projected_net,
+                start_date: datetime_to_string(&f.start_date),
+                end_date: datetime_to_string(&f.end_date),
+                scenario_name: f.scenario_name,
             })
         })
         .collect();
 
     render(ForecastsIndexTemplate { forecasts: rows })
+}
+
+pub async fn forecasts_data_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<ForecastRow>>, StatusCode> {
+    let active_company = require_admin_active(&session_user)?;
+    let active_name = session_user.user().company_name.clone();
+    let forecasts = list_forecasts(&state)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let rows = forecasts
+        .into_iter()
+        .filter(|forecast| forecast.company_id == active_company)
+        .filter_map(|forecast| {
+            forecast.id.map(|id| ForecastRow {
+                id: id.to_hex(),
+                company: active_name.clone(),
+                currency: forecast.currency,
+                projected_net: forecast.projected_net,
+                start_date: datetime_to_string(&forecast.start_date),
+                end_date: datetime_to_string(&forecast.end_date),
+                scenario_name: forecast.scenario_name,
+            })
+        })
+        .collect();
+
+    Ok(Json(rows))
+}
+
+pub async fn forecast_data_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<ForecastDetail>, StatusCode> {
+    let active_company = require_admin_active(&session_user)?;
+    let object_id = ObjectId::from_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let forecast = get_forecast_by_id(&state, &object_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    ensure_same_company(&forecast.company_id, &active_company)?;
+
+    Ok(Json(forecast_detail(
+        id,
+        forecast,
+        session_user.user().company_name.clone(),
+    )))
+}
+
+pub async fn forecasts_create_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<ForecastPayload>,
+) -> impl IntoResponse {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+    let parsed = match parse_forecast_payload(&state, &company_id, payload).await {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+
+    match create_forecast(
+        &state,
+        &company_id,
+        parsed.generated_at,
+        parsed.generated_by_user_id,
+        parsed.start_date,
+        parsed.end_date,
+        &parsed.currency,
+        parsed.projected_income_total,
+        parsed.projected_expense_total,
+        parsed.projected_net,
+        parsed.initial_balance,
+        parsed.final_balance,
+        parsed.details,
+        parsed.scenario_name,
+        parsed.notes,
+    )
+    .await
+    {
+        Ok(id) => (
+            StatusCode::CREATED,
+            Json(serde_json::json!({ "id": id.to_hex() })),
+        )
+            .into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+pub async fn forecast_update_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(payload): Json<ForecastPayload>,
+) -> impl IntoResponse {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+    let object_id = match ObjectId::from_str(&id) {
+        Ok(id) => id,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    if let Err(status) = match get_forecast_by_id(&state, &object_id).await {
+        Ok(Some(forecast)) => ensure_same_company(&forecast.company_id, &company_id),
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    } {
+        return status.into_response();
+    }
+    let parsed = match parse_forecast_payload(&state, &company_id, payload).await {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+
+    match update_forecast(
+        &state,
+        &object_id,
+        &company_id,
+        parsed.generated_at,
+        parsed.generated_by_user_id,
+        parsed.start_date,
+        parsed.end_date,
+        &parsed.currency,
+        parsed.projected_income_total,
+        parsed.projected_expense_total,
+        parsed.projected_net,
+        parsed.initial_balance,
+        parsed.final_balance,
+        parsed.details,
+        parsed.scenario_name,
+        parsed.notes,
+    )
+    .await
+    {
+        Ok(_) => Json(serde_json::json!({ "ok": true })).into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+pub async fn forecast_delete_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+    let object_id = match ObjectId::from_str(&id) {
+        Ok(id) => id,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    if let Err(status) = match get_forecast_by_id(&state, &object_id).await {
+        Ok(Some(forecast)) => ensure_same_company(&forecast.company_id, &company_id),
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    } {
+        return status.into_response();
+    }
+
+    match delete_forecast(&state, &object_id).await {
+        Ok(_) => Json(serde_json::json!({ "ok": true })).into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+struct ParsedForecastPayload {
+    generated_at: mongodb::bson::DateTime,
+    generated_by_user_id: Option<ObjectId>,
+    start_date: mongodb::bson::DateTime,
+    end_date: mongodb::bson::DateTime,
+    currency: String,
+    projected_income_total: f64,
+    projected_expense_total: f64,
+    projected_net: f64,
+    initial_balance: Option<f64>,
+    final_balance: Option<f64>,
+    details: Option<String>,
+    scenario_name: Option<String>,
+    notes: Option<String>,
+}
+
+async fn parse_forecast_payload(
+    state: &AppState,
+    company_id: &ObjectId,
+    payload: ForecastPayload,
+) -> Result<ParsedForecastPayload, axum::response::Response> {
+    let generated_at = parse_datetime_field(&payload.generated_at, "generated_at")
+        .map_err(|message| json_bad_request(&message))?;
+    let start_date = parse_datetime_field(&payload.start_date, "start_date")
+        .map_err(|message| json_bad_request(&message))?;
+    let end_date = parse_datetime_field(&payload.end_date, "end_date")
+        .map_err(|message| json_bad_request(&message))?;
+    let currency = payload.currency.trim().to_string();
+    if currency.is_empty() {
+        return Err(json_bad_request("currency is required"));
+    }
+    let generated_by_user_id = match clean_opt(payload.generated_by_user_id) {
+        Some(value) => match ObjectId::from_str(&value) {
+            Ok(id) => {
+                if let Err(status) = validate_user_in_company(state, &id, company_id).await {
+                    return Err(status.into_response());
+                }
+                Some(id)
+            }
+            Err(_) => return Err(json_bad_request("generated_by_user_id is invalid")),
+        },
+        None => None,
+    };
+
+    Ok(ParsedForecastPayload {
+        generated_at,
+        generated_by_user_id,
+        start_date,
+        end_date,
+        currency,
+        projected_income_total: payload.projected_income_total,
+        projected_expense_total: payload.projected_expense_total,
+        projected_net: payload.projected_net,
+        initial_balance: payload.initial_balance,
+        final_balance: payload.final_balance,
+        details: clean_opt(payload.details),
+        scenario_name: clean_opt(payload.scenario_name),
+        notes: clean_opt(payload.notes),
+    })
+}
+
+fn forecast_detail(id: String, forecast: Forecast, company: String) -> ForecastDetail {
+    ForecastDetail {
+        id,
+        company_id: forecast.company_id.to_hex(),
+        company,
+        generated_at: datetime_to_string(&forecast.generated_at),
+        generated_by_user_id: forecast.generated_by_user_id.map(|id| id.to_hex()),
+        start_date: datetime_to_string(&forecast.start_date),
+        end_date: datetime_to_string(&forecast.end_date),
+        currency: forecast.currency,
+        projected_income_total: forecast.projected_income_total,
+        projected_expense_total: forecast.projected_expense_total,
+        projected_net: forecast.projected_net,
+        initial_balance: forecast.initial_balance,
+        final_balance: forecast.final_balance,
+        details: forecast.details,
+        scenario_name: forecast.scenario_name,
+        notes: forecast.notes,
+    }
+}
+
+fn json_bad_request(message: &str) -> axum::response::Response {
+    (
+        StatusCode::BAD_REQUEST,
+        Json(serde_json::json!({ "error": message })),
+    )
+        .into_response()
 }
 
 pub async fn forecasts_new(

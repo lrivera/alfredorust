@@ -67,6 +67,7 @@ List read-only API data for the selected company:
 cargo run --bin spcli -- finance accounts list
 cargo run --bin spcli -- finance categories list
 cargo run --bin spcli -- finance contacts list
+cargo run --bin spcli -- finance forecasts list
 cargo run --bin spcli -- finance transactions list
 cargo run --bin spcli -- cfdi list
 cargo run --bin spcli -- projects statuses list
@@ -80,6 +81,7 @@ Read one finance master-data record by MongoDB ObjectId:
 cargo run --bin spcli -- finance accounts get 64f000000000000000000000
 cargo run --bin spcli -- finance categories get 64f000000000000000000000
 cargo run --bin spcli -- finance contacts get 64f000000000000000000000
+cargo run --bin spcli -- finance forecasts get 64f000000000000000000000
 ```
 
 Create finance master-data records:
@@ -88,6 +90,7 @@ Create finance master-data records:
 cargo run --bin spcli -- finance accounts create --name "BBVA" --account-type bank --currency MXN
 cargo run --bin spcli -- finance categories create --name "Services" --flow-type expense
 cargo run --bin spcli -- finance contacts create --name "Customer SA" --contact-type customer --rfc XAXX010101000
+cargo run --bin spcli -- finance forecasts create --generated-at 2026-01-01 --start-date 2026-01-01 --end-date 2026-12-31 --currency MXN --projected-income-total 1000 --projected-expense-total 500 --projected-net 500
 ```
 
 Update or delete finance master-data records:
@@ -96,6 +99,7 @@ Update or delete finance master-data records:
 cargo run --bin spcli -- finance accounts update 64f000000000000000000000 --name "BBVA" --account-type bank --currency MXN
 cargo run --bin spcli -- finance categories update 64f000000000000000000000 --name "Services" --flow-type expense
 cargo run --bin spcli -- finance contacts update 64f000000000000000000000 --name "Customer SA" --contact-type customer
+cargo run --bin spcli -- finance forecasts update 64f000000000000000000000 --generated-at 2026-01-01 --start-date 2026-01-01 --end-date 2026-12-31 --currency MXN --projected-income-total 1000 --projected-expense-total 500 --projected-net 500
 cargo run --bin spcli -- finance contacts delete 64f000000000000000000000 --yes
 ```
 

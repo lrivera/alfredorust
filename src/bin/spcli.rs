@@ -102,6 +102,10 @@ enum FinanceCommand {
         #[command(subcommand)]
         command: ContactCommand,
     },
+    Forecasts {
+        #[command(subcommand)]
+        command: ForecastCommand,
+    },
     Transactions {
         #[command(subcommand)]
         command: ListCommand,
@@ -306,6 +310,52 @@ struct DeleteArgs {
     yes: bool,
 }
 
+#[derive(Subcommand)]
+enum ForecastCommand {
+    List,
+    Get { id: String },
+    Create(ForecastWriteArgs),
+    Update(ForecastUpdateArgs),
+    Delete(DeleteArgs),
+}
+
+#[derive(Args)]
+struct ForecastWriteArgs {
+    #[arg(long)]
+    generated_at: String,
+    #[arg(long)]
+    start_date: String,
+    #[arg(long)]
+    end_date: String,
+    #[arg(long)]
+    currency: String,
+    #[arg(long)]
+    projected_income_total: f64,
+    #[arg(long)]
+    projected_expense_total: f64,
+    #[arg(long)]
+    projected_net: f64,
+    #[arg(long)]
+    initial_balance: Option<f64>,
+    #[arg(long)]
+    final_balance: Option<f64>,
+    #[arg(long)]
+    generated_by_user_id: Option<String>,
+    #[arg(long)]
+    details: Option<String>,
+    #[arg(long)]
+    scenario_name: Option<String>,
+    #[arg(long)]
+    notes: Option<String>,
+}
+
+#[derive(Args)]
+struct ForecastUpdateArgs {
+    id: String,
+    #[command(flatten)]
+    fields: ForecastWriteArgs,
+}
+
 #[derive(Debug, Serialize)]
 struct CliError {
     code: &'static str,
@@ -405,6 +455,19 @@ async fn run(cli: Cli) -> Result<()> {
                 ContactCommand::Update(args) => contact_update(args, cli.json).await,
                 ContactCommand::Delete(args) => {
                     delete_command("/api/admin/contacts", args, cli.json, "contact").await
+                }
+            },
+            FinanceCommand::Forecasts { command } => match command {
+                ForecastCommand::List => {
+                    json_get_command("/api/admin/forecasts", cli.json, "forecasts").await
+                }
+                ForecastCommand::Get { id } => {
+                    json_get_by_id_command("/api/admin/forecasts", &id, cli.json, "forecast").await
+                }
+                ForecastCommand::Create(args) => forecast_create(args, cli.json).await,
+                ForecastCommand::Update(args) => forecast_update(args, cli.json).await,
+                ForecastCommand::Delete(args) => {
+                    delete_command("/api/admin/forecasts", args, cli.json, "forecast").await
                 }
             },
             FinanceCommand::Transactions { command } => match command {
@@ -732,6 +795,49 @@ async fn contact_update(args: ContactUpdateArgs, json_output: bool) -> Result<()
     print_ok_output(&value, json_output, "contact updated")
 }
 
+async fn forecast_create(args: ForecastWriteArgs, json_output: bool) -> Result<()> {
+    let payload = forecast_payload(args)?;
+    let mut state = load_state()?;
+    let value = authenticated_post_json(&mut state, "/api/admin/forecasts", &payload).await?;
+    save_state(&state)?;
+    print_created_output(&value, json_output, "forecast")
+}
+
+async fn forecast_update(args: ForecastUpdateArgs, json_output: bool) -> Result<()> {
+    validate_object_id(&args.id, "id")?;
+    let payload = forecast_payload(args.fields)?;
+    let path = format!("/api/admin/forecasts/{}/update", args.id);
+    let mut state = load_state()?;
+    let value = authenticated_post_json(&mut state, &path, &payload).await?;
+    save_state(&state)?;
+    print_ok_output(&value, json_output, "forecast updated")
+}
+
+fn forecast_payload(args: ForecastWriteArgs) -> Result<Value> {
+    validate_non_empty(&args.currency, "currency")?;
+    let generated_at = normalize_timeline_bound(&args.generated_at, "generated-at")?;
+    let start_date = normalize_timeline_bound(&args.start_date, "start-date")?;
+    let end_date = normalize_timeline_bound(&args.end_date, "end-date")?;
+    if let Some(user_id) = args.generated_by_user_id.as_deref() {
+        validate_object_id(user_id, "generated-by-user-id")?;
+    }
+    Ok(json!({
+        "generated_at": generated_at,
+        "generated_by_user_id": args.generated_by_user_id,
+        "start_date": start_date,
+        "end_date": end_date,
+        "currency": args.currency,
+        "projected_income_total": args.projected_income_total,
+        "projected_expense_total": args.projected_expense_total,
+        "projected_net": args.projected_net,
+        "initial_balance": args.initial_balance,
+        "final_balance": args.final_balance,
+        "details": args.details,
+        "scenario_name": args.scenario_name,
+        "notes": args.notes,
+    }))
+}
+
 async fn delete_command(
     base_path: &str,
     args: DeleteArgs,
@@ -824,6 +930,11 @@ fn print_manifest(json_output: bool) -> Result<()> {
             { "name": "finance contacts create", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--name", "--contact-type", "--rfc", "--email", "--phone", "--notes"], "output_schema": "created_id" },
             { "name": "finance contacts update", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id", "--name", "--contact-type", "--rfc", "--email", "--phone", "--notes"], "output_schema": "ok" },
             { "name": "finance contacts delete", "auth_required": true, "company_required": true, "destructive": true, "confirmation_flag": "--yes", "arguments": ["id"], "output_schema": "ok" },
+            { "name": "finance forecasts list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "forecasts" },
+            { "name": "finance forecasts get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "forecast" },
+            { "name": "finance forecasts create", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--generated-at", "--start-date", "--end-date", "--currency", "--projected-income-total", "--projected-expense-total", "--projected-net"], "output_schema": "created_id" },
+            { "name": "finance forecasts update", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id", "--generated-at", "--start-date", "--end-date", "--currency", "--projected-income-total", "--projected-expense-total", "--projected-net"], "output_schema": "ok" },
+            { "name": "finance forecasts delete", "auth_required": true, "company_required": true, "destructive": true, "confirmation_flag": "--yes", "arguments": ["id"], "output_schema": "ok" },
             { "name": "finance transactions list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "transactions" },
             { "name": "cfdi list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "cfdi_data" },
             { "name": "projects statuses list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "concept_statuses" },

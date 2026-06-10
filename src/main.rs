@@ -253,6 +253,19 @@ async fn main() {
             "/admin/forecasts",
             get(routes::forecasts_index).post(routes::forecasts_create),
         )
+        .route(
+            "/api/admin/forecasts",
+            get(routes::forecasts_data_api).post(routes::forecasts_create_api),
+        )
+        .route("/api/admin/forecasts/{id}", get(routes::forecast_data_api))
+        .route(
+            "/api/admin/forecasts/{id}/update",
+            post(routes::forecast_update_api),
+        )
+        .route(
+            "/api/admin/forecasts/{id}/delete",
+            post(routes::forecast_delete_api),
+        )
         .route("/admin/forecasts/new", get(routes::forecasts_new))
         .route("/admin/forecasts/{id}/edit", get(routes::forecasts_edit))
         .route(

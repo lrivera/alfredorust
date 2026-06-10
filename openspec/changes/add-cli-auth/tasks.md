@@ -145,4 +145,6 @@
 - [x] 16.8 Add `finance accounts create`, `finance categories create`, and `finance contacts create` commands.
 - [x] 16.9 Add tenant-scoped JSON update/delete APIs for accounts, categories, and contacts.
 - [x] 16.10 Add `finance accounts/categories/contacts update` and `delete --yes` commands.
-- [ ] 16.11 Add harness coverage for finance master data list/get/create/update/delete APIs and CLI commands.
+- [x] 16.11 Add tenant-scoped JSON list/get/create/update/delete APIs for forecasts.
+- [x] 16.12 Add `finance forecasts list/get/create/update/delete` commands.
+- [ ] 16.13 Add harness coverage for finance master data and forecast APIs and CLI commands.
