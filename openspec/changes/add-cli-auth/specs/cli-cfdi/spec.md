@@ -35,6 +35,12 @@ The system SHALL expose CFDI download job commands only with explicit company co
 - **THEN** the CLI returns jobs for the selected company only
 - **AND** the documentation states that current jobs are in-memory and do not survive server restarts unless persistent jobs are implemented
 
+#### Scenario: CFDI job status is requested
+
+- **WHEN** the user runs `spcli cfdi jobs status <job-id>`
+- **THEN** the CLI returns the matching job only when it belongs to the selected company
+- **AND** the server rejects access to jobs from another company
+
 ### Requirement: CLI protects SAT and CFDI secret material
 
 The system SHALL avoid exposing certificate passwords, key material, certificate paths, key paths, TOTP secrets, cookies, `otpauth_url`, or generated TOTP codes in CLI output.

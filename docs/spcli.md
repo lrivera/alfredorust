@@ -72,6 +72,7 @@ cargo run --bin spcli -- finance recurring-plans list
 cargo run --bin spcli -- finance planned-entries list
 cargo run --bin spcli -- finance transactions list
 cargo run --bin spcli -- cfdi list
+cargo run --bin spcli -- cfdi jobs list
 cargo run --bin spcli -- sat configs list
 cargo run --bin spcli -- projects list
 cargo run --bin spcli -- projects statuses list
@@ -92,6 +93,7 @@ cargo run --bin spcli -- finance recurring-plans get 64f000000000000000000000
 cargo run --bin spcli -- finance planned-entries get 64f000000000000000000000
 cargo run --bin spcli -- finance transactions get 64f000000000000000000000
 cargo run --bin spcli -- cfdi get 12345678-1234-1234-1234-1234567890ab
+cargo run --bin spcli -- cfdi jobs status 12345678-1234-1234-1234-1234567890ab
 cargo run --bin spcli -- sat configs get 64f000000000000000000000
 cargo run --bin spcli -- projects get 64f000000000000000000000
 cargo run --bin spcli -- resources get 64f000000000000000000000
@@ -131,6 +133,8 @@ cargo run --bin spcli -- pdf preview --input invoice.typ --output invoice.pdf
 cargo run --bin spcli -- pdf preview --source "= Hello"
 ```
 
+CFDI download jobs are server in-memory records. `cfdi jobs list` and `cfdi jobs status <job-id>` only show jobs currently held by the running server process; status is lost when the app restarts unless persistent jobs are added later.
+
 ## JSON Output
 
 Use `--json` for automation:
@@ -141,6 +145,7 @@ cargo run --bin spcli -- --json company list
 cargo run --bin spcli -- --json finance accounts list
 cargo run --bin spcli -- --json finance transactions list
 cargo run --bin spcli -- --json cfdi list
+cargo run --bin spcli -- --json cfdi jobs list
 ```
 
 Errors are written as structured JSON to stderr with a stable `code` and `message` field.

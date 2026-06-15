@@ -129,7 +129,19 @@ enum FinanceCommand {
 #[derive(Subcommand)]
 enum CfdiCommand {
     List,
-    Get { uuid: String },
+    Get {
+        uuid: String,
+    },
+    Jobs {
+        #[command(subcommand)]
+        command: CfdiJobsCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum CfdiJobsCommand {
+    List,
+    Status { job_id: String },
 }
 
 #[derive(Subcommand)]
@@ -566,6 +578,10 @@ async fn run(cli: Cli) -> Result<()> {
         Command::Cfdi { command } => match command {
             CfdiCommand::List => json_get_command("/api/admin/cfdis/data", cli.json, "CFDIs").await,
             CfdiCommand::Get { uuid } => cfdi_get(&uuid, cli.json).await,
+            CfdiCommand::Jobs { command } => match command {
+                CfdiJobsCommand::List => cfdi_jobs_list(cli.json).await,
+                CfdiJobsCommand::Status { job_id } => cfdi_job_status(&job_id, cli.json).await,
+            },
         },
         Command::Sat { command } => match command {
             SatCommand::Configs { command } => match command {
@@ -1001,6 +1017,41 @@ async fn cfdi_get(uuid: &str, json_output: bool) -> Result<()> {
     json_get_command(&path, json_output, "CFDI").await
 }
 
+async fn cfdi_jobs_list(json_output: bool) -> Result<()> {
+    let mut state = load_state()?;
+    let company_id = selected_company_id(&mut state).await?;
+    let path = format!("/admin/companies/{company_id}/cfdi/jobs");
+    let value = authenticated_get(&mut state, &path).await?;
+    save_state(&state)?;
+    print_value_output(&value, json_output, "CFDI jobs")
+}
+
+async fn cfdi_job_status(job_id: &str, json_output: bool) -> Result<()> {
+    validate_non_empty(job_id, "job-id")?;
+    let mut state = load_state()?;
+    let company_id = selected_company_id(&mut state).await?;
+    let path = format!("/admin/companies/{company_id}/cfdi/jobs/{}", job_id.trim());
+    let value = authenticated_get(&mut state, &path).await?;
+    save_state(&state)?;
+    print_value_output(&value, json_output, "CFDI job")
+}
+
+async fn selected_company_id(state: &mut CredentialState) -> Result<String> {
+    let selected_slug = state
+        .company_slug
+        .clone()
+        .ok_or_else(|| anyhow!("company selection is required; run spcli company use <slug>"))?;
+    let companies: Vec<CompanySummary> =
+        serde_json::from_value(authenticated_get(state, "/api/me/companies").await?)
+            .context("failed to parse company list")?;
+    let selected = companies
+        .iter()
+        .find(|company| company.slug.eq_ignore_ascii_case(&selected_slug))
+        .ok_or_else(|| anyhow!("selected company '{selected_slug}' is no longer available"))?;
+    validate_object_id(&selected.id, "selected company id")?;
+    Ok(selected.id.clone())
+}
+
 async fn timeline(args: TimelineArgs, json_output: bool) -> Result<()> {
     validate_timeline_mode(&args.mode)?;
     let from = normalize_timeline_bound(&args.from, "from")?;
@@ -1083,6 +1134,8 @@ fn print_manifest(json_output: bool) -> Result<()> {
             { "name": "finance transactions get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "transaction" },
             { "name": "cfdi list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "cfdi_data" },
             { "name": "cfdi get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["uuid"], "output_schema": "cfdi_detail" },
+            { "name": "cfdi jobs list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "cfdi_jobs" },
+            { "name": "cfdi jobs status", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["job-id"], "output_schema": "cfdi_job" },
             { "name": "sat configs list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "sat_configs" },
             { "name": "sat configs get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "sat_config" },
             { "name": "projects list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "projects" },
@@ -1105,7 +1158,7 @@ fn print_manifest(json_output: bool) -> Result<()> {
         print_json(&manifest)?;
     } else {
         println!(
-            "spcli commands: login, status, logout, reset-auth, company, finance, cfdi, projects, resources, time, pdf, manifest"
+            "spcli commands: login, status, logout, reset-auth, company, finance, cfdi, sat, projects, resources, time, pdf, manifest"
         );
         println!("Use --json for machine-readable output.");
     }

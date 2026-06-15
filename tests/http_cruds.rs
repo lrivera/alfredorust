@@ -21,13 +21,13 @@ use alfredodev::{
     routes,
     session::{SESSION_COOKIE_NAME, require_session},
     state::{
-        AppState, add_user_to_company, create_account, create_category, create_company,
-        create_forecast, create_planned_entry, create_project, create_recurring_plan,
-        create_resource, create_resource_log, create_resource_usage, create_sat_config,
-        create_session, create_transaction, create_user, create_user_with_permissions,
-        get_user_by_id, list_accounts, list_categories, list_companies, list_contacts,
-        list_forecasts, list_planned_entries, list_projects, list_recurring_plans,
-        list_resource_logs, list_resources, list_transactions, list_users,
+        AppState, CfdiJob, CfdiJobStatus, add_user_to_company, create_account, create_category,
+        create_company, create_forecast, create_planned_entry, create_project,
+        create_recurring_plan, create_resource, create_resource_log, create_resource_usage,
+        create_sat_config, create_session, create_transaction, create_user,
+        create_user_with_permissions, get_user_by_id, list_accounts, list_categories,
+        list_companies, list_contacts, list_forecasts, list_planned_entries, list_projects,
+        list_recurring_plans, list_resource_logs, list_resources, list_transactions, list_users,
     },
 };
 use bson::{DateTime, doc};
@@ -57,6 +57,14 @@ fn build_app(state: Arc<AppState>) -> Router {
         .route("/admin/cfdis", get(routes::cfdis_index))
         .route("/api/admin/cfdis/data", get(routes::cfdis_data_api))
         .route("/api/admin/cfdis/{uuid}", get(routes::cfdi_data_api))
+        .route(
+            "/admin/companies/{id}/cfdi/jobs",
+            get(routes::company_cfdi_jobs_list),
+        )
+        .route(
+            "/admin/companies/{id}/cfdi/jobs/{job_id}",
+            get(routes::company_cfdi_job_status),
+        )
         .route("/api/admin/sat-configs", get(routes::sat_configs_data_api))
         .route(
             "/api/admin/sat-configs/{id}",
@@ -897,6 +905,119 @@ async fn cfdi_json_endpoints_scope_to_active_tenant() {
     let staff_token = create_session(&state, &staff.email).await.unwrap();
     let app = build_app(shared);
     let (status, _body) = get_with_cookie(app, host_a, "/api/admin/cfdis/data", &staff_token).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    common::teardown(Some(ctx)).await;
+}
+
+#[tokio::test]
+async fn cfdi_job_endpoints_scope_to_company_and_admin() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let shared = Arc::new(state.clone());
+
+    let company_a = create_company(&state, "CFDI Jobs A", "cfdi-jobs-a", "MXN", true, None)
+        .await
+        .unwrap();
+    let company_b = create_company(&state, "CFDI Jobs B", "cfdi-jobs-b", "MXN", true, None)
+        .await
+        .unwrap();
+    let admin_id = create_user(
+        &state,
+        "cfdi-jobs-admin@example.com",
+        "SECRET",
+        &[
+            (company_a.clone(), UserRole::Admin),
+            (company_b.clone(), UserRole::Admin),
+        ],
+    )
+    .await
+    .unwrap();
+    let staff_id = create_user(
+        &state,
+        "cfdi-jobs-staff@example.com",
+        "SECRET",
+        &[(company_a.clone(), UserRole::Staff)],
+    )
+    .await
+    .unwrap();
+    let admin = get_user_by_id(&state, &admin_id).await.unwrap().unwrap();
+    let staff = get_user_by_id(&state, &staff_id).await.unwrap().unwrap();
+    let admin_token = create_session(&state, &admin.email).await.unwrap();
+    let staff_token = create_session(&state, &staff.email).await.unwrap();
+    let host_a = "cfdi-jobs-a.miapp.local";
+
+    {
+        let mut jobs = state.jobs.lock().await;
+        jobs.insert(
+            "job-a".into(),
+            CfdiJob {
+                job_id: "job-a".into(),
+                company_id: company_a.to_hex(),
+                label: "2026-01".into(),
+                chunk_start: "2026-01-01".into(),
+                started_at: "2026-01-15".into(),
+                status: CfdiJobStatus::Queued,
+            },
+        );
+        jobs.insert(
+            "job-b".into(),
+            CfdiJob {
+                job_id: "job-b".into(),
+                company_id: company_b.to_hex(),
+                label: "2026-02".into(),
+                chunk_start: "2026-02-01".into(),
+                started_at: "2026-02-15".into(),
+                status: CfdiJobStatus::Running,
+            },
+        );
+    }
+
+    let app = build_app(shared.clone());
+    let (status, body) = get_with_cookie(
+        app,
+        host_a,
+        &format!("/admin/companies/{}/cfdi/jobs", company_a.to_hex()),
+        &admin_token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains("job-a"));
+    assert!(!body.contains("job-b"));
+
+    let app = build_app(shared.clone());
+    let (status, body) = get_with_cookie(
+        app,
+        host_a,
+        &format!("/admin/companies/{}/cfdi/jobs/job-a", company_a.to_hex()),
+        &admin_token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let job: serde_json::Value = serde_json::from_str(&body).expect("job must be JSON");
+    assert_eq!(job["job_id"], "job-a");
+
+    let app = build_app(shared.clone());
+    let (status, _body) = get_with_cookie(
+        app,
+        host_a,
+        &format!("/admin/companies/{}/cfdi/jobs/job-b", company_a.to_hex()),
+        &admin_token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let app = build_app(shared);
+    let (status, _body) = get_with_cookie(
+        app,
+        host_a,
+        &format!("/admin/companies/{}/cfdi/jobs", company_a.to_hex()),
+        &staff_token,
+    )
+    .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 
     common::teardown(Some(ctx)).await;
