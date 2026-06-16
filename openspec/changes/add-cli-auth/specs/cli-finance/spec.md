@@ -46,6 +46,13 @@ The system SHALL only implement finance create, update, delete, pay, generate, a
 - **AND** the server validates category, account, and planned-entry ownership for the active company
 - **AND** responses include planned-entry recalculation side-effect metadata when a transaction links to a planned entry
 
+#### Scenario: Planned entry is created, updated, deleted, paid, or bulk-paid
+
+- **WHEN** the user runs `spcli finance planned-entries create`, `update`, `delete --yes`, `pay`, or `bulk-pay`
+- **THEN** the CLI consumes tenant-scoped planned-entry JSON APIs
+- **AND** the server validates category, account, contact, recurring-plan, project, and parent planned-entry ownership for the active company
+- **AND** payment responses include transaction creation and planned-entry recalculation side-effect metadata
+
 ### Requirement: CLI finance commands document financial side effects
 
 The system SHALL document side effects for every finance CLI command that can create, update, delete, pay, generate, or link financial records.

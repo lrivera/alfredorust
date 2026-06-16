@@ -110,6 +110,7 @@ cargo run --bin spcli -- finance accounts create --name "BBVA" --account-type ba
 cargo run --bin spcli -- finance categories create --name "Services" --flow-type expense
 cargo run --bin spcli -- finance contacts create --name "Customer SA" --contact-type customer --rfc XAXX010101000
 cargo run --bin spcli -- finance forecasts create --generated-at 2026-01-01 --start-date 2026-01-01 --end-date 2026-12-31 --currency MXN --projected-income-total 1000 --projected-expense-total 500 --projected-net 500
+cargo run --bin spcli -- finance planned-entries create --name "Fuel" --flow-type expense --category-id 64f000000000000000000000 --account-expected-id 64f000000000000000000001 --amount-estimated 500 --due-date 2026-07-01T00:00:00Z
 cargo run --bin spcli -- finance transactions create --date 2026-07-01T12:00:00Z --description "Fuel" --transaction-type expense --category-id 64f000000000000000000000 --account-from-id 64f000000000000000000001 --amount 500
 cargo run --bin spcli -- projects statuses create --name "In Progress" --position 10 --color sky
 cargo run --bin spcli -- projects concepts create --project-id 64f000000000000000000000 --name "Foundation" --quantity 1 --unit job --position 1
@@ -123,6 +124,10 @@ cargo run --bin spcli -- finance accounts update 64f000000000000000000000 --name
 cargo run --bin spcli -- finance categories update 64f000000000000000000000 --name "Services" --flow-type expense
 cargo run --bin spcli -- finance contacts update 64f000000000000000000000 --name "Customer SA" --contact-type customer
 cargo run --bin spcli -- finance forecasts update 64f000000000000000000000 --generated-at 2026-01-01 --start-date 2026-01-01 --end-date 2026-12-31 --currency MXN --projected-income-total 1000 --projected-expense-total 500 --projected-net 500
+cargo run --bin spcli -- finance planned-entries update 64f000000000000000000000 --name "Fuel" --flow-type expense --category-id 64f000000000000000000001 --account-expected-id 64f000000000000000000002 --amount-estimated 550 --due-date 2026-07-02T00:00:00Z
+cargo run --bin spcli -- finance planned-entries pay 64f000000000000000000000 --paid-at 2026-07-03T00:00:00Z --amount 550 --account-id 64f000000000000000000002
+cargo run --bin spcli -- finance planned-entries bulk-pay --entry-id 64f000000000000000000000 --entry-id 64f000000000000000000001 --paid-at 2026-07-03T00:00:00Z --account-id 64f000000000000000000002
+cargo run --bin spcli -- finance planned-entries delete 64f000000000000000000000 --yes
 cargo run --bin spcli -- finance transactions update 64f000000000000000000000 --date 2026-07-01T12:00:00Z --description "Fuel" --transaction-type expense --category-id 64f000000000000000000001 --account-from-id 64f000000000000000000002 --amount 550
 cargo run --bin spcli -- finance transactions delete 64f000000000000000000000 --yes
 cargo run --bin spcli -- finance contacts delete 64f000000000000000000000 --yes

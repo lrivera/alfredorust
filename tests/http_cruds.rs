@@ -137,14 +137,6 @@ fn build_app(state: Arc<AppState>) -> Router {
             get(routes::planned_entries_index).post(routes::planned_entries_create),
         )
         .route(
-            "/api/admin/planned-entries",
-            get(routes::planned_entries_data_api),
-        )
-        .route(
-            "/api/admin/planned-entries/{id}",
-            get(routes::planned_entry_data_api),
-        )
-        .route(
             "/admin/planned_entries/new",
             get(routes::planned_entries_new),
         )
@@ -160,7 +152,30 @@ fn build_app(state: Arc<AppState>) -> Router {
             "/admin/planned_entries/bulk_pay",
             get(routes::planned_entries_bulk_pay_form).post(routes::planned_entries_bulk_pay),
         )
-        // POST routes for planned entries omitted in tests (use private types)
+        .route(
+            "/api/admin/planned-entries",
+            get(routes::planned_entries_data_api).post(routes::planned_entries_create_api),
+        )
+        .route(
+            "/api/admin/planned-entries/bulk-pay",
+            post(routes::planned_entries_bulk_pay_api),
+        )
+        .route(
+            "/api/admin/planned-entries/{id}",
+            get(routes::planned_entry_data_api),
+        )
+        .route(
+            "/api/admin/planned-entries/{id}/update",
+            post(routes::planned_entry_update_api),
+        )
+        .route(
+            "/api/admin/planned-entries/{id}/delete",
+            post(routes::planned_entry_delete_api),
+        )
+        .route(
+            "/api/admin/planned-entries/{id}/pay",
+            post(routes::planned_entry_pay_api),
+        )
         .route(
             "/admin/transactions",
             get(routes::transactions_index).post(routes::transactions_create),
@@ -859,6 +874,257 @@ async fn finance_json_endpoints_scope_to_active_tenant() {
     let app = build_app(shared);
     let (status, _) = get_with_cookie(app, host_a, "/api/admin/accounts", &staff_token).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
+
+    common::teardown(Some(ctx)).await;
+}
+
+#[tokio::test]
+async fn planned_entry_json_mutations_scope_and_create_payment_side_effects() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let shared = Arc::new(state.clone());
+
+    let company_a = create_company(
+        &state,
+        "Planned Entry Mutation A",
+        "planned-entry-mutation-a",
+        "MXN",
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+    let company_b = create_company(
+        &state,
+        "Planned Entry Mutation B",
+        "planned-entry-mutation-b",
+        "MXN",
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+    let admin_id = create_user(
+        &state,
+        "planned-entry-mutation-admin@example.com",
+        "SECRET",
+        &[(company_a.clone(), UserRole::Admin)],
+    )
+    .await
+    .unwrap();
+    let admin = get_user_by_id(&state, &admin_id).await.unwrap().unwrap();
+    let token = create_session(&state, &admin.email).await.unwrap();
+    let host_a = "planned-entry-mutation-a.miapp.local";
+
+    let category_a = create_category(
+        &state,
+        &company_a,
+        "Planned Entry Category A",
+        FlowType::Expense,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let category_b = create_category(
+        &state,
+        &company_b,
+        "Planned Entry Category B",
+        FlowType::Expense,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let account_a = create_account(
+        &state,
+        &company_a,
+        "Planned Entry Account A",
+        AccountType::Bank,
+        "MXN",
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let app = build_app(shared.clone());
+    let (status, body) = post_json_with_cookie(
+        app,
+        host_a,
+        "/api/admin/planned-entries",
+        &token,
+        serde_json::json!({
+            "name": "Planned entry created",
+            "flow_type": "expense",
+            "category_id": category_a.to_hex(),
+            "account_expected_id": account_a.to_hex(),
+            "amount_estimated": 100.0,
+            "due_date": "2026-07-01T00:00:00Z",
+            "status": "planned",
+            "notes": "created"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "body: {body}");
+    let created: serde_json::Value = serde_json::from_str(&body).expect("create response JSON");
+    let entry_id = created["id"].as_str().expect("created id").to_string();
+
+    let app = build_app(shared.clone());
+    let (status, body) = post_json_with_cookie(
+        app,
+        host_a,
+        &format!("/api/admin/planned-entries/{entry_id}/update"),
+        &token,
+        serde_json::json!({
+            "name": "Planned entry updated",
+            "flow_type": "expense",
+            "category_id": category_a.to_hex(),
+            "account_expected_id": account_a.to_hex(),
+            "amount_estimated": 120.0,
+            "due_date": "2026-07-02T00:00:00Z",
+            "status": "planned",
+            "notes": "updated"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let updated: serde_json::Value = serde_json::from_str(&body).expect("update response JSON");
+    assert_eq!(
+        updated["side_effects"]["planned_entry_recalculated"],
+        entry_id
+    );
+
+    let app = build_app(shared.clone());
+    let (status, _body) = post_json_with_cookie(
+        app,
+        host_a,
+        "/api/admin/planned-entries",
+        &token,
+        serde_json::json!({
+            "name": "Bad tenant ref",
+            "flow_type": "expense",
+            "category_id": category_b.to_hex(),
+            "account_expected_id": account_a.to_hex(),
+            "amount_estimated": 1.0,
+            "due_date": "2026-07-01T00:00:00Z",
+            "status": "planned"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let app = build_app(shared.clone());
+    let (status, body) = post_json_with_cookie(
+        app,
+        host_a,
+        &format!("/api/admin/planned-entries/{entry_id}/pay"),
+        &token,
+        serde_json::json!({
+            "paid_at": "2026-07-03T00:00:00Z",
+            "amount": 120.0,
+            "account_id": account_a.to_hex(),
+            "notes": "paid"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let paid: serde_json::Value = serde_json::from_str(&body).expect("pay response JSON");
+    assert_eq!(paid["side_effects"]["transaction_created"], true);
+    assert_eq!(paid["side_effects"]["planned_entry_recalculated"], entry_id);
+    let transactions = list_transactions(&state).await.unwrap();
+    assert!(transactions.iter().any(|tx| {
+        tx.company_id == company_a
+            && tx.planned_entry_id.as_ref().map(|id| id.to_hex()) == Some(entry_id.clone())
+    }));
+
+    let bulk_a = create_planned_entry(
+        &state,
+        &company_a,
+        None,
+        None,
+        None,
+        "Bulk pay A",
+        FlowType::Expense,
+        &category_a,
+        &account_a,
+        None,
+        10.0,
+        DateTime::parse_rfc3339_str("2026-08-01T00:00:00Z").unwrap(),
+        PlannedStatus::Planned,
+        None,
+    )
+    .await
+    .unwrap();
+    let bulk_b = create_planned_entry(
+        &state,
+        &company_a,
+        None,
+        None,
+        None,
+        "Bulk pay B",
+        FlowType::Expense,
+        &category_a,
+        &account_a,
+        None,
+        20.0,
+        DateTime::parse_rfc3339_str("2026-08-02T00:00:00Z").unwrap(),
+        PlannedStatus::Planned,
+        None,
+    )
+    .await
+    .unwrap();
+    let app = build_app(shared.clone());
+    let (status, body) = post_json_with_cookie(
+        app,
+        host_a,
+        "/api/admin/planned-entries/bulk-pay",
+        &token,
+        serde_json::json!({
+            "entry_ids": [bulk_a.to_hex(), bulk_b.to_hex()],
+            "paid_at": "2026-08-03T00:00:00Z",
+            "account_id": account_a.to_hex()
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let bulk_paid: serde_json::Value = serde_json::from_str(&body).expect("bulk pay response JSON");
+    assert_eq!(bulk_paid["side_effects"]["transactions_created"], 2);
+
+    let delete_target = create_planned_entry(
+        &state,
+        &company_a,
+        None,
+        None,
+        None,
+        "Delete planned entry",
+        FlowType::Expense,
+        &category_a,
+        &account_a,
+        None,
+        5.0,
+        DateTime::parse_rfc3339_str("2026-09-01T00:00:00Z").unwrap(),
+        PlannedStatus::Planned,
+        None,
+    )
+    .await
+    .unwrap();
+    let app = build_app(shared.clone());
+    let (status, body) = post_json_with_cookie(
+        app,
+        host_a,
+        &format!(
+            "/api/admin/planned-entries/{}/delete",
+            delete_target.to_hex()
+        ),
+        &token,
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
 
     common::teardown(Some(ctx)).await;
 }

@@ -115,6 +115,57 @@ pub struct PlannedEntryFormData {
     notes: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct PlannedEntryPayload {
+    pub name: String,
+    pub flow_type: String,
+    pub category_id: String,
+    pub account_expected_id: String,
+    pub contact_id: Option<String>,
+    pub project_id: Option<String>,
+    pub amount_estimated: f64,
+    pub due_date: String,
+    pub status: String,
+    pub recurring_plan_id: Option<String>,
+    pub recurring_plan_version: Option<i32>,
+    pub notes: Option<String>,
+}
+
+struct ParsedPlannedEntryPayload {
+    name: String,
+    flow_type: crate::models::FlowType,
+    category_id: ObjectId,
+    account_expected_id: ObjectId,
+    contact_id: Option<ObjectId>,
+    project_id: Option<ObjectId>,
+    amount_estimated: f64,
+    due_date: mongodb::bson::DateTime,
+    status: crate::models::PlannedStatus,
+    recurring_plan_id: Option<ObjectId>,
+    recurring_plan_version: Option<i32>,
+    notes: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct PlannedEntryPayPayload {
+    pub paid_at: String,
+    pub amount: f64,
+    pub account_id: String,
+    pub project_id: Option<String>,
+    pub parent_planned_entry_id: Option<String>,
+    pub notes: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct PlannedEntryBulkPayPayload {
+    pub entry_ids: Vec<String>,
+    pub paid_at: String,
+    pub account_id: String,
+    pub project_id: Option<String>,
+    pub parent_planned_entry_id: Option<String>,
+    pub notes: Option<String>,
+}
+
 pub async fn planned_entries_index(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -180,6 +231,160 @@ pub async fn planned_entry_data_api(
     planned_entry_data(entry, session_user.user().company_name.clone())
         .map(Json)
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+pub async fn planned_entries_create_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<PlannedEntryPayload>,
+) -> impl IntoResponse {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+    let parsed = match parse_planned_entry_payload(&state, &company_id, payload).await {
+        Ok(parsed) => parsed,
+        Err(status) => return status.into_response(),
+    };
+
+    match create_planned_entry(
+        &state,
+        &company_id,
+        parsed.recurring_plan_id,
+        parsed.recurring_plan_version,
+        None,
+        &parsed.name,
+        parsed.flow_type,
+        &parsed.category_id,
+        &parsed.account_expected_id,
+        parsed.contact_id,
+        parsed.amount_estimated,
+        parsed.due_date,
+        parsed.status,
+        parsed.notes,
+    )
+    .await
+    {
+        Ok(id) => {
+            if parsed.project_id.is_some() {
+                if update_planned_entry_project_links(
+                    &state,
+                    &id,
+                    &company_id,
+                    parsed.project_id,
+                    None,
+                )
+                .await
+                .is_err()
+                {
+                    return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                }
+            }
+            (
+                StatusCode::CREATED,
+                Json(serde_json::json!({
+                    "id": id.to_hex(),
+                    "side_effects": { "project_link_updated": true }
+                })),
+            )
+                .into_response()
+        }
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+pub async fn planned_entry_update_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(payload): Json<PlannedEntryPayload>,
+) -> impl IntoResponse {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+    let object_id = match ObjectId::from_str(&id) {
+        Ok(id) => id,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    if let Err(status) = match get_planned_entry_by_id(&state, &object_id).await {
+        Ok(Some(entry)) => ensure_same_company(&entry.company_id, &company_id),
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    } {
+        return status.into_response();
+    }
+    let parsed = match parse_planned_entry_payload(&state, &company_id, payload).await {
+        Ok(parsed) => parsed,
+        Err(status) => return status.into_response(),
+    };
+
+    match update_planned_entry(
+        &state,
+        &object_id,
+        &company_id,
+        parsed.recurring_plan_id,
+        parsed.recurring_plan_version,
+        &parsed.name,
+        parsed.flow_type,
+        &parsed.category_id,
+        &parsed.account_expected_id,
+        parsed.contact_id,
+        parsed.amount_estimated,
+        parsed.due_date,
+        parsed.status,
+        parsed.notes,
+    )
+    .await
+    {
+        Ok(_) => {
+            if update_planned_entry_project_links(
+                &state,
+                &object_id,
+                &company_id,
+                parsed.project_id,
+                None,
+            )
+            .await
+            .is_err()
+            {
+                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            }
+            Json(serde_json::json!({
+                "ok": true,
+                "side_effects": { "planned_entry_recalculated": object_id.to_hex() }
+            }))
+            .into_response()
+        }
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+pub async fn planned_entry_delete_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+    let object_id = match ObjectId::from_str(&id) {
+        Ok(id) => id,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    if let Err(status) = match get_planned_entry_by_id(&state, &object_id).await {
+        Ok(Some(entry)) => ensure_same_company(&entry.company_id, &company_id),
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    } {
+        return status.into_response();
+    }
+
+    match delete_planned_entry(&state, &object_id).await {
+        Ok(_) => Json(serde_json::json!({ "ok": true })).into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
 }
 
 pub async fn planned_entries_new(
@@ -1060,6 +1265,158 @@ pub async fn planned_entries_pay(
     }
 }
 
+pub async fn planned_entry_pay_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(payload): Json<PlannedEntryPayPayload>,
+) -> impl IntoResponse {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+    let object_id = match ObjectId::from_str(&id) {
+        Ok(id) => id,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    let entry = match get_planned_entry_by_id(&state, &object_id).await {
+        Ok(Some(entry)) => {
+            if let Err(status) = ensure_same_company(&entry.company_id, &company_id) {
+                return status.into_response();
+            }
+            entry
+        }
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+    if matches!(
+        entry.status,
+        crate::models::PlannedStatus::Covered | crate::models::PlannedStatus::Cancelled
+    ) {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    let payment =
+        match parse_planned_entry_payment_payload(&state, &company_id, &entry, &object_id, payload)
+            .await
+        {
+            Ok(payment) => payment,
+            Err(status) => return status.into_response(),
+        };
+
+    match pay_planned_entry_with_project(
+        &state,
+        &object_id,
+        &company_id,
+        &payment.account_id,
+        payment.amount,
+        payment.paid_at,
+        payment.notes,
+        payment.project_id,
+        payment.parent_planned_entry_id,
+    )
+    .await
+    {
+        Ok(_) => Json(serde_json::json!({
+            "ok": true,
+            "side_effects": {
+                "transaction_created": true,
+                "planned_entry_recalculated": object_id.to_hex()
+            }
+        }))
+        .into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+pub async fn planned_entries_bulk_pay_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<PlannedEntryBulkPayPayload>,
+) -> impl IntoResponse {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+    let entry_ids = match parse_entry_ids(&payload.entry_ids.join(",")) {
+        Ok(ids) => ids,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    let entries = match load_payable_entries(&state, &company_id, &entry_ids).await {
+        Ok(entries) => entries,
+        Err(status) => return status.into_response(),
+    };
+    let account_id = match parse_object_id(&payload.account_id, "account_id") {
+        Ok(id) => id,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    if let Err(status) =
+        validate_company_refs(&state, &company_id, None, Some(&account_id), None).await
+    {
+        return status.into_response();
+    }
+    let paid_at = match parse_datetime_field(&payload.paid_at, "paid_at") {
+        Ok(date) => date,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    let project_id =
+        match parse_optional_project_id(&state, &company_id, payload.project_id.as_deref()).await {
+            Ok(project_id) => project_id,
+            Err(status) => return status.into_response(),
+        };
+    let parent_planned_entry_id = match parse_optional_parent_entry_id(
+        &state,
+        &company_id,
+        payload.parent_planned_entry_id.as_deref(),
+        project_id.as_ref(),
+    )
+    .await
+    {
+        Ok(parent_id) => parent_id,
+        Err(status) => return status.into_response(),
+    };
+    let notes = clean_opt(payload.notes);
+
+    let mut paid_ids = Vec::new();
+    for entry in entries {
+        let Some(entry_id) = entry.id else {
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        };
+        if pay_planned_entry_with_project(
+            &state,
+            &entry_id,
+            &company_id,
+            &account_id,
+            entry.amount_estimated,
+            paid_at,
+            notes.clone(),
+            project_id.clone(),
+            parent_planned_entry_id.clone(),
+        )
+        .await
+        .is_err()
+        {
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+        paid_ids.push(entry_id.to_hex());
+    }
+
+    Json(serde_json::json!({
+        "ok": true,
+        "paid_entry_ids": paid_ids,
+        "side_effects": { "transactions_created": paid_ids.len() }
+    }))
+    .into_response()
+}
+
+struct ParsedPaymentPayload {
+    paid_at: mongodb::bson::DateTime,
+    amount: f64,
+    account_id: ObjectId,
+    project_id: Option<ObjectId>,
+    parent_planned_entry_id: Option<ObjectId>,
+    notes: Option<String>,
+}
+
 async fn render_pay_form_error(
     state: &AppState,
     company_id: &ObjectId,
@@ -1149,6 +1506,109 @@ fn parse_entry_ids(value: &str) -> Result<Vec<ObjectId>, ()> {
         return Err(());
     }
     Ok(ids)
+}
+
+async fn parse_planned_entry_payload(
+    state: &AppState,
+    company_id: &ObjectId,
+    payload: PlannedEntryPayload,
+) -> Result<ParsedPlannedEntryPayload, StatusCode> {
+    let name = payload.name.trim().to_string();
+    if name.is_empty() || payload.amount_estimated < 0.0 {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let flow_type = parse_flow_type(&payload.flow_type).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let category_id = parse_object_id(&payload.category_id, "category_id")
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    let account_expected_id = parse_object_id(&payload.account_expected_id, "account_expected_id")
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    let contact_id = parse_optional_object_id(payload.contact_id)?;
+    let project_id =
+        parse_optional_project_id(state, company_id, payload.project_id.as_deref()).await?;
+    let due_date =
+        parse_datetime_field(&payload.due_date, "due_date").map_err(|_| StatusCode::BAD_REQUEST)?;
+    let status = parse_planned_status(&payload.status).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let recurring_plan_id = parse_optional_object_id(payload.recurring_plan_id)?;
+
+    validate_company_refs(
+        state,
+        company_id,
+        Some(&category_id),
+        Some(&account_expected_id),
+        contact_id.as_ref(),
+    )
+    .await?;
+    if let Some(ref plan_id) = recurring_plan_id {
+        validate_recurring_plan_company(state, plan_id, company_id).await?;
+    }
+
+    Ok(ParsedPlannedEntryPayload {
+        name,
+        flow_type,
+        category_id,
+        account_expected_id,
+        contact_id,
+        project_id,
+        amount_estimated: payload.amount_estimated,
+        due_date,
+        status,
+        recurring_plan_id,
+        recurring_plan_version: payload.recurring_plan_version,
+        notes: clean_opt(payload.notes),
+    })
+}
+
+async fn parse_planned_entry_payment_payload(
+    state: &AppState,
+    company_id: &ObjectId,
+    entry: &crate::models::PlannedEntry,
+    entry_id: &ObjectId,
+    payload: PlannedEntryPayPayload,
+) -> Result<ParsedPaymentPayload, StatusCode> {
+    if payload.amount < 0.0 {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let account_id =
+        parse_object_id(&payload.account_id, "account_id").map_err(|_| StatusCode::BAD_REQUEST)?;
+    validate_company_refs(state, company_id, None, Some(&account_id), None).await?;
+    let paid_at =
+        parse_datetime_field(&payload.paid_at, "paid_at").map_err(|_| StatusCode::BAD_REQUEST)?;
+    let project_id = match payload.project_id.as_deref() {
+        Some(value) if !value.trim().is_empty() => {
+            parse_optional_project_id(state, company_id, Some(value)).await?
+        }
+        _ => entry.project_id.clone(),
+    };
+    let parent_planned_entry_id = match payload.parent_planned_entry_id.as_deref() {
+        Some(value) if !value.trim().is_empty() => {
+            let parent_id =
+                parse_optional_parent_entry_id(state, company_id, Some(value), project_id.as_ref())
+                    .await?;
+            if parent_id.as_ref() == Some(entry_id) {
+                return Err(StatusCode::BAD_REQUEST);
+            }
+            parent_id
+        }
+        _ => entry.parent_planned_entry_id.clone(),
+    };
+
+    Ok(ParsedPaymentPayload {
+        paid_at,
+        amount: payload.amount,
+        account_id,
+        project_id,
+        parent_planned_entry_id,
+        notes: clean_opt(payload.notes),
+    })
+}
+
+fn parse_optional_object_id(value: Option<String>) -> Result<Option<ObjectId>, StatusCode> {
+    match clean_opt(value) {
+        Some(value) => ObjectId::from_str(&value)
+            .map(Some)
+            .map_err(|_| StatusCode::BAD_REQUEST),
+        None => Ok(None),
+    }
 }
 
 async fn load_payable_entries(

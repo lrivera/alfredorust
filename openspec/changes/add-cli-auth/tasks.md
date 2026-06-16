@@ -71,6 +71,7 @@
 - [ ] 8.3 Add contact list/get/create/update/delete commands.
 - [ ] 8.4 Add recurring plan list/get/create/update/delete/generate commands.
 - [ ] 8.5 Add planned entry list/get/create/update/delete/pay/bulk-pay commands.
+- [x] 8.5.1 Add planned entry create/update/delete/pay/bulk-pay JSON APIs and CLI commands with payment side-effect responses.
 - [ ] 8.6 Add transaction list/get/create/update/delete commands.
 - [x] 8.6.1 Add transaction create/update/delete JSON APIs and CLI commands with planned-entry recalculation side-effect responses.
 - [ ] 8.7 Add forecast list/get/create/update/delete commands.

@@ -220,11 +220,27 @@ async fn main() {
         )
         .route(
             "/api/admin/planned-entries",
-            get(routes::planned_entries_data_api),
+            get(routes::planned_entries_data_api).post(routes::planned_entries_create_api),
+        )
+        .route(
+            "/api/admin/planned-entries/bulk-pay",
+            post(routes::planned_entries_bulk_pay_api),
         )
         .route(
             "/api/admin/planned-entries/{id}",
             get(routes::planned_entry_data_api),
+        )
+        .route(
+            "/api/admin/planned-entries/{id}/update",
+            post(routes::planned_entry_update_api),
+        )
+        .route(
+            "/api/admin/planned-entries/{id}/delete",
+            post(routes::planned_entry_delete_api),
+        )
+        .route(
+            "/api/admin/planned-entries/{id}/pay",
+            post(routes::planned_entry_pay_api),
         )
         .route(
             "/admin/planned_entries/new",

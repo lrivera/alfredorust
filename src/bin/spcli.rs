@@ -118,7 +118,7 @@ enum FinanceCommand {
     },
     PlannedEntries {
         #[command(subcommand)]
-        command: ListGetCommand,
+        command: PlannedEntryCommand,
     },
     Transactions {
         #[command(subcommand)]
@@ -133,6 +133,85 @@ enum TransactionCommand {
     Create(TransactionWriteArgs),
     Update(TransactionUpdateArgs),
     Delete(DeleteArgs),
+}
+
+#[derive(Subcommand)]
+enum PlannedEntryCommand {
+    List,
+    Get { id: String },
+    Create(PlannedEntryWriteArgs),
+    Update(PlannedEntryUpdateArgs),
+    Delete(DeleteArgs),
+    Pay(PlannedEntryPayArgs),
+    BulkPay(PlannedEntryBulkPayArgs),
+}
+
+#[derive(Args)]
+struct PlannedEntryWriteArgs {
+    #[arg(long)]
+    name: String,
+    #[arg(long)]
+    flow_type: String,
+    #[arg(long)]
+    category_id: String,
+    #[arg(long)]
+    account_expected_id: String,
+    #[arg(long)]
+    contact_id: Option<String>,
+    #[arg(long)]
+    project_id: Option<String>,
+    #[arg(long)]
+    amount_estimated: f64,
+    #[arg(long)]
+    due_date: String,
+    #[arg(long, default_value = "planned")]
+    status: String,
+    #[arg(long)]
+    recurring_plan_id: Option<String>,
+    #[arg(long)]
+    recurring_plan_version: Option<i32>,
+    #[arg(long)]
+    notes: Option<String>,
+}
+
+#[derive(Args)]
+struct PlannedEntryUpdateArgs {
+    id: String,
+    #[command(flatten)]
+    fields: PlannedEntryWriteArgs,
+}
+
+#[derive(Args)]
+struct PlannedEntryPayArgs {
+    id: String,
+    #[arg(long)]
+    paid_at: String,
+    #[arg(long)]
+    amount: f64,
+    #[arg(long)]
+    account_id: String,
+    #[arg(long)]
+    project_id: Option<String>,
+    #[arg(long)]
+    parent_planned_entry_id: Option<String>,
+    #[arg(long)]
+    notes: Option<String>,
+}
+
+#[derive(Args)]
+struct PlannedEntryBulkPayArgs {
+    #[arg(long = "entry-id", required = true)]
+    entry_ids: Vec<String>,
+    #[arg(long)]
+    paid_at: String,
+    #[arg(long)]
+    account_id: String,
+    #[arg(long)]
+    project_id: Option<String>,
+    #[arg(long)]
+    parent_planned_entry_id: Option<String>,
+    #[arg(long)]
+    notes: Option<String>,
 }
 
 #[derive(Args)]
@@ -725,11 +804,11 @@ async fn run(cli: Cli) -> Result<()> {
                 }
             },
             FinanceCommand::PlannedEntries { command } => match command {
-                ListGetCommand::List => {
+                PlannedEntryCommand::List => {
                     json_get_command("/api/admin/planned-entries", cli.json, "planned entries")
                         .await
                 }
-                ListGetCommand::Get { id } => {
+                PlannedEntryCommand::Get { id } => {
                     json_get_by_id_command(
                         "/api/admin/planned-entries",
                         &id,
@@ -737,6 +816,21 @@ async fn run(cli: Cli) -> Result<()> {
                         "planned entry",
                     )
                     .await
+                }
+                PlannedEntryCommand::Create(args) => planned_entry_create(args, cli.json).await,
+                PlannedEntryCommand::Update(args) => planned_entry_update(args, cli.json).await,
+                PlannedEntryCommand::Delete(args) => {
+                    delete_command(
+                        "/api/admin/planned-entries",
+                        args,
+                        cli.json,
+                        "planned entry",
+                    )
+                    .await
+                }
+                PlannedEntryCommand::Pay(args) => planned_entry_pay(args, cli.json).await,
+                PlannedEntryCommand::BulkPay(args) => {
+                    planned_entries_bulk_pay(args, cli.json).await
                 }
             },
             FinanceCommand::Transactions { command } => match command {
@@ -1191,6 +1285,107 @@ async fn forecast_update(args: ForecastUpdateArgs, json_output: bool) -> Result<
     print_ok_output(&value, json_output, "forecast updated")
 }
 
+async fn planned_entry_create(args: PlannedEntryWriteArgs, json_output: bool) -> Result<()> {
+    let payload = planned_entry_payload(args)?;
+    let mut state = load_state()?;
+    let value = authenticated_post_json(&mut state, "/api/admin/planned-entries", &payload).await?;
+    save_state(&state)?;
+    print_created_output(&value, json_output, "planned entry")
+}
+
+async fn planned_entry_update(args: PlannedEntryUpdateArgs, json_output: bool) -> Result<()> {
+    validate_object_id(&args.id, "id")?;
+    let payload = planned_entry_payload(args.fields)?;
+    let path = format!("/api/admin/planned-entries/{}/update", args.id);
+    let mut state = load_state()?;
+    let value = authenticated_post_json(&mut state, &path, &payload).await?;
+    save_state(&state)?;
+    print_ok_output(&value, json_output, "planned entry updated")
+}
+
+async fn planned_entry_pay(args: PlannedEntryPayArgs, json_output: bool) -> Result<()> {
+    validate_object_id(&args.id, "id")?;
+    validate_object_id(&args.account_id, "account-id")?;
+    validate_optional_object_id(args.project_id.as_deref(), "project-id")?;
+    validate_optional_object_id(
+        args.parent_planned_entry_id.as_deref(),
+        "parent-planned-entry-id",
+    )?;
+    if args.amount < 0.0 {
+        bail!("amount must be greater than or equal to zero");
+    }
+    let paid_at = validate_rfc3339(&args.paid_at, "paid-at")?;
+    let payload = json!({
+        "paid_at": paid_at,
+        "amount": args.amount,
+        "account_id": args.account_id,
+        "project_id": args.project_id,
+        "parent_planned_entry_id": args.parent_planned_entry_id,
+        "notes": args.notes,
+    });
+    let path = format!("/api/admin/planned-entries/{}/pay", args.id);
+    let mut state = load_state()?;
+    let value = authenticated_post_json(&mut state, &path, &payload).await?;
+    save_state(&state)?;
+    print_ok_output(&value, json_output, "planned entry paid")
+}
+
+async fn planned_entries_bulk_pay(args: PlannedEntryBulkPayArgs, json_output: bool) -> Result<()> {
+    for id in &args.entry_ids {
+        validate_object_id(id, "entry-id")?;
+    }
+    validate_object_id(&args.account_id, "account-id")?;
+    validate_optional_object_id(args.project_id.as_deref(), "project-id")?;
+    validate_optional_object_id(
+        args.parent_planned_entry_id.as_deref(),
+        "parent-planned-entry-id",
+    )?;
+    let paid_at = validate_rfc3339(&args.paid_at, "paid-at")?;
+    let payload = json!({
+        "entry_ids": args.entry_ids,
+        "paid_at": paid_at,
+        "account_id": args.account_id,
+        "project_id": args.project_id,
+        "parent_planned_entry_id": args.parent_planned_entry_id,
+        "notes": args.notes,
+    });
+    let mut state = load_state()?;
+    let value =
+        authenticated_post_json(&mut state, "/api/admin/planned-entries/bulk-pay", &payload)
+            .await?;
+    save_state(&state)?;
+    print_ok_output(&value, json_output, "planned entries paid")
+}
+
+fn planned_entry_payload(args: PlannedEntryWriteArgs) -> Result<Value> {
+    validate_non_empty(&args.name, "name")?;
+    validate_flow_type(&args.flow_type)?;
+    validate_planned_status(&args.status)?;
+    validate_object_id(&args.category_id, "category-id")?;
+    validate_object_id(&args.account_expected_id, "account-expected-id")?;
+    validate_optional_object_id(args.contact_id.as_deref(), "contact-id")?;
+    validate_optional_object_id(args.project_id.as_deref(), "project-id")?;
+    validate_optional_object_id(args.recurring_plan_id.as_deref(), "recurring-plan-id")?;
+    if args.amount_estimated < 0.0 {
+        bail!("amount-estimated must be greater than or equal to zero");
+    }
+    let due_date = validate_rfc3339(&args.due_date, "due-date")?;
+    Ok(json!({
+        "name": args.name,
+        "flow_type": args.flow_type,
+        "category_id": args.category_id,
+        "account_expected_id": args.account_expected_id,
+        "contact_id": args.contact_id,
+        "project_id": args.project_id,
+        "amount_estimated": args.amount_estimated,
+        "due_date": due_date,
+        "status": args.status,
+        "recurring_plan_id": args.recurring_plan_id,
+        "recurring_plan_version": args.recurring_plan_version,
+        "notes": args.notes,
+    }))
+}
+
 async fn transaction_create(args: TransactionWriteArgs, json_output: bool) -> Result<()> {
     let payload = transaction_payload(args)?;
     let mut state = load_state()?;
@@ -1596,6 +1791,11 @@ fn print_manifest(json_output: bool) -> Result<()> {
             { "name": "finance recurring-plans get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "recurring_plan" },
             { "name": "finance planned-entries list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "planned_entries" },
             { "name": "finance planned-entries get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "planned_entry" },
+            { "name": "finance planned-entries create", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--name", "--flow-type", "--category-id", "--account-expected-id", "--contact-id", "--project-id", "--amount-estimated", "--due-date", "--status", "--recurring-plan-id", "--recurring-plan-version", "--notes"], "output_schema": "created_id_with_side_effects" },
+            { "name": "finance planned-entries update", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id", "--name", "--flow-type", "--category-id", "--account-expected-id", "--contact-id", "--project-id", "--amount-estimated", "--due-date", "--status", "--recurring-plan-id", "--recurring-plan-version", "--notes"], "output_schema": "ok_with_side_effects" },
+            { "name": "finance planned-entries delete", "auth_required": true, "company_required": true, "destructive": true, "confirmation_flag": "--yes", "arguments": ["id"], "output_schema": "ok" },
+            { "name": "finance planned-entries pay", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id", "--paid-at", "--amount", "--account-id", "--project-id", "--parent-planned-entry-id", "--notes"], "output_schema": "ok_with_side_effects" },
+            { "name": "finance planned-entries bulk-pay", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--entry-id", "--paid-at", "--account-id", "--project-id", "--parent-planned-entry-id", "--notes"], "output_schema": "ok_with_side_effects" },
             { "name": "finance transactions list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "transactions" },
             { "name": "finance transactions get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "transaction" },
             { "name": "finance transactions create", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--date", "--description", "--transaction-type", "--category-id", "--account-from-id", "--account-to-id", "--amount", "--planned-entry-id", "--unconfirmed", "--notes"], "output_schema": "created_id_with_side_effects" },
@@ -2018,6 +2218,22 @@ fn validate_transaction_type(value: &str) -> Result<()> {
     match value {
         "income" | "expense" | "transfer" => Ok(()),
         _ => bail!("transaction-type must be one of: income, expense, transfer"),
+    }
+}
+
+fn validate_flow_type(value: &str) -> Result<()> {
+    match value {
+        "income" | "expense" => Ok(()),
+        _ => bail!("flow-type must be one of: income, expense"),
+    }
+}
+
+fn validate_planned_status(value: &str) -> Result<()> {
+    match value {
+        "planned" | "partially_covered" | "covered" | "overdue" | "cancelled" => Ok(()),
+        _ => {
+            bail!("status must be one of: planned, partially_covered, covered, overdue, cancelled")
+        }
     }
 }
 
