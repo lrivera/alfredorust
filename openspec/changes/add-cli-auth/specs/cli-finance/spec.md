@@ -53,6 +53,13 @@ The system SHALL only implement finance create, update, delete, pay, generate, a
 - **AND** the server validates category, account, contact, recurring-plan, project, and parent planned-entry ownership for the active company
 - **AND** payment responses include transaction creation and planned-entry recalculation side-effect metadata
 
+#### Scenario: Recurring plan is created, updated, deleted, or generated
+
+- **WHEN** the user runs `spcli finance recurring-plans create`, `update`, `delete --yes`, or `generate`
+- **THEN** the CLI consumes tenant-scoped recurring-plan JSON APIs
+- **AND** the server validates category, account, and contact ownership for the active company
+- **AND** responses include planned-entry generation or cleanup side-effect metadata
+
 ### Requirement: CLI finance commands document financial side effects
 
 The system SHALL document side effects for every finance CLI command that can create, update, delete, pay, generate, or link financial records.

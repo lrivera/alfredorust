@@ -114,7 +114,7 @@ enum FinanceCommand {
     },
     RecurringPlans {
         #[command(subcommand)]
-        command: ListGetCommand,
+        command: RecurringPlanCommand,
     },
     PlannedEntries {
         #[command(subcommand)]
@@ -144,6 +144,53 @@ enum PlannedEntryCommand {
     Delete(DeleteArgs),
     Pay(PlannedEntryPayArgs),
     BulkPay(PlannedEntryBulkPayArgs),
+}
+
+#[derive(Subcommand)]
+enum RecurringPlanCommand {
+    List,
+    Get { id: String },
+    Create(RecurringPlanWriteArgs),
+    Update(RecurringPlanUpdateArgs),
+    Delete(DeleteArgs),
+    Generate { id: String },
+}
+
+#[derive(Args)]
+struct RecurringPlanWriteArgs {
+    #[arg(long)]
+    name: String,
+    #[arg(long)]
+    flow_type: String,
+    #[arg(long)]
+    category_id: String,
+    #[arg(long)]
+    account_expected_id: String,
+    #[arg(long)]
+    contact_id: Option<String>,
+    #[arg(long)]
+    amount_estimated: f64,
+    #[arg(long, default_value = "monthly")]
+    frequency: String,
+    #[arg(long)]
+    day_of_month: Option<i32>,
+    #[arg(long)]
+    start_date: String,
+    #[arg(long)]
+    end_date: Option<String>,
+    #[arg(long)]
+    inactive: bool,
+    #[arg(long, default_value_t = 1)]
+    version: i32,
+    #[arg(long)]
+    notes: Option<String>,
+}
+
+#[derive(Args)]
+struct RecurringPlanUpdateArgs {
+    id: String,
+    #[command(flatten)]
+    fields: RecurringPlanWriteArgs,
 }
 
 #[derive(Args)]
@@ -789,11 +836,11 @@ async fn run(cli: Cli) -> Result<()> {
                 }
             },
             FinanceCommand::RecurringPlans { command } => match command {
-                ListGetCommand::List => {
+                RecurringPlanCommand::List => {
                     json_get_command("/api/admin/recurring-plans", cli.json, "recurring plans")
                         .await
                 }
-                ListGetCommand::Get { id } => {
+                RecurringPlanCommand::Get { id } => {
                     json_get_by_id_command(
                         "/api/admin/recurring-plans",
                         &id,
@@ -801,6 +848,20 @@ async fn run(cli: Cli) -> Result<()> {
                         "recurring plan",
                     )
                     .await
+                }
+                RecurringPlanCommand::Create(args) => recurring_plan_create(args, cli.json).await,
+                RecurringPlanCommand::Update(args) => recurring_plan_update(args, cli.json).await,
+                RecurringPlanCommand::Delete(args) => {
+                    delete_command(
+                        "/api/admin/recurring-plans",
+                        args,
+                        cli.json,
+                        "recurring plan",
+                    )
+                    .await
+                }
+                RecurringPlanCommand::Generate { id } => {
+                    recurring_plan_generate(id, cli.json).await
                 }
             },
             FinanceCommand::PlannedEntries { command } => match command {
@@ -1283,6 +1344,70 @@ async fn forecast_update(args: ForecastUpdateArgs, json_output: bool) -> Result<
     let value = authenticated_post_json(&mut state, &path, &payload).await?;
     save_state(&state)?;
     print_ok_output(&value, json_output, "forecast updated")
+}
+
+async fn recurring_plan_create(args: RecurringPlanWriteArgs, json_output: bool) -> Result<()> {
+    let payload = recurring_plan_payload(args)?;
+    let mut state = load_state()?;
+    let value = authenticated_post_json(&mut state, "/api/admin/recurring-plans", &payload).await?;
+    save_state(&state)?;
+    print_created_output(&value, json_output, "recurring plan")
+}
+
+async fn recurring_plan_update(args: RecurringPlanUpdateArgs, json_output: bool) -> Result<()> {
+    validate_object_id(&args.id, "id")?;
+    let payload = recurring_plan_payload(args.fields)?;
+    let path = format!("/api/admin/recurring-plans/{}/update", args.id);
+    let mut state = load_state()?;
+    let value = authenticated_post_json(&mut state, &path, &payload).await?;
+    save_state(&state)?;
+    print_ok_output(&value, json_output, "recurring plan updated")
+}
+
+async fn recurring_plan_generate(id: String, json_output: bool) -> Result<()> {
+    validate_object_id(&id, "id")?;
+    let path = format!("/api/admin/recurring-plans/{id}/generate");
+    let mut state = load_state()?;
+    let value = authenticated_post_json(&mut state, &path, &json!({})).await?;
+    save_state(&state)?;
+    print_ok_output(&value, json_output, "recurring plan generated")
+}
+
+fn recurring_plan_payload(args: RecurringPlanWriteArgs) -> Result<Value> {
+    validate_non_empty(&args.name, "name")?;
+    validate_flow_type(&args.flow_type)?;
+    validate_frequency(&args.frequency)?;
+    validate_object_id(&args.category_id, "category-id")?;
+    validate_object_id(&args.account_expected_id, "account-expected-id")?;
+    validate_optional_object_id(args.contact_id.as_deref(), "contact-id")?;
+    if args.amount_estimated < 0.0 {
+        bail!("amount-estimated must be greater than or equal to zero");
+    }
+    if let Some(day) = args.day_of_month {
+        if !(1..=31).contains(&day) {
+            bail!("day-of-month must be between 1 and 31");
+        }
+    }
+    let start_date = validate_rfc3339(&args.start_date, "start-date")?;
+    let end_date = match args.end_date.as_deref() {
+        Some(value) => Some(validate_rfc3339(value, "end-date")?),
+        None => None,
+    };
+    Ok(json!({
+        "name": args.name,
+        "flow_type": args.flow_type,
+        "category_id": args.category_id,
+        "account_expected_id": args.account_expected_id,
+        "contact_id": args.contact_id,
+        "amount_estimated": args.amount_estimated,
+        "frequency": args.frequency,
+        "day_of_month": args.day_of_month,
+        "start_date": start_date,
+        "end_date": end_date,
+        "is_active": !args.inactive,
+        "version": args.version,
+        "notes": args.notes,
+    }))
 }
 
 async fn planned_entry_create(args: PlannedEntryWriteArgs, json_output: bool) -> Result<()> {
@@ -1789,6 +1914,10 @@ fn print_manifest(json_output: bool) -> Result<()> {
             { "name": "finance forecasts delete", "auth_required": true, "company_required": true, "destructive": true, "confirmation_flag": "--yes", "arguments": ["id"], "output_schema": "ok" },
             { "name": "finance recurring-plans list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "recurring_plans" },
             { "name": "finance recurring-plans get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "recurring_plan" },
+            { "name": "finance recurring-plans create", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--name", "--flow-type", "--category-id", "--account-expected-id", "--contact-id", "--amount-estimated", "--frequency", "--day-of-month", "--start-date", "--end-date", "--inactive", "--version", "--notes"], "output_schema": "created_id_with_side_effects" },
+            { "name": "finance recurring-plans update", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id", "--name", "--flow-type", "--category-id", "--account-expected-id", "--contact-id", "--amount-estimated", "--frequency", "--day-of-month", "--start-date", "--end-date", "--inactive", "--version", "--notes"], "output_schema": "ok_with_side_effects" },
+            { "name": "finance recurring-plans delete", "auth_required": true, "company_required": true, "destructive": true, "confirmation_flag": "--yes", "arguments": ["id"], "output_schema": "ok_with_side_effects" },
+            { "name": "finance recurring-plans generate", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "ok_with_side_effects" },
             { "name": "finance planned-entries list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "planned_entries" },
             { "name": "finance planned-entries get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "planned_entry" },
             { "name": "finance planned-entries create", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--name", "--flow-type", "--category-id", "--account-expected-id", "--contact-id", "--project-id", "--amount-estimated", "--due-date", "--status", "--recurring-plan-id", "--recurring-plan-version", "--notes"], "output_schema": "created_id_with_side_effects" },
@@ -2225,6 +2354,13 @@ fn validate_flow_type(value: &str) -> Result<()> {
     match value {
         "income" | "expense" => Ok(()),
         _ => bail!("flow-type must be one of: income, expense"),
+    }
+}
+
+fn validate_frequency(value: &str) -> Result<()> {
+    match value {
+        "monthly" | "weekly" => Ok(()),
+        _ => bail!("frequency must be one of: monthly, weekly"),
     }
 }
 

@@ -117,11 +117,23 @@ fn build_app(state: Arc<AppState>) -> Router {
         )
         .route(
             "/api/admin/recurring-plans",
-            get(routes::recurring_plans_data_api),
+            get(routes::recurring_plans_data_api).post(routes::recurring_plans_create_api),
         )
         .route(
             "/api/admin/recurring-plans/{id}",
             get(routes::recurring_plan_data_api),
+        )
+        .route(
+            "/api/admin/recurring-plans/{id}/update",
+            post(routes::recurring_plan_update_api),
+        )
+        .route(
+            "/api/admin/recurring-plans/{id}/delete",
+            post(routes::recurring_plan_delete_api),
+        )
+        .route(
+            "/api/admin/recurring-plans/{id}/generate",
+            post(routes::recurring_plan_generate_api),
         )
         .route(
             "/admin/recurring_plans/new",
@@ -131,7 +143,6 @@ fn build_app(state: Arc<AppState>) -> Router {
             "/admin/recurring_plans/{id}/edit",
             get(routes::recurring_plans_edit),
         )
-        // POST routes for recurring plans omitted in tests (use private types)
         .route(
             "/admin/planned_entries",
             get(routes::planned_entries_index).post(routes::planned_entries_create),
@@ -874,6 +885,186 @@ async fn finance_json_endpoints_scope_to_active_tenant() {
     let app = build_app(shared);
     let (status, _) = get_with_cookie(app, host_a, "/api/admin/accounts", &staff_token).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
+
+    common::teardown(Some(ctx)).await;
+}
+
+#[tokio::test]
+async fn recurring_plan_json_mutations_scope_and_report_generation_side_effects() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let shared = Arc::new(state.clone());
+
+    let company_a = create_company(
+        &state,
+        "Recurring Plan Mutation A",
+        "recurring-plan-mutation-a",
+        "MXN",
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+    let company_b = create_company(
+        &state,
+        "Recurring Plan Mutation B",
+        "recurring-plan-mutation-b",
+        "MXN",
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+    let admin_id = create_user(
+        &state,
+        "recurring-plan-mutation-admin@example.com",
+        "SECRET",
+        &[(company_a.clone(), UserRole::Admin)],
+    )
+    .await
+    .unwrap();
+    let admin = get_user_by_id(&state, &admin_id).await.unwrap().unwrap();
+    let token = create_session(&state, &admin.email).await.unwrap();
+    let host_a = "recurring-plan-mutation-a.miapp.local";
+
+    let category_a = create_category(
+        &state,
+        &company_a,
+        "Recurring Plan Category A",
+        FlowType::Expense,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let category_b = create_category(
+        &state,
+        &company_b,
+        "Recurring Plan Category B",
+        FlowType::Expense,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let account_a = create_account(
+        &state,
+        &company_a,
+        "Recurring Plan Account A",
+        AccountType::Bank,
+        "MXN",
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let app = build_app(shared.clone());
+    let (status, body) = post_json_with_cookie(
+        app,
+        host_a,
+        "/api/admin/recurring-plans",
+        &token,
+        serde_json::json!({
+            "name": "Recurring plan created",
+            "flow_type": "expense",
+            "category_id": category_a.to_hex(),
+            "account_expected_id": account_a.to_hex(),
+            "amount_estimated": 100.0,
+            "frequency": "monthly",
+            "day_of_month": 15,
+            "start_date": "2026-07-01T00:00:00Z",
+            "is_active": true,
+            "version": 1,
+            "notes": "created"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "body: {body}");
+    let created: serde_json::Value = serde_json::from_str(&body).expect("create response JSON");
+    let plan_id = created["id"].as_str().expect("created id").to_string();
+    assert!(
+        created["side_effects"]["planned_entries_generated"]
+            .as_u64()
+            .unwrap_or(0)
+            > 0
+    );
+
+    let app = build_app(shared.clone());
+    let (status, body) = post_json_with_cookie(
+        app,
+        host_a,
+        &format!("/api/admin/recurring-plans/{plan_id}/update"),
+        &token,
+        serde_json::json!({
+            "name": "Recurring plan updated",
+            "flow_type": "expense",
+            "category_id": category_a.to_hex(),
+            "account_expected_id": account_a.to_hex(),
+            "amount_estimated": 125.0,
+            "frequency": "monthly",
+            "day_of_month": 20,
+            "start_date": "2026-07-01T00:00:00Z",
+            "is_active": true,
+            "version": 1,
+            "notes": "updated"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let updated: serde_json::Value = serde_json::from_str(&body).expect("update response JSON");
+    assert_eq!(updated["side_effects"]["previous_version"], 1);
+
+    let app = build_app(shared.clone());
+    let (status, _body) = post_json_with_cookie(
+        app,
+        host_a,
+        "/api/admin/recurring-plans",
+        &token,
+        serde_json::json!({
+            "name": "Bad tenant ref",
+            "flow_type": "expense",
+            "category_id": category_b.to_hex(),
+            "account_expected_id": account_a.to_hex(),
+            "amount_estimated": 1.0,
+            "frequency": "monthly",
+            "start_date": "2026-07-01T00:00:00Z"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let app = build_app(shared.clone());
+    let (status, body) = post_json_with_cookie(
+        app,
+        host_a,
+        &format!("/api/admin/recurring-plans/{plan_id}/generate"),
+        &token,
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let generated: serde_json::Value = serde_json::from_str(&body).expect("generate response JSON");
+    assert!(
+        generated["side_effects"]["planned_entries_after"]
+            .as_u64()
+            .unwrap_or(0)
+            > 0
+    );
+
+    let app = build_app(shared);
+    let (status, body) = post_json_with_cookie(
+        app,
+        host_a,
+        &format!("/api/admin/recurring-plans/{plan_id}/delete"),
+        &token,
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
 
     common::teardown(Some(ctx)).await;
 }

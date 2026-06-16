@@ -188,11 +188,23 @@ async fn main() {
         )
         .route(
             "/api/admin/recurring-plans",
-            get(routes::recurring_plans_data_api),
+            get(routes::recurring_plans_data_api).post(routes::recurring_plans_create_api),
         )
         .route(
             "/api/admin/recurring-plans/{id}",
             get(routes::recurring_plan_data_api),
+        )
+        .route(
+            "/api/admin/recurring-plans/{id}/update",
+            post(routes::recurring_plan_update_api),
+        )
+        .route(
+            "/api/admin/recurring-plans/{id}/delete",
+            post(routes::recurring_plan_delete_api),
+        )
+        .route(
+            "/api/admin/recurring-plans/{id}/generate",
+            post(routes::recurring_plan_generate_api),
         )
         .route(
             "/admin/recurring_plans/new",

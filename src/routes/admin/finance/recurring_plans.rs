@@ -106,6 +106,49 @@ pub struct RecurringPlanFormData {
     notes: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct RecurringPlanPayload {
+    pub name: String,
+    pub flow_type: String,
+    pub category_id: String,
+    pub account_expected_id: String,
+    pub contact_id: Option<String>,
+    pub amount_estimated: f64,
+    pub frequency: String,
+    pub day_of_month: Option<i32>,
+    pub start_date: String,
+    pub end_date: Option<String>,
+    #[serde(default = "default_active")]
+    pub is_active: bool,
+    #[serde(default = "default_version")]
+    pub version: i32,
+    pub notes: Option<String>,
+}
+
+struct ParsedRecurringPlanPayload {
+    name: String,
+    flow_type: crate::models::FlowType,
+    category_id: ObjectId,
+    account_expected_id: ObjectId,
+    contact_id: Option<ObjectId>,
+    amount_estimated: f64,
+    frequency: String,
+    day_of_month: Option<i32>,
+    start_date: mongodb::bson::DateTime,
+    end_date: Option<mongodb::bson::DateTime>,
+    is_active: bool,
+    version: i32,
+    notes: Option<String>,
+}
+
+fn default_active() -> bool {
+    true
+}
+
+fn default_version() -> i32 {
+    1
+}
+
 pub async fn recurring_plans_index(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -172,6 +215,200 @@ pub async fn recurring_plan_data_api(
     recurring_plan_data(plan, session_user.user().company_name.clone())
         .map(Json)
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+pub async fn recurring_plans_create_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<RecurringPlanPayload>,
+) -> impl IntoResponse {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+    let parsed = match parse_recurring_plan_payload(&state, &company_id, payload).await {
+        Ok(parsed) => parsed,
+        Err(status) => return status.into_response(),
+    };
+    match create_recurring_plan(
+        &state,
+        &company_id,
+        &parsed.name,
+        parsed.flow_type,
+        &parsed.category_id,
+        &parsed.account_expected_id,
+        parsed.contact_id,
+        parsed.amount_estimated,
+        &parsed.frequency,
+        parsed.day_of_month,
+        parsed.start_date,
+        parsed.end_date,
+        parsed.is_active,
+        parsed.version,
+        parsed.notes,
+    )
+    .await
+    {
+        Ok(id) => {
+            let generated_count = count_plan_entries(&state, &id).await.unwrap_or(0);
+            (
+                StatusCode::CREATED,
+                Json(serde_json::json!({
+                    "id": id.to_hex(),
+                    "side_effects": { "planned_entries_generated": generated_count }
+                })),
+            )
+                .into_response()
+        }
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+pub async fn recurring_plan_update_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(payload): Json<RecurringPlanPayload>,
+) -> impl IntoResponse {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+    let object_id = match ObjectId::from_str(&id) {
+        Ok(id) => id,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    let existing = match get_recurring_plan_by_id(&state, &object_id).await {
+        Ok(Some(plan)) => {
+            if let Err(status) = ensure_same_company(&plan.company_id, &company_id) {
+                return status.into_response();
+            }
+            plan
+        }
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+    let parsed = match parse_recurring_plan_payload(&state, &company_id, payload).await {
+        Ok(parsed) => parsed,
+        Err(status) => return status.into_response(),
+    };
+    let before_count = count_plan_entries(&state, &object_id).await.unwrap_or(0);
+
+    match update_recurring_plan(
+        &state,
+        &object_id,
+        &company_id,
+        &parsed.name,
+        parsed.flow_type,
+        &parsed.category_id,
+        &parsed.account_expected_id,
+        parsed.contact_id,
+        parsed.amount_estimated,
+        &parsed.frequency,
+        parsed.day_of_month,
+        parsed.start_date,
+        parsed.end_date,
+        parsed.is_active,
+        parsed.version,
+        parsed.notes,
+    )
+    .await
+    {
+        Ok(_) => {
+            let after_count = count_plan_entries(&state, &object_id).await.unwrap_or(0);
+            Json(serde_json::json!({
+                "ok": true,
+                "side_effects": {
+                    "previous_version": existing.version,
+                    "planned_entries_before": before_count,
+                    "planned_entries_after": after_count
+                }
+            }))
+            .into_response()
+        }
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+pub async fn recurring_plan_delete_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+    let object_id = match ObjectId::from_str(&id) {
+        Ok(id) => id,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    if let Err(status) = match get_recurring_plan_by_id(&state, &object_id).await {
+        Ok(Some(plan)) => ensure_same_company(&plan.company_id, &company_id),
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    } {
+        return status.into_response();
+    }
+    let before_count = count_plan_entries(&state, &object_id).await.unwrap_or(0);
+
+    match delete_recurring_plan(&state, &object_id).await {
+        Ok(_) => {
+            let after_count = count_plan_entries(&state, &object_id).await.unwrap_or(0);
+            Json(serde_json::json!({
+                "ok": true,
+                "side_effects": {
+                    "planned_entries_before": before_count,
+                    "planned_entries_after": after_count
+                }
+            }))
+            .into_response()
+        }
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+pub async fn recurring_plan_generate_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+    let object_id = match ObjectId::from_str(&id) {
+        Ok(id) => id,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    if let Err(status) = match get_recurring_plan_by_id(&state, &object_id).await {
+        Ok(Some(plan)) => ensure_same_company(&plan.company_id, &company_id),
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    } {
+        return status.into_response();
+    }
+    let before_count = count_plan_entries(&state, &object_id).await.unwrap_or(0);
+
+    match regenerate_planned_entries_for_plan_id(&state, &object_id).await {
+        Ok(_) => {
+            let after_count = count_plan_entries(&state, &object_id).await.unwrap_or(0);
+            Json(serde_json::json!({
+                "ok": true,
+                "side_effects": {
+                    "planned_entries_before": before_count,
+                    "planned_entries_after": after_count,
+                    "planned_entries_generated": after_count.saturating_sub(before_count)
+                }
+            }))
+            .into_response()
+        }
+        Err(err) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": err.to_string() })),
+        )
+            .into_response(),
+    }
 }
 
 pub async fn recurring_plans_new(
@@ -761,6 +998,85 @@ pub async fn recurring_plans_generate(
         Ok(_) => Redirect::to("/admin/recurring_plans").into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
+}
+
+async fn parse_recurring_plan_payload(
+    state: &AppState,
+    company_id: &ObjectId,
+    payload: RecurringPlanPayload,
+) -> Result<ParsedRecurringPlanPayload, StatusCode> {
+    let name = payload.name.trim().to_string();
+    if name.is_empty() || payload.amount_estimated < 0.0 {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let frequency = payload.frequency.trim().to_lowercase();
+    if !matches!(frequency.as_str(), "monthly" | "weekly") {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    if let Some(day) = payload.day_of_month {
+        if !(1..=31).contains(&day) {
+            return Err(StatusCode::BAD_REQUEST);
+        }
+    }
+    let flow_type = parse_flow_type(&payload.flow_type).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let category_id = parse_object_id(&payload.category_id, "category_id")
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    let account_expected_id = parse_object_id(&payload.account_expected_id, "account_expected_id")
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    let contact_id = parse_optional_object_id(payload.contact_id)?;
+    let start_date = parse_datetime_field(&payload.start_date, "start_date")
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    let end_date = parse_optional_datetime_field(payload.end_date, "end_date")
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    if let Some(end_date) = end_date.as_ref() {
+        if end_date < &start_date {
+            return Err(StatusCode::BAD_REQUEST);
+        }
+    }
+
+    validate_company_refs(
+        state,
+        company_id,
+        Some(&category_id),
+        Some(&account_expected_id),
+        contact_id.as_ref(),
+    )
+    .await?;
+
+    Ok(ParsedRecurringPlanPayload {
+        name,
+        flow_type,
+        category_id,
+        account_expected_id,
+        contact_id,
+        amount_estimated: payload.amount_estimated,
+        frequency,
+        day_of_month: payload.day_of_month,
+        start_date,
+        end_date,
+        is_active: payload.is_active,
+        version: payload.version,
+        notes: clean_opt(payload.notes),
+    })
+}
+
+fn parse_optional_object_id(value: Option<String>) -> Result<Option<ObjectId>, StatusCode> {
+    match clean_opt(value) {
+        Some(value) => ObjectId::from_str(&value)
+            .map(Some)
+            .map_err(|_| StatusCode::BAD_REQUEST),
+        None => Ok(None),
+    }
+}
+
+async fn count_plan_entries(state: &AppState, plan_id: &ObjectId) -> Result<usize, StatusCode> {
+    let entries = crate::state::list_planned_entries(state)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(entries
+        .into_iter()
+        .filter(|entry| entry.recurring_plan_id.as_ref() == Some(plan_id))
+        .count())
 }
 
 fn recurring_plan_data(plan: RecurringPlan, company: String) -> Option<RecurringPlanData> {
