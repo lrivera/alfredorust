@@ -57,6 +57,10 @@ enum Command {
         #[command(subcommand)]
         command: ProjectsCommand,
     },
+    Orders {
+        #[command(subcommand)]
+        command: OrdersCommand,
+    },
     Resources {
         #[command(subcommand)]
         command: ResourcesCommand,
@@ -339,6 +343,45 @@ enum ProjectsCommand {
         #[command(subcommand)]
         command: ProjectConceptsCommand,
     },
+}
+
+#[derive(Subcommand)]
+enum OrdersCommand {
+    List,
+    Get { id: String },
+    Create(OrderWriteArgs),
+    Update(OrderUpdateArgs),
+    Delete(DeleteArgs),
+    Complete { id: String },
+}
+
+#[derive(Args)]
+struct OrderWriteArgs {
+    #[arg(long)]
+    title: String,
+    #[arg(long)]
+    contact_id: Option<String>,
+    #[arg(long)]
+    category_id: Option<String>,
+    #[arg(long)]
+    account_id: Option<String>,
+    #[arg(long, default_value = "pending")]
+    status: String,
+    #[arg(long)]
+    amount: f64,
+    #[arg(long)]
+    scheduled_at: Option<String>,
+    #[arg(long)]
+    item: Vec<String>,
+    #[arg(long)]
+    notes: Option<String>,
+}
+
+#[derive(Args)]
+struct OrderUpdateArgs {
+    id: String,
+    #[command(flatten)]
+    fields: OrderWriteArgs,
 }
 
 #[derive(Args)]
@@ -974,6 +1017,18 @@ async fn run(cli: Cli) -> Result<()> {
                     project_concept_advance(&id, cli.json).await
                 }
             },
+        },
+        Command::Orders { command } => match command {
+            OrdersCommand::List => json_get_command("/api/admin/orders", cli.json, "orders").await,
+            OrdersCommand::Get { id } => {
+                json_get_by_id_command("/api/admin/orders", &id, cli.json, "order").await
+            }
+            OrdersCommand::Create(args) => order_create(args, cli.json).await,
+            OrdersCommand::Update(args) => order_update(args, cli.json).await,
+            OrdersCommand::Delete(args) => {
+                delete_command("/api/admin/orders", args, cli.json, "order").await
+            }
+            OrdersCommand::Complete { id } => order_complete(id, cli.json).await,
         },
         Command::Resources { command } => match command {
             ResourcesCommand::List => {
@@ -1690,6 +1745,84 @@ fn project_concept_payload(args: ProjectConceptWriteArgs) -> Result<Value> {
     }))
 }
 
+async fn order_create(args: OrderWriteArgs, json_output: bool) -> Result<()> {
+    let payload = order_payload(args)?;
+    let mut state = load_state()?;
+    let value = authenticated_post_json(&mut state, "/api/admin/orders", &payload).await?;
+    save_state(&state)?;
+    print_created_output(&value, json_output, "order")
+}
+
+async fn order_update(args: OrderUpdateArgs, json_output: bool) -> Result<()> {
+    validate_object_id(&args.id, "id")?;
+    let payload = order_payload(args.fields)?;
+    let path = format!("/api/admin/orders/{}/update", args.id);
+    let mut state = load_state()?;
+    let value = authenticated_post_json(&mut state, &path, &payload).await?;
+    save_state(&state)?;
+    print_ok_output(&value, json_output, "order updated")
+}
+
+async fn order_complete(id: String, json_output: bool) -> Result<()> {
+    validate_object_id(&id, "id")?;
+    let path = format!("/api/admin/orders/{id}/complete");
+    let mut state = load_state()?;
+    let value = authenticated_post_json(&mut state, &path, &json!({})).await?;
+    save_state(&state)?;
+    print_ok_output(&value, json_output, "order completed")
+}
+
+fn order_payload(args: OrderWriteArgs) -> Result<Value> {
+    validate_non_empty(&args.title, "title")?;
+    validate_order_status(&args.status)?;
+    validate_optional_object_id(args.contact_id.as_deref(), "contact-id")?;
+    validate_optional_object_id(args.category_id.as_deref(), "category-id")?;
+    validate_optional_object_id(args.account_id.as_deref(), "account-id")?;
+    if args.amount < 0.0 {
+        bail!("amount must be greater than or equal to zero");
+    }
+    let scheduled_at = match args.scheduled_at.as_deref() {
+        Some(value) => Some(validate_rfc3339(value, "scheduled-at")?),
+        None => None,
+    };
+    let mut items = Vec::new();
+    for item in args.item {
+        let parts = item.splitn(3, ':').collect::<Vec<_>>();
+        if parts.len() != 3 {
+            bail!("item must use description:quantity:unit_price");
+        }
+        let description = parts[0].trim();
+        validate_non_empty(description, "item description")?;
+        let quantity = parts[1]
+            .trim()
+            .parse::<f64>()
+            .context("item quantity must be numeric")?;
+        let unit_price = parts[2]
+            .trim()
+            .parse::<f64>()
+            .context("item unit_price must be numeric")?;
+        if quantity <= 0.0 || unit_price < 0.0 {
+            bail!("item quantity must be positive and unit_price must be non-negative");
+        }
+        items.push(json!({
+            "description": description,
+            "quantity": quantity,
+            "unit_price": unit_price,
+        }));
+    }
+    Ok(json!({
+        "title": args.title,
+        "contact_id": args.contact_id,
+        "category_id": args.category_id,
+        "account_id": args.account_id,
+        "status": args.status,
+        "amount": args.amount,
+        "scheduled_at": scheduled_at,
+        "items": items,
+        "notes": args.notes,
+    }))
+}
+
 async fn cfdi_get(uuid: &str, json_output: bool) -> Result<()> {
     validate_non_empty(uuid, "uuid")?;
     let path = format!("/api/admin/cfdis/{}", uuid.trim());
@@ -1948,6 +2081,12 @@ fn print_manifest(json_output: bool) -> Result<()> {
             { "name": "projects concepts update", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id", "--name", "--quantity", "--status-id", "--unit", "--description", "--estimated-hours", "--estimated-cost", "--notes", "--position"], "output_schema": "ok" },
             { "name": "projects concepts advance", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "concept_status" },
             { "name": "projects concepts delete", "auth_required": true, "company_required": true, "destructive": true, "confirmation_flag": "--yes", "arguments": ["id"], "output_schema": "ok" },
+            { "name": "orders list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "orders" },
+            { "name": "orders get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "order" },
+            { "name": "orders create", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--title", "--contact-id", "--category-id", "--account-id", "--status", "--amount", "--scheduled-at", "--item", "--notes"], "output_schema": "created_id_with_side_effects" },
+            { "name": "orders update", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id", "--title", "--contact-id", "--category-id", "--account-id", "--status", "--amount", "--scheduled-at", "--item", "--notes"], "output_schema": "ok_with_side_effects" },
+            { "name": "orders complete", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "ok_with_side_effects" },
+            { "name": "orders delete", "auth_required": true, "company_required": true, "destructive": true, "confirmation_flag": "--yes", "arguments": ["id"], "output_schema": "ok" },
             { "name": "resources list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "resources" },
             { "name": "resources get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "resource" },
             { "name": "resources logs list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "resource_logs" },
@@ -2370,6 +2509,13 @@ fn validate_planned_status(value: &str) -> Result<()> {
         _ => {
             bail!("status must be one of: planned, partially_covered, covered, overdue, cancelled")
         }
+    }
+}
+
+fn validate_order_status(value: &str) -> Result<()> {
+    match value {
+        "pending" | "confirmed" | "in_progress" | "completed" | "cancelled" => Ok(()),
+        _ => bail!("status must be one of: pending, confirmed, in_progress, completed, cancelled"),
     }
 }
 

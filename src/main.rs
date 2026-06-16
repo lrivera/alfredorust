@@ -346,6 +346,23 @@ async fn main() {
             "/admin/orders",
             get(routes::orders_index).post(routes::orders_create),
         )
+        .route(
+            "/api/admin/orders",
+            get(routes::orders_data_api).post(routes::orders_create_api),
+        )
+        .route("/api/admin/orders/{id}", get(routes::order_data_api))
+        .route(
+            "/api/admin/orders/{id}/update",
+            post(routes::order_update_api),
+        )
+        .route(
+            "/api/admin/orders/{id}/delete",
+            post(routes::order_delete_api),
+        )
+        .route(
+            "/api/admin/orders/{id}/complete",
+            post(routes::order_complete_api),
+        )
         .route("/admin/orders/new", get(routes::orders_new))
         .route("/admin/orders/{id}/edit", get(routes::orders_edit))
         .route("/admin/orders/{id}/update", post(routes::orders_update))

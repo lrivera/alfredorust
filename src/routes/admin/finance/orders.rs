@@ -2,12 +2,13 @@ use std::{str::FromStr, sync::Arc};
 
 use askama::Template;
 use axum::{
+    Json,
     extract::{Form, Path, State},
     http::StatusCode,
     response::{Html, IntoResponse, Redirect},
 };
 use bson::oid::ObjectId;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[allow(unused_imports)]
 use crate::filters;
@@ -21,7 +22,10 @@ use crate::{
     },
 };
 
-use super::helpers::{SimpleOption, ensure_same_company, require_admin_active};
+use super::helpers::{
+    SimpleOption, clean_opt, datetime_to_string, ensure_same_company, require_admin_active,
+    validate_company_refs,
+};
 use super::options::{account_options, category_options, contact_options};
 use crate::state::get_contact_by_id;
 
@@ -49,6 +53,52 @@ struct OrderRow {
     scheduled_at: String,
     planned_entry_id: String,
     planned_entry_paid: bool,
+}
+
+#[derive(Serialize)]
+pub struct OrderData {
+    pub id: String,
+    pub company_id: String,
+    pub contact_id: Option<String>,
+    pub category_id: Option<String>,
+    pub account_id: Option<String>,
+    pub planned_entry_id: Option<String>,
+    pub title: String,
+    pub status: String,
+    pub status_label: String,
+    pub amount: f64,
+    pub scheduled_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub transaction_id: Option<String>,
+    pub items: Vec<OrderItem>,
+    pub notes: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct OrderPayload {
+    pub title: String,
+    pub contact_id: Option<String>,
+    pub category_id: Option<String>,
+    pub account_id: Option<String>,
+    #[serde(default = "default_pending")]
+    pub status: String,
+    pub amount: f64,
+    pub scheduled_at: Option<String>,
+    #[serde(default)]
+    pub items: Vec<OrderItem>,
+    pub notes: Option<String>,
+}
+
+struct ParsedOrderPayload {
+    title: String,
+    contact_id: Option<ObjectId>,
+    category_id: Option<ObjectId>,
+    account_id: Option<ObjectId>,
+    status: OrderStatus,
+    amount: f64,
+    scheduled_at: Option<bson::DateTime>,
+    items: Vec<OrderItem>,
+    notes: Option<String>,
 }
 
 pub async fn orders_index(
@@ -110,6 +160,34 @@ pub async fn orders_index(
     render(OrdersIndexTemplate { orders: rows })
 }
 
+pub async fn orders_data_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<OrderData>>, StatusCode> {
+    let company_id = require_admin_active(&session_user)?;
+    let orders = list_orders(&state, &company_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(orders.into_iter().filter_map(order_data).collect()))
+}
+
+pub async fn order_data_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<OrderData>, StatusCode> {
+    let company_id = require_admin_active(&session_user)?;
+    let oid = ObjectId::from_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let order = get_order_by_id(&state, &oid)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    ensure_same_company(&order.company_id, &company_id)?;
+    order_data(order)
+        .map(Json)
+        .ok_or(StatusCode::INTERNAL_SERVER_ERROR)
+}
+
 // ── Form ───────────────────────────────────────────────────────────────────
 
 #[derive(Template)]
@@ -147,6 +225,17 @@ fn parse_status(s: &str) -> OrderStatus {
         "completed" => OrderStatus::Completed,
         "cancelled" => OrderStatus::Cancelled,
         _ => OrderStatus::Pending,
+    }
+}
+
+fn parse_status_strict(s: &str) -> Result<OrderStatus, StatusCode> {
+    match s {
+        "pending" => Ok(OrderStatus::Pending),
+        "confirmed" => Ok(OrderStatus::Confirmed),
+        "in_progress" => Ok(OrderStatus::InProgress),
+        "completed" => Ok(OrderStatus::Completed),
+        "cancelled" => Ok(OrderStatus::Cancelled),
+        _ => Err(StatusCode::BAD_REQUEST),
     }
 }
 
@@ -282,6 +371,60 @@ pub async fn orders_create(
     Redirect::to("/admin/orders").into_response()
 }
 
+pub async fn orders_create_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<OrderPayload>,
+) -> impl IntoResponse {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+    let parsed = match parse_order_payload(&state, &company_id, payload).await {
+        Ok(parsed) => parsed,
+        Err(status) => return status.into_response(),
+    };
+    let status = parsed.status.clone();
+    let order_id = match create_order(
+        &state,
+        &company_id,
+        parsed.contact_id,
+        parsed.category_id,
+        parsed.account_id,
+        &parsed.title,
+        parsed.status,
+        parsed.amount,
+        parsed.scheduled_at,
+        parsed.items,
+        parsed.notes,
+    )
+    .await
+    {
+        Ok(id) => id,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+
+    let mut planned_entry_created = false;
+    if status == OrderStatus::Confirmed {
+        if let Ok(Some(order)) = get_order_by_id(&state, &order_id).await {
+            let before = order.planned_entry_id.is_some();
+            if confirm_order(&state, &order, &company_id).await.is_err() {
+                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            }
+            planned_entry_created = !before;
+        }
+    }
+
+    (
+        StatusCode::CREATED,
+        Json(serde_json::json!({
+            "id": order_id.to_hex(),
+            "side_effects": { "planned_entry_created": planned_entry_created }
+        })),
+    )
+        .into_response()
+}
+
 pub async fn orders_edit(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -411,6 +554,77 @@ pub async fn orders_update(
     Redirect::to("/admin/orders").into_response()
 }
 
+pub async fn order_update_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(payload): Json<OrderPayload>,
+) -> impl IntoResponse {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+    let oid = match ObjectId::from_str(&id) {
+        Ok(id) => id,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    let old_order = match get_order_by_id(&state, &oid).await {
+        Ok(Some(order)) => {
+            if let Err(status) = ensure_same_company(&order.company_id, &company_id) {
+                return status.into_response();
+            }
+            order
+        }
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+    let parsed = match parse_order_payload(&state, &company_id, payload).await {
+        Ok(parsed) => parsed,
+        Err(status) => return status.into_response(),
+    };
+    let new_status = parsed.status.clone();
+    if update_order(
+        &state,
+        &oid,
+        parsed.contact_id,
+        parsed.category_id,
+        parsed.account_id,
+        &parsed.title,
+        parsed.status,
+        parsed.amount,
+        parsed.scheduled_at,
+        parsed.items,
+        parsed.notes,
+    )
+    .await
+    .is_err()
+    {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+
+    let mut planned_entry_created = false;
+    if new_status == OrderStatus::Confirmed
+        && old_order.status != OrderStatus::Confirmed
+        && old_order.planned_entry_id.is_none()
+    {
+        if let Ok(Some(updated_order)) = get_order_by_id(&state, &oid).await {
+            if confirm_order(&state, &updated_order, &company_id)
+                .await
+                .is_err()
+            {
+                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            }
+            planned_entry_created = true;
+        }
+    }
+
+    Json(serde_json::json!({
+        "ok": true,
+        "side_effects": { "planned_entry_created": planned_entry_created }
+    }))
+    .into_response()
+}
+
 pub async fn orders_delete(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -435,6 +649,32 @@ pub async fn orders_delete(
     }
     match delete_order(&state, &oid).await {
         Ok(_) => Redirect::to("/admin/orders").into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+pub async fn order_delete_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+    let oid = match ObjectId::from_str(&id) {
+        Ok(id) => id,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    if let Err(status) = match get_order_by_id(&state, &oid).await {
+        Ok(Some(order)) => ensure_same_company(&order.company_id, &company_id),
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    } {
+        return status.into_response();
+    }
+    match delete_order(&state, &oid).await {
+        Ok(_) => Json(serde_json::json!({ "ok": true })).into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
@@ -472,4 +712,119 @@ pub async fn orders_complete(
         Ok(_) => Redirect::to("/admin/orders").into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
+}
+
+pub async fn order_complete_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+    let oid = match ObjectId::from_str(&id) {
+        Ok(id) => id,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    let order = match get_order_by_id(&state, &oid).await {
+        Ok(Some(order)) => {
+            if let Err(status) = ensure_same_company(&order.company_id, &company_id) {
+                return status.into_response();
+            }
+            order
+        }
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+    let planned_entry_created = order.planned_entry_id.is_none();
+    if planned_entry_created && confirm_order(&state, &order, &company_id).await.is_err() {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+    match complete_order(&state, &oid).await {
+        Ok(_) => Json(serde_json::json!({
+            "ok": true,
+            "side_effects": {
+                "planned_entry_created": planned_entry_created,
+                "order_completed": true
+            }
+        }))
+        .into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+async fn parse_order_payload(
+    state: &AppState,
+    company_id: &ObjectId,
+    payload: OrderPayload,
+) -> Result<ParsedOrderPayload, StatusCode> {
+    let title = payload.title.trim().to_string();
+    if title.is_empty() || payload.amount < 0.0 {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let contact_id = parse_optional_object_id(payload.contact_id)?;
+    let category_id = parse_optional_object_id(payload.category_id)?;
+    let account_id = parse_optional_object_id(payload.account_id)?;
+    validate_company_refs(
+        state,
+        company_id,
+        category_id.as_ref(),
+        account_id.as_ref(),
+        contact_id.as_ref(),
+    )
+    .await?;
+    let scheduled_at = match clean_opt(payload.scheduled_at) {
+        Some(value) => {
+            Some(bson::DateTime::parse_rfc3339_str(&value).map_err(|_| StatusCode::BAD_REQUEST)?)
+        }
+        None => None,
+    };
+    let items = payload
+        .items
+        .into_iter()
+        .filter(|item| !item.description.trim().is_empty() && item.quantity > 0.0)
+        .collect();
+
+    Ok(ParsedOrderPayload {
+        title,
+        contact_id,
+        category_id,
+        account_id,
+        status: parse_status_strict(&payload.status)?,
+        amount: payload.amount,
+        scheduled_at,
+        items,
+        notes: clean_opt(payload.notes),
+    })
+}
+
+fn parse_optional_object_id(value: Option<String>) -> Result<Option<ObjectId>, StatusCode> {
+    match clean_opt(value) {
+        Some(value) => ObjectId::from_str(&value)
+            .map(Some)
+            .map_err(|_| StatusCode::BAD_REQUEST),
+        None => Ok(None),
+    }
+}
+
+fn order_data(order: crate::models::ServiceOrder) -> Option<OrderData> {
+    let id = order.id?.to_hex();
+    Some(OrderData {
+        id,
+        company_id: order.company_id.to_hex(),
+        contact_id: order.contact_id.map(|id| id.to_hex()),
+        category_id: order.category_id.map(|id| id.to_hex()),
+        account_id: order.account_id.map(|id| id.to_hex()),
+        planned_entry_id: order.planned_entry_id.map(|id| id.to_hex()),
+        title: order.title,
+        status: order.status.as_str().to_string(),
+        status_label: order.status.label().to_string(),
+        amount: order.amount,
+        scheduled_at: order.scheduled_at.map(|date| datetime_to_string(&date)),
+        completed_at: order.completed_at.map(|date| datetime_to_string(&date)),
+        transaction_id: order.transaction_id.map(|id| id.to_hex()),
+        items: order.items,
+        notes: order.notes,
+    })
 }

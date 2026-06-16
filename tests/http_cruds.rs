@@ -227,6 +227,23 @@ fn build_app(state: Arc<AppState>) -> Router {
         .route("/admin/forecasts/{id}/edit", get(routes::forecasts_edit))
         // POST routes for forecasts omitted in tests (use private types)
         .route(
+            "/api/admin/orders",
+            get(routes::orders_data_api).post(routes::orders_create_api),
+        )
+        .route("/api/admin/orders/{id}", get(routes::order_data_api))
+        .route(
+            "/api/admin/orders/{id}/update",
+            post(routes::order_update_api),
+        )
+        .route(
+            "/api/admin/orders/{id}/delete",
+            post(routes::order_delete_api),
+        )
+        .route(
+            "/api/admin/orders/{id}/complete",
+            post(routes::order_complete_api),
+        )
+        .route(
             "/admin/projects",
             get(routes::projects_index).post(routes::projects_create),
         )
@@ -1060,6 +1077,185 @@ async fn recurring_plan_json_mutations_scope_and_report_generation_side_effects(
         app,
         host_a,
         &format!("/api/admin/recurring-plans/{plan_id}/delete"),
+        &token,
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+
+    common::teardown(Some(ctx)).await;
+}
+
+#[tokio::test]
+async fn order_json_mutations_scope_and_report_planned_entry_side_effects() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let shared = Arc::new(state.clone());
+
+    let company_a = create_company(
+        &state,
+        "Order Mutation A",
+        "order-mutation-a",
+        "MXN",
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+    let company_b = create_company(
+        &state,
+        "Order Mutation B",
+        "order-mutation-b",
+        "MXN",
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+    let admin_id = create_user(
+        &state,
+        "order-mutation-admin@example.com",
+        "SECRET",
+        &[(company_a.clone(), UserRole::Admin)],
+    )
+    .await
+    .unwrap();
+    let admin = get_user_by_id(&state, &admin_id).await.unwrap().unwrap();
+    let token = create_session(&state, &admin.email).await.unwrap();
+    let host_a = "order-mutation-a.miapp.local";
+
+    let category_a = create_category(
+        &state,
+        &company_a,
+        "Order Category A",
+        FlowType::Income,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let category_b = create_category(
+        &state,
+        &company_b,
+        "Order Category B",
+        FlowType::Income,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let account_a = create_account(
+        &state,
+        &company_a,
+        "Order Account A",
+        AccountType::Bank,
+        "MXN",
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let app = build_app(shared.clone());
+    let (status, body) = post_json_with_cookie(
+        app,
+        host_a,
+        "/api/admin/orders",
+        &token,
+        serde_json::json!({
+            "title": "Order created",
+            "category_id": category_a.to_hex(),
+            "account_id": account_a.to_hex(),
+            "status": "confirmed",
+            "amount": 250.0,
+            "scheduled_at": "2026-07-01T00:00:00Z",
+            "items": [{"description": "Service", "quantity": 1.0, "unit_price": 250.0}],
+            "notes": "created"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "body: {body}");
+    let created: serde_json::Value = serde_json::from_str(&body).expect("create response JSON");
+    let order_id = created["id"].as_str().expect("created id").to_string();
+    assert_eq!(created["side_effects"]["planned_entry_created"], true);
+    assert!(
+        list_planned_entries(&state)
+            .await
+            .unwrap()
+            .into_iter()
+            .any(
+                |entry| entry.service_order_id.as_ref().map(|id| id.to_hex())
+                    == Some(order_id.clone())
+            )
+    );
+
+    let app = build_app(shared.clone());
+    let (status, body) = get_with_cookie(
+        app,
+        host_a,
+        &format!("/api/admin/orders/{order_id}"),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    assert!(body.contains("Order created"));
+
+    let app = build_app(shared.clone());
+    let (status, _body) = post_json_with_cookie(
+        app,
+        host_a,
+        "/api/admin/orders",
+        &token,
+        serde_json::json!({
+            "title": "Bad tenant ref",
+            "category_id": category_b.to_hex(),
+            "account_id": account_a.to_hex(),
+            "status": "pending",
+            "amount": 1.0
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let app = build_app(shared.clone());
+    let (status, body) = post_json_with_cookie(
+        app,
+        host_a,
+        &format!("/api/admin/orders/{order_id}/update"),
+        &token,
+        serde_json::json!({
+            "title": "Order updated",
+            "category_id": category_a.to_hex(),
+            "account_id": account_a.to_hex(),
+            "status": "in_progress",
+            "amount": 300.0,
+            "items": [{"description": "Service", "quantity": 2.0, "unit_price": 150.0}]
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+
+    let app = build_app(shared.clone());
+    let (status, body) = post_json_with_cookie(
+        app,
+        host_a,
+        &format!("/api/admin/orders/{order_id}/complete"),
+        &token,
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let completed: serde_json::Value = serde_json::from_str(&body).expect("complete response JSON");
+    assert_eq!(completed["side_effects"]["order_completed"], true);
+
+    let app = build_app(shared);
+    let (status, body) = post_json_with_cookie(
+        app,
+        host_a,
+        &format!("/api/admin/orders/{order_id}/delete"),
         &token,
         serde_json::json!({}),
     )

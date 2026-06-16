@@ -78,7 +78,8 @@
 
 ## 9. Operations Commands
 
-- [ ] 9.1 Add service order list/get/create/update/delete/complete commands.
+- [x] 9.1 Add service order list/get/create/update/delete/complete commands.
+- [x] 9.1.1 Add service order JSON APIs and CLI commands with planned-entry and completion side-effect responses.
 - [ ] 9.2 Add project list/get/create/update/delete commands.
 - [x] 9.2.1 Add project list/get JSON APIs and CLI commands.
 - [ ] 9.3 Add project concept list/create/update/delete/advance commands.

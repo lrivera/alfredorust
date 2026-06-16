@@ -60,6 +60,13 @@ The system SHALL only implement finance create, update, delete, pay, generate, a
 - **AND** the server validates category, account, and contact ownership for the active company
 - **AND** responses include planned-entry generation or cleanup side-effect metadata
 
+#### Scenario: Service order is created, updated, completed, or deleted
+
+- **WHEN** the user runs `spcli orders create`, `update`, `complete`, or `delete --yes`
+- **THEN** the CLI consumes tenant-scoped service-order JSON APIs
+- **AND** the server validates category, contact, and account ownership for the active company
+- **AND** responses include planned-entry side-effect metadata when order status changes create financial planning records
+
 ### Requirement: CLI finance commands document financial side effects
 
 The system SHALL document side effects for every finance CLI command that can create, update, delete, pay, generate, or link financial records.
@@ -75,6 +82,11 @@ The system SHALL document side effects for every finance CLI command that can cr
 - **WHEN** the user runs a recurring-plan generate command
 - **THEN** the JSON response includes generated planned-entry counts and any skipped or outdated records
 
+#### Scenario: Service order completion is requested
+
+- **WHEN** the user runs an order completion command
+- **THEN** the JSON response includes whether the order was completed and whether a planned entry was created
+
 ### Requirement: CLI finance command groups are stable
 
 The system SHALL organize finance commands under stable nouns.
@@ -82,7 +94,7 @@ The system SHALL organize finance commands under stable nouns.
 #### Scenario: Finance command manifest is requested
 
 - **WHEN** the user runs `spcli --json manifest`
-- **THEN** the manifest includes finance command metadata for accounts, categories, contacts, recurring plans, planned entries, transactions, and forecasts as they are implemented
+- **THEN** the manifest includes finance command metadata for accounts, categories, contacts, recurring plans, planned entries, transactions, forecasts, and service orders as they are implemented
 - **AND** each entry identifies auth requirements, company context, permissions, destructive flags, arguments, and output schema names
 
 ### Requirement: CLI finance behavior is covered by harness tests

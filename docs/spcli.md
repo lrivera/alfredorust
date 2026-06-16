@@ -78,6 +78,7 @@ cargo run --bin spcli -- projects list
 cargo run --bin spcli -- projects statuses list
 cargo run --bin spcli -- projects concepts list --project-id 64f000000000000000000000
 cargo run --bin spcli -- projects status-summary --project-id 64f000000000000000000000
+cargo run --bin spcli -- orders list
 cargo run --bin spcli -- resources list
 cargo run --bin spcli -- resources logs list
 cargo run --bin spcli -- resources usages list
@@ -98,6 +99,7 @@ cargo run --bin spcli -- cfdi get 12345678-1234-1234-1234-1234567890ab
 cargo run --bin spcli -- cfdi jobs status 12345678-1234-1234-1234-1234567890ab
 cargo run --bin spcli -- sat configs get 64f000000000000000000000
 cargo run --bin spcli -- projects get 64f000000000000000000000
+cargo run --bin spcli -- orders get 64f000000000000000000000
 cargo run --bin spcli -- resources get 64f000000000000000000000
 cargo run --bin spcli -- resources logs get 64f000000000000000000000
 cargo run --bin spcli -- resources usages get 64f000000000000000000000
@@ -113,6 +115,7 @@ cargo run --bin spcli -- finance forecasts create --generated-at 2026-01-01 --st
 cargo run --bin spcli -- finance recurring-plans create --name "Monthly Rent" --flow-type expense --category-id 64f000000000000000000000 --account-expected-id 64f000000000000000000001 --amount-estimated 1000 --frequency monthly --day-of-month 1 --start-date 2026-07-01T00:00:00Z
 cargo run --bin spcli -- finance planned-entries create --name "Fuel" --flow-type expense --category-id 64f000000000000000000000 --account-expected-id 64f000000000000000000001 --amount-estimated 500 --due-date 2026-07-01T00:00:00Z
 cargo run --bin spcli -- finance transactions create --date 2026-07-01T12:00:00Z --description "Fuel" --transaction-type expense --category-id 64f000000000000000000000 --account-from-id 64f000000000000000000001 --amount 500
+cargo run --bin spcli -- orders create --title "Concrete pour" --category-id 64f000000000000000000000 --account-id 64f000000000000000000001 --status confirmed --amount 2500 --scheduled-at 2026-07-01T08:00:00Z --item "Labor:4:250" --item "Concrete:10:150"
 cargo run --bin spcli -- projects statuses create --name "In Progress" --position 10 --color sky
 cargo run --bin spcli -- projects concepts create --project-id 64f000000000000000000000 --name "Foundation" --quantity 1 --unit job --position 1
 cargo run --bin spcli -- resources usages create --resource-id 64f000000000000000000000 --started-at 2026-06-01T10:00:00Z --ended-at 2026-06-01T12:00:00Z --operator-name "Operator"
@@ -135,6 +138,9 @@ cargo run --bin spcli -- finance planned-entries delete 64f000000000000000000000
 cargo run --bin spcli -- finance transactions update 64f000000000000000000000 --date 2026-07-01T12:00:00Z --description "Fuel" --transaction-type expense --category-id 64f000000000000000000001 --account-from-id 64f000000000000000000002 --amount 550
 cargo run --bin spcli -- finance transactions delete 64f000000000000000000000 --yes
 cargo run --bin spcli -- finance contacts delete 64f000000000000000000000 --yes
+cargo run --bin spcli -- orders update 64f000000000000000000000 --title "Concrete pour" --category-id 64f000000000000000000001 --account-id 64f000000000000000000002 --status in_progress --amount 2750 --item "Labor:5:250" --item "Concrete:10:150"
+cargo run --bin spcli -- orders complete 64f000000000000000000000
+cargo run --bin spcli -- orders delete 64f000000000000000000000 --yes
 cargo run --bin spcli -- resources usages update 64f000000000000000000000 --started-at 2026-06-01T10:00:00Z --ended-at 2026-06-01T12:00:00Z --hourly-cost-snapshot 250
 cargo run --bin spcli -- resources usages delete 64f000000000000000000000 --yes
 cargo run --bin spcli -- projects statuses update 64f000000000000000000000 --name "Done" --position 20 --terminal
