@@ -122,8 +122,48 @@ enum FinanceCommand {
     },
     Transactions {
         #[command(subcommand)]
-        command: ListGetCommand,
+        command: TransactionCommand,
     },
+}
+
+#[derive(Subcommand)]
+enum TransactionCommand {
+    List,
+    Get { id: String },
+    Create(TransactionWriteArgs),
+    Update(TransactionUpdateArgs),
+    Delete(DeleteArgs),
+}
+
+#[derive(Args)]
+struct TransactionWriteArgs {
+    #[arg(long)]
+    date: String,
+    #[arg(long)]
+    description: String,
+    #[arg(long)]
+    transaction_type: String,
+    #[arg(long)]
+    category_id: String,
+    #[arg(long)]
+    account_from_id: Option<String>,
+    #[arg(long)]
+    account_to_id: Option<String>,
+    #[arg(long)]
+    amount: f64,
+    #[arg(long)]
+    planned_entry_id: Option<String>,
+    #[arg(long)]
+    unconfirmed: bool,
+    #[arg(long)]
+    notes: Option<String>,
+}
+
+#[derive(Args)]
+struct TransactionUpdateArgs {
+    id: String,
+    #[command(flatten)]
+    fields: TransactionWriteArgs,
 }
 
 #[derive(Subcommand)]
@@ -700,12 +740,17 @@ async fn run(cli: Cli) -> Result<()> {
                 }
             },
             FinanceCommand::Transactions { command } => match command {
-                ListGetCommand::List => {
+                TransactionCommand::List => {
                     json_get_command("/api/admin/transactions/data", cli.json, "transactions").await
                 }
-                ListGetCommand::Get { id } => {
+                TransactionCommand::Get { id } => {
                     json_get_by_id_command("/api/admin/transactions", &id, cli.json, "transaction")
                         .await
+                }
+                TransactionCommand::Create(args) => transaction_create(args, cli.json).await,
+                TransactionCommand::Update(args) => transaction_update(args, cli.json).await,
+                TransactionCommand::Delete(args) => {
+                    delete_command("/api/admin/transactions", args, cli.json, "transaction").await
                 }
             },
         },
@@ -1146,6 +1191,49 @@ async fn forecast_update(args: ForecastUpdateArgs, json_output: bool) -> Result<
     print_ok_output(&value, json_output, "forecast updated")
 }
 
+async fn transaction_create(args: TransactionWriteArgs, json_output: bool) -> Result<()> {
+    let payload = transaction_payload(args)?;
+    let mut state = load_state()?;
+    let value = authenticated_post_json(&mut state, "/api/admin/transactions", &payload).await?;
+    save_state(&state)?;
+    print_created_output(&value, json_output, "transaction")
+}
+
+async fn transaction_update(args: TransactionUpdateArgs, json_output: bool) -> Result<()> {
+    validate_object_id(&args.id, "id")?;
+    let payload = transaction_payload(args.fields)?;
+    let path = format!("/api/admin/transactions/{}/update", args.id);
+    let mut state = load_state()?;
+    let value = authenticated_post_json(&mut state, &path, &payload).await?;
+    save_state(&state)?;
+    print_ok_output(&value, json_output, "transaction updated")
+}
+
+fn transaction_payload(args: TransactionWriteArgs) -> Result<Value> {
+    validate_non_empty(&args.description, "description")?;
+    validate_transaction_type(&args.transaction_type)?;
+    validate_object_id(&args.category_id, "category-id")?;
+    validate_optional_object_id(args.account_from_id.as_deref(), "account-from-id")?;
+    validate_optional_object_id(args.account_to_id.as_deref(), "account-to-id")?;
+    validate_optional_object_id(args.planned_entry_id.as_deref(), "planned-entry-id")?;
+    if args.amount < 0.0 {
+        bail!("amount must be greater than or equal to zero");
+    }
+    let date = validate_rfc3339(&args.date, "date")?;
+    Ok(json!({
+        "date": date,
+        "description": args.description,
+        "transaction_type": args.transaction_type,
+        "category_id": args.category_id,
+        "account_from_id": args.account_from_id,
+        "account_to_id": args.account_to_id,
+        "amount": args.amount,
+        "planned_entry_id": args.planned_entry_id,
+        "is_confirmed": !args.unconfirmed,
+        "notes": args.notes,
+    }))
+}
+
 fn forecast_payload(args: ForecastWriteArgs) -> Result<Value> {
     validate_non_empty(&args.currency, "currency")?;
     let generated_at = normalize_timeline_bound(&args.generated_at, "generated-at")?;
@@ -1510,6 +1598,9 @@ fn print_manifest(json_output: bool) -> Result<()> {
             { "name": "finance planned-entries get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "planned_entry" },
             { "name": "finance transactions list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "transactions" },
             { "name": "finance transactions get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "transaction" },
+            { "name": "finance transactions create", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--date", "--description", "--transaction-type", "--category-id", "--account-from-id", "--account-to-id", "--amount", "--planned-entry-id", "--unconfirmed", "--notes"], "output_schema": "created_id_with_side_effects" },
+            { "name": "finance transactions update", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id", "--date", "--description", "--transaction-type", "--category-id", "--account-from-id", "--account-to-id", "--amount", "--planned-entry-id", "--unconfirmed", "--notes"], "output_schema": "ok_with_side_effects" },
+            { "name": "finance transactions delete", "auth_required": true, "company_required": true, "destructive": true, "confirmation_flag": "--yes", "arguments": ["id"], "output_schema": "ok_with_side_effects" },
             { "name": "cfdi list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "cfdi_data" },
             { "name": "cfdi get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["uuid"], "output_schema": "cfdi_detail" },
             { "name": "cfdi jobs list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "cfdi_jobs" },
@@ -1913,6 +2004,20 @@ fn validate_object_id(value: &str, name: &str) -> Result<()> {
         Ok(())
     } else {
         bail!("{name} must be a 24-character ObjectId")
+    }
+}
+
+fn validate_optional_object_id(value: Option<&str>, name: &str) -> Result<()> {
+    if let Some(value) = value {
+        validate_object_id(value, name)?;
+    }
+    Ok(())
+}
+
+fn validate_transaction_type(value: &str) -> Result<()> {
+    match value {
+        "income" | "expense" | "transfer" => Ok(()),
+        _ => bail!("transaction-type must be one of: income, expense, transfer"),
     }
 }
 

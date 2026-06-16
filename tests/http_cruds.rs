@@ -176,8 +176,20 @@ fn build_app(state: Arc<AppState>) -> Router {
             get(routes::transactions_data_api),
         )
         .route(
+            "/api/admin/transactions",
+            post(routes::transactions_create_api),
+        )
+        .route(
             "/api/admin/transactions/{id}",
             get(routes::transaction_data_api),
+        )
+        .route(
+            "/api/admin/transactions/{id}/update",
+            post(routes::transaction_update_api),
+        )
+        .route(
+            "/api/admin/transactions/{id}/delete",
+            post(routes::transaction_delete_api),
         )
         .route(
             "/admin/forecasts",
@@ -847,6 +859,217 @@ async fn finance_json_endpoints_scope_to_active_tenant() {
     let app = build_app(shared);
     let (status, _) = get_with_cookie(app, host_a, "/api/admin/accounts", &staff_token).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
+
+    common::teardown(Some(ctx)).await;
+}
+
+#[tokio::test]
+async fn transaction_json_mutations_scope_and_report_side_effects() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let shared = Arc::new(state.clone());
+
+    let company_a = create_company(
+        &state,
+        "Transaction Mutation A",
+        "transaction-mutation-a",
+        "MXN",
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+    let company_b = create_company(
+        &state,
+        "Transaction Mutation B",
+        "transaction-mutation-b",
+        "MXN",
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+    let admin_id = create_user(
+        &state,
+        "transaction-mutation-admin@example.com",
+        "SECRET",
+        &[(company_a.clone(), UserRole::Admin)],
+    )
+    .await
+    .unwrap();
+    let admin = get_user_by_id(&state, &admin_id).await.unwrap().unwrap();
+    let token = create_session(&state, &admin.email).await.unwrap();
+    let host_a = "transaction-mutation-a.miapp.local";
+
+    let category_a = create_category(
+        &state,
+        &company_a,
+        "Transaction Mutation Category A",
+        FlowType::Expense,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let category_b = create_category(
+        &state,
+        &company_b,
+        "Transaction Mutation Category B",
+        FlowType::Expense,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let account_a = create_account(
+        &state,
+        &company_a,
+        "Transaction Mutation Account A",
+        AccountType::Bank,
+        "MXN",
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+    let planned_entry = create_planned_entry(
+        &state,
+        &company_a,
+        None,
+        None,
+        None,
+        "Transaction Mutation Planned Entry",
+        FlowType::Expense,
+        &category_a,
+        &account_a,
+        None,
+        100.0,
+        DateTime::parse_rfc3339_str("2026-07-01T00:00:00Z").unwrap(),
+        PlannedStatus::Planned,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let app = build_app(shared.clone());
+    let (status, body) = post_json_with_cookie(
+        app,
+        host_a,
+        "/api/admin/transactions",
+        &token,
+        serde_json::json!({
+            "date": "2026-07-01T12:00:00Z",
+            "description": "Transaction mutation created",
+            "transaction_type": "expense",
+            "category_id": category_a.to_hex(),
+            "account_from_id": account_a.to_hex(),
+            "amount": 42.5,
+            "planned_entry_id": planned_entry.to_hex(),
+            "is_confirmed": true,
+            "notes": "created"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "body: {body}");
+    let created: serde_json::Value = serde_json::from_str(&body).expect("create response JSON");
+    assert_eq!(
+        created["side_effects"]["planned_entry_recalculated"],
+        planned_entry.to_hex()
+    );
+    let transaction_id = created["id"].as_str().expect("created id").to_string();
+
+    let app = build_app(shared.clone());
+    let (status, body) = get_with_cookie(
+        app,
+        host_a,
+        &format!("/api/admin/transactions/{transaction_id}"),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains("Transaction mutation created"));
+
+    let app = build_app(shared.clone());
+    let (status, _body) = post_json_with_cookie(
+        app,
+        host_a,
+        &format!("/api/admin/transactions/{transaction_id}/update"),
+        &token,
+        serde_json::json!({
+            "date": "2026-07-02T12:00:00Z",
+            "description": "Transaction mutation updated",
+            "transaction_type": "expense",
+            "category_id": category_a.to_hex(),
+            "account_from_id": account_a.to_hex(),
+            "amount": 50.0,
+            "planned_entry_id": planned_entry.to_hex(),
+            "is_confirmed": false,
+            "notes": "updated"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let app = build_app(shared.clone());
+    let (status, body) = get_with_cookie(
+        app,
+        host_a,
+        &format!("/api/admin/transactions/{transaction_id}"),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let updated: serde_json::Value = serde_json::from_str(&body).expect("detail response JSON");
+    assert_eq!(updated["description"], "Transaction mutation updated");
+    assert_eq!(updated["amount"], 50.0);
+    assert_eq!(updated["is_confirmed"], false);
+
+    let app = build_app(shared.clone());
+    let (status, _body) = post_json_with_cookie(
+        app,
+        host_a,
+        "/api/admin/transactions",
+        &token,
+        serde_json::json!({
+            "date": "2026-07-01T12:00:00Z",
+            "description": "Bad tenant ref",
+            "transaction_type": "expense",
+            "category_id": category_b.to_hex(),
+            "amount": 1.0,
+            "is_confirmed": true
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let app = build_app(shared.clone());
+    let (status, body) = post_json_with_cookie(
+        app,
+        host_a,
+        &format!("/api/admin/transactions/{transaction_id}/delete"),
+        &token,
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let deleted: serde_json::Value = serde_json::from_str(&body).expect("delete response JSON");
+    assert_eq!(
+        deleted["side_effects"]["planned_entry_recalculated"],
+        planned_entry.to_hex()
+    );
+
+    let app = build_app(shared);
+    let (status, _body) = get_with_cookie(
+        app,
+        host_a,
+        &format!("/api/admin/transactions/{transaction_id}"),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 
     common::teardown(Some(ctx)).await;
 }

@@ -86,6 +86,38 @@ pub struct TransactionFormData {
 }
 
 #[derive(Deserialize)]
+pub struct TransactionPayload {
+    pub date: String,
+    pub description: String,
+    pub transaction_type: String,
+    pub category_id: String,
+    pub account_from_id: Option<String>,
+    pub account_to_id: Option<String>,
+    pub amount: f64,
+    pub planned_entry_id: Option<String>,
+    #[serde(default = "default_confirmed")]
+    pub is_confirmed: bool,
+    pub notes: Option<String>,
+}
+
+struct ParsedTransactionPayload {
+    date: mongodb::bson::DateTime,
+    description: String,
+    transaction_type: crate::models::TransactionType,
+    category_id: ObjectId,
+    account_from_id: Option<ObjectId>,
+    account_to_id: Option<ObjectId>,
+    amount: f64,
+    planned_entry_id: Option<ObjectId>,
+    is_confirmed: bool,
+    notes: Option<String>,
+}
+
+fn default_confirmed() -> bool {
+    true
+}
+
+#[derive(Deserialize)]
 pub struct TxPageQuery {
     #[serde(default = "default_tx_page")]
     page: usize,
@@ -524,6 +556,222 @@ pub async fn transactions_delete(
     match delete_transaction(&state, &object_id).await {
         Ok(_) => Redirect::to("/admin/transactions").into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+pub async fn transactions_create_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<TransactionPayload>,
+) -> impl IntoResponse {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+    let parsed = match parse_transaction_payload(&state, &company_id, payload).await {
+        Ok(parsed) => parsed,
+        Err(status) => return status.into_response(),
+    };
+    let planned_entry_side_effect = parsed.planned_entry_id.map(|id| id.to_hex());
+
+    match create_transaction(
+        &state,
+        &company_id,
+        parsed.date,
+        &parsed.description,
+        parsed.transaction_type,
+        &parsed.category_id,
+        parsed.account_from_id,
+        parsed.account_to_id,
+        parsed.amount,
+        parsed.planned_entry_id,
+        None,
+        parsed.is_confirmed,
+        parsed.notes,
+        None,
+        None,
+        None,
+        None,
+    )
+    .await
+    {
+        Ok(id) => (
+            StatusCode::CREATED,
+            Json(serde_json::json!({
+                "id": id.to_hex(),
+                "side_effects": { "planned_entry_recalculated": planned_entry_side_effect }
+            })),
+        )
+            .into_response(),
+        Err(err) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": err.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+pub async fn transaction_update_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(payload): Json<TransactionPayload>,
+) -> impl IntoResponse {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+    let object_id = match ObjectId::from_str(&id) {
+        Ok(id) => id,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    let previous_planned_entry_id = match get_transaction_by_id(&state, &object_id).await {
+        Ok(Some(tx)) => {
+            if let Err(status) = ensure_same_company(&tx.company_id, &company_id) {
+                return status.into_response();
+            }
+            tx.planned_entry_id.map(|id| id.to_hex())
+        }
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+    let parsed = match parse_transaction_payload(&state, &company_id, payload).await {
+        Ok(parsed) => parsed,
+        Err(status) => return status.into_response(),
+    };
+    let planned_entry_side_effect = parsed.planned_entry_id.map(|id| id.to_hex());
+
+    match update_transaction(
+        &state,
+        &object_id,
+        &company_id,
+        parsed.date,
+        &parsed.description,
+        parsed.transaction_type,
+        &parsed.category_id,
+        parsed.account_from_id,
+        parsed.account_to_id,
+        parsed.amount,
+        parsed.planned_entry_id,
+        parsed.is_confirmed,
+        parsed.notes,
+    )
+    .await
+    {
+        Ok(_) => Json(serde_json::json!({
+            "ok": true,
+            "side_effects": {
+                "previous_planned_entry_recalculated": previous_planned_entry_id,
+                "planned_entry_recalculated": planned_entry_side_effect
+            }
+        }))
+        .into_response(),
+        Err(err) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": err.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+pub async fn transaction_delete_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+    let object_id = match ObjectId::from_str(&id) {
+        Ok(id) => id,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    let planned_entry_side_effect = match get_transaction_by_id(&state, &object_id).await {
+        Ok(Some(tx)) => {
+            if let Err(status) = ensure_same_company(&tx.company_id, &company_id) {
+                return status.into_response();
+            }
+            tx.planned_entry_id.map(|id| id.to_hex())
+        }
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+
+    match delete_transaction(&state, &object_id).await {
+        Ok(_) => Json(serde_json::json!({
+            "ok": true,
+            "side_effects": { "planned_entry_recalculated": planned_entry_side_effect }
+        }))
+        .into_response(),
+        Err(err) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": err.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn parse_transaction_payload(
+    state: &AppState,
+    company_id: &ObjectId,
+    payload: TransactionPayload,
+) -> Result<ParsedTransactionPayload, StatusCode> {
+    let transaction_type =
+        parse_transaction_type(&payload.transaction_type).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let category_id = parse_object_id(&payload.category_id, "category_id")
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    let account_from_id =
+        parse_optional_object_id(payload.account_from_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let account_to_id =
+        parse_optional_object_id(payload.account_to_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let planned_entry_id =
+        parse_optional_object_id(payload.planned_entry_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let date = parse_datetime_field(&payload.date, "date").map_err(|_| StatusCode::BAD_REQUEST)?;
+    if payload.description.trim().is_empty() || payload.amount < 0.0 {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    validate_company_refs(
+        state,
+        company_id,
+        Some(&category_id),
+        account_from_id.as_ref(),
+        None,
+    )
+    .await?;
+    if let Some(ref account_to) = account_to_id {
+        validate_company_refs(
+            state,
+            company_id,
+            Some(&category_id),
+            Some(account_to),
+            None,
+        )
+        .await?;
+    }
+    if let Some(ref entry_id) = planned_entry_id {
+        validate_planned_entry_company(state, entry_id, company_id).await?;
+    }
+
+    Ok(ParsedTransactionPayload {
+        date,
+        description: payload.description.trim().to_string(),
+        transaction_type,
+        category_id,
+        account_from_id,
+        account_to_id,
+        amount: payload.amount,
+        planned_entry_id,
+        is_confirmed: payload.is_confirmed,
+        notes: clean_opt(payload.notes),
+    })
+}
+
+fn parse_optional_object_id(value: Option<String>) -> Result<Option<ObjectId>, String> {
+    match clean_opt(value) {
+        Some(value) => parse_object_id(&value, "id").map(Some),
+        None => Ok(None),
     }
 }
 

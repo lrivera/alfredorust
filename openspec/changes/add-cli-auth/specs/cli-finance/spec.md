@@ -39,6 +39,13 @@ The system SHALL only implement finance create, update, delete, pay, generate, a
 - **THEN** the CLI rejects the operation before sending the request
 - **AND** returns a structured error describing the required confirmation flag
 
+#### Scenario: Transaction is created, updated, or deleted
+
+- **WHEN** the user runs `spcli finance transactions create`, `update`, or `delete --yes`
+- **THEN** the CLI consumes tenant-scoped transaction JSON APIs
+- **AND** the server validates category, account, and planned-entry ownership for the active company
+- **AND** responses include planned-entry recalculation side-effect metadata when a transaction links to a planned entry
+
 ### Requirement: CLI finance commands document financial side effects
 
 The system SHALL document side effects for every finance CLI command that can create, update, delete, pay, generate, or link financial records.

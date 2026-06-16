@@ -255,8 +255,20 @@ async fn main() {
             get(routes::transactions_data_api),
         )
         .route(
+            "/api/admin/transactions",
+            post(routes::transactions_create_api),
+        )
+        .route(
             "/api/admin/transactions/{id}",
             get(routes::transaction_data_api),
+        )
+        .route(
+            "/api/admin/transactions/{id}/update",
+            post(routes::transaction_update_api),
+        )
+        .route(
+            "/api/admin/transactions/{id}/delete",
+            post(routes::transaction_delete_api),
         )
         .route(
             "/admin/transactions",
