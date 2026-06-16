@@ -115,6 +115,7 @@ cargo run --bin spcli -- finance forecasts create --generated-at 2026-01-01 --st
 cargo run --bin spcli -- finance recurring-plans create --name "Monthly Rent" --flow-type expense --category-id 64f000000000000000000000 --account-expected-id 64f000000000000000000001 --amount-estimated 1000 --frequency monthly --day-of-month 1 --start-date 2026-07-01T00:00:00Z
 cargo run --bin spcli -- finance planned-entries create --name "Fuel" --flow-type expense --category-id 64f000000000000000000000 --account-expected-id 64f000000000000000000001 --amount-estimated 500 --due-date 2026-07-01T00:00:00Z
 cargo run --bin spcli -- finance transactions create --date 2026-07-01T12:00:00Z --description "Fuel" --transaction-type expense --category-id 64f000000000000000000000 --account-from-id 64f000000000000000000001 --amount 500
+cargo run --bin spcli -- sat configs create --rfc XAXX010101000 --cer-path /secure/sat/cert.cer --key-path /secure/sat/private.key --key-password-env SAT_KEY_PASSWORD --label "Main FIEL"
 cargo run --bin spcli -- projects create --title "Warehouse install" --category-id 64f000000000000000000000 --priority high --total-budget 50000 --scheduled-at 2026-07-01T00:00:00Z
 cargo run --bin spcli -- orders create --title "Concrete pour" --category-id 64f000000000000000000000 --account-id 64f000000000000000000001 --status confirmed --amount 2500 --scheduled-at 2026-07-01T08:00:00Z --item "Labor:4:250" --item "Concrete:10:150"
 cargo run --bin spcli -- projects statuses create --name "In Progress" --position 10 --color sky
@@ -141,6 +142,8 @@ cargo run --bin spcli -- finance planned-entries delete 64f000000000000000000000
 cargo run --bin spcli -- finance transactions update 64f000000000000000000000 --date 2026-07-01T12:00:00Z --description "Fuel" --transaction-type expense --category-id 64f000000000000000000001 --account-from-id 64f000000000000000000002 --amount 550
 cargo run --bin spcli -- finance transactions delete 64f000000000000000000000 --yes
 cargo run --bin spcli -- finance contacts delete 64f000000000000000000000 --yes
+cargo run --bin spcli -- sat configs update 64f000000000000000000000 --rfc XAXX010101000 --cer-path /secure/sat/cert.cer --key-path /secure/sat/private.key --key-password-env SAT_KEY_PASSWORD --label "Updated FIEL"
+cargo run --bin spcli -- sat configs delete 64f000000000000000000000 --yes
 cargo run --bin spcli -- projects update 64f000000000000000000000 --title "Warehouse install" --category-id 64f000000000000000000001 --priority urgent --total-budget 55000
 cargo run --bin spcli -- projects advance 64f000000000000000000000
 cargo run --bin spcli -- projects delete 64f000000000000000000000 --yes

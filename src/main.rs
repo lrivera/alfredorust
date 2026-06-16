@@ -96,10 +96,21 @@ async fn main() {
             "/admin/companies/{id}/sat_configs/{config_id}/delete",
             post(routes::sat_configs_delete),
         )
-        .route("/api/admin/sat-configs", get(routes::sat_configs_data_api))
+        .route(
+            "/api/admin/sat-configs",
+            get(routes::sat_configs_data_api).post(routes::sat_config_create_api),
+        )
         .route(
             "/api/admin/sat-configs/{id}",
             get(routes::sat_config_data_api),
+        )
+        .route(
+            "/api/admin/sat-configs/{id}/update",
+            post(routes::sat_config_update_api),
+        )
+        .route(
+            "/api/admin/sat-configs/{id}/delete",
+            post(routes::sat_config_delete_api),
         )
         .route(
             "/admin/companies/{id}/cfdi/download",

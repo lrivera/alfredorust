@@ -326,6 +326,30 @@ enum SatCommand {
 enum SatConfigsCommand {
     List,
     Get { id: String },
+    Create(SatConfigWriteArgs),
+    Update(SatConfigUpdateArgs),
+    Delete(DeleteArgs),
+}
+
+#[derive(Args)]
+struct SatConfigWriteArgs {
+    #[arg(long)]
+    rfc: String,
+    #[arg(long)]
+    cer_path: String,
+    #[arg(long)]
+    key_path: String,
+    #[arg(long)]
+    key_password_env: String,
+    #[arg(long)]
+    label: Option<String>,
+}
+
+#[derive(Args)]
+struct SatConfigUpdateArgs {
+    id: String,
+    #[command(flatten)]
+    fields: SatConfigWriteArgs,
 }
 
 #[derive(Subcommand)]
@@ -1066,6 +1090,11 @@ async fn run(cli: Cli) -> Result<()> {
                     json_get_by_id_command("/api/admin/sat-configs", &id, cli.json, "SAT config")
                         .await
                 }
+                SatConfigsCommand::Create(args) => sat_config_create(args, cli.json).await,
+                SatConfigsCommand::Update(args) => sat_config_update(args, cli.json).await,
+                SatConfigsCommand::Delete(args) => {
+                    delete_command("/api/admin/sat-configs", args, cli.json, "SAT config").await
+                }
             },
         },
         Command::Projects { command } => match command {
@@ -1774,6 +1803,41 @@ async fn project_status_create(args: ProjectStatusWriteArgs, json_output: bool) 
     print_created_output(&value, json_output, "concept status")
 }
 
+async fn sat_config_create(args: SatConfigWriteArgs, json_output: bool) -> Result<()> {
+    let payload = sat_config_payload(args)?;
+    let mut state = load_state()?;
+    let value = authenticated_post_json(&mut state, "/api/admin/sat-configs", &payload).await?;
+    save_state(&state)?;
+    print_created_output(&value, json_output, "SAT config")
+}
+
+async fn sat_config_update(args: SatConfigUpdateArgs, json_output: bool) -> Result<()> {
+    validate_object_id(&args.id, "id")?;
+    let payload = sat_config_payload(args.fields)?;
+    let path = format!("/api/admin/sat-configs/{}/update", args.id);
+    let mut state = load_state()?;
+    let value = authenticated_post_json(&mut state, &path, &payload).await?;
+    save_state(&state)?;
+    print_ok_output(&value, json_output, "SAT config updated")
+}
+
+fn sat_config_payload(args: SatConfigWriteArgs) -> Result<Value> {
+    validate_non_empty(&args.rfc, "rfc")?;
+    validate_non_empty(&args.cer_path, "cer-path")?;
+    validate_non_empty(&args.key_path, "key-path")?;
+    validate_non_empty(&args.key_password_env, "key-password-env")?;
+    let key_password = std::env::var(&args.key_password_env)
+        .with_context(|| format!("environment variable {} is required", args.key_password_env))?;
+    validate_non_empty(&key_password, "key-password-env value")?;
+    Ok(json!({
+        "rfc": args.rfc,
+        "cer_path": args.cer_path,
+        "key_path": args.key_path,
+        "key_password": key_password,
+        "label": args.label,
+    }))
+}
+
 async fn project_create(args: ProjectWriteArgs, json_output: bool) -> Result<()> {
     let payload = project_payload(args)?;
     let mut state = load_state()?;
@@ -2323,6 +2387,9 @@ fn print_manifest(json_output: bool) -> Result<()> {
             { "name": "cfdi jobs status", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["job-id"], "output_schema": "cfdi_job" },
             { "name": "sat configs list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "sat_configs" },
             { "name": "sat configs get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "sat_config" },
+            { "name": "sat configs create", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--rfc", "--cer-path", "--key-path", "--key-password-env", "--label"], "output_schema": "created_id" },
+            { "name": "sat configs update", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id", "--rfc", "--cer-path", "--key-path", "--key-password-env", "--label"], "output_schema": "ok" },
+            { "name": "sat configs delete", "auth_required": true, "company_required": true, "destructive": true, "confirmation_flag": "--yes", "arguments": ["id"], "output_schema": "ok" },
             { "name": "projects list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "projects" },
             { "name": "projects get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "project" },
             { "name": "projects create", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--title", "--contact-id", "--category-id", "--description", "--priority", "--total-budget", "--scheduled-at", "--notes"], "output_schema": "created_id" },

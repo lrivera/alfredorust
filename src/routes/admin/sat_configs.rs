@@ -8,7 +8,7 @@ use axum::{
     response::{Html, IntoResponse, Redirect},
 };
 use bson::oid::ObjectId;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::fs;
 
 #[allow(unused_imports)]
@@ -73,6 +73,15 @@ pub struct SatConfigData {
     pub created_at: String,
 }
 
+#[derive(Deserialize)]
+pub struct SatConfigPayload {
+    pub rfc: String,
+    pub cer_path: String,
+    pub key_path: String,
+    pub key_password: String,
+    pub label: Option<String>,
+}
+
 fn sat_config_data(config: SatConfig) -> Option<SatConfigData> {
     let id = config.id?.to_hex();
     Some(SatConfigData {
@@ -113,6 +122,126 @@ pub async fn sat_config_data_api(
     sat_config_data(config)
         .map(Json)
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+pub async fn sat_config_create_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<SatConfigPayload>,
+) -> impl IntoResponse {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+    let parsed = match parse_sat_config_payload(payload) {
+        Ok(parsed) => parsed,
+        Err(status) => return status.into_response(),
+    };
+    let id = ObjectId::new();
+    match create_sat_config(
+        &state,
+        id,
+        company_id,
+        parsed.rfc,
+        parsed.cer_path,
+        parsed.key_path,
+        parsed.key_password,
+        parsed.label,
+    )
+    .await
+    {
+        Ok(id) => (
+            StatusCode::CREATED,
+            Json(serde_json::json!({ "id": id.to_hex() })),
+        )
+            .into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+pub async fn sat_config_update_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(payload): Json<SatConfigPayload>,
+) -> impl IntoResponse {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+    let oid = match ObjectId::parse_str(&id) {
+        Ok(id) => id,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    if get_sat_config_for_company(&state, &oid, &company_id)
+        .await
+        .ok()
+        .flatten()
+        .is_none()
+    {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let parsed = match parse_sat_config_payload(payload) {
+        Ok(parsed) => parsed,
+        Err(status) => return status.into_response(),
+    };
+    match state
+        .sat_configs
+        .update_one(
+            bson::doc! { "_id": oid, "company_id": company_id },
+            bson::doc! { "$set": {
+                "rfc": parsed.rfc,
+                "cer_path": parsed.cer_path,
+                "key_path": parsed.key_path,
+                "key_password": parsed.key_password,
+                "label": parsed.label,
+            }},
+        )
+        .await
+    {
+        Ok(_) => Json(serde_json::json!({ "ok": true })).into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+pub async fn sat_config_delete_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let company_id = require_admin_active(&session_user)?;
+    let oid = ObjectId::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    get_sat_config_for_company(&state, &oid, &company_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    delete_sat_config(&state, &oid)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!({ "ok": true })).into_response())
+}
+
+fn parse_sat_config_payload(payload: SatConfigPayload) -> Result<SatConfigPayload, StatusCode> {
+    let rfc = payload.rfc.trim().to_uppercase();
+    let cer_path = payload.cer_path.trim().to_string();
+    let key_path = payload.key_path.trim().to_string();
+    if rfc.is_empty()
+        || cer_path.is_empty()
+        || key_path.is_empty()
+        || payload.key_password.is_empty()
+    {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    Ok(SatConfigPayload {
+        rfc,
+        cer_path,
+        key_path,
+        key_password: payload.key_password,
+        label: payload.label.and_then(|label| {
+            let label = label.trim().to_string();
+            if label.is_empty() { None } else { Some(label) }
+        }),
+    })
 }
 
 #[derive(Template)]

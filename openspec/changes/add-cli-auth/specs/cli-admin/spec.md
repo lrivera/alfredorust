@@ -30,6 +30,13 @@ The system SHALL redact sensitive setup and SAT config fields from CLI output.
 - **WHEN** the CLI returns SAT config data
 - **THEN** it omits or redacts certificate passwords, key passwords, and other secret-bearing fields
 
+#### Scenario: SAT config is created or changed
+
+- **WHEN** the user runs `spcli sat configs create`, `update`, or `delete --yes`
+- **THEN** the CLI consumes tenant-scoped SAT config JSON APIs
+- **AND** create and update read the key password from `--key-password-env` instead of a raw command argument
+- **AND** responses omit certificate paths and key passwords
+
 ### Requirement: CLI admin destructive commands require confirmation or remain unsupported
 
 The system SHALL require explicit confirmation flags for supported destructive admin commands and SHALL keep dangerous company-wide maintenance commands unsupported until a future spec adds audit and recovery requirements.
@@ -69,3 +76,8 @@ The system SHALL add harness coverage for representative admin CLI behavior.
 
 - **WHEN** the harness reads SAT config data through the CLI
 - **THEN** secret-bearing fields are absent or redacted in JSON output
+
+#### Scenario: SAT config mutation is tested
+
+- **WHEN** the harness creates, updates, and deletes SAT configs through JSON APIs
+- **THEN** it verifies active-tenant scoping and redacted responses

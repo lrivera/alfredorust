@@ -66,10 +66,21 @@ fn build_app(state: Arc<AppState>) -> Router {
             "/admin/companies/{id}/cfdi/jobs/{job_id}",
             get(routes::company_cfdi_job_status),
         )
-        .route("/api/admin/sat-configs", get(routes::sat_configs_data_api))
+        .route(
+            "/api/admin/sat-configs",
+            get(routes::sat_configs_data_api).post(routes::sat_config_create_api),
+        )
         .route(
             "/api/admin/sat-configs/{id}",
             get(routes::sat_config_data_api),
+        )
+        .route(
+            "/api/admin/sat-configs/{id}/update",
+            post(routes::sat_config_update_api),
+        )
+        .route(
+            "/api/admin/sat-configs/{id}/delete",
+            post(routes::sat_config_delete_api),
         )
         .route(
             "/admin/companies/{id}/delete",
@@ -2048,7 +2059,7 @@ async fn sat_config_json_endpoints_scope_and_redact_sensitive_fields() {
     create_sat_config(
         &state,
         config_a.clone(),
-        company_a,
+        company_a.clone(),
         "AAA010101AAA".into(),
         "uploads/sat/company-a/cert.cer".into(),
         "uploads/sat/company-a/private.key".into(),
@@ -2061,7 +2072,7 @@ async fn sat_config_json_endpoints_scope_and_redact_sensitive_fields() {
     create_sat_config(
         &state,
         config_b.clone(),
-        company_b,
+        company_b.clone(),
         "BBB010101BBB".into(),
         "uploads/sat/company-b/cert.cer".into(),
         "uploads/sat/company-b/private.key".into(),
@@ -2106,6 +2117,86 @@ async fn sat_config_json_endpoints_scope_and_redact_sensitive_fields() {
     )
     .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let app = build_app(shared.clone());
+    let (status, body) = post_json_with_cookie(
+        app,
+        host_a,
+        "/api/admin/sat-configs",
+        &admin_token,
+        serde_json::json!({
+            "rfc": "CCC010101CCC",
+            "cer_path": "uploads/sat/company-a/new.cer",
+            "key_path": "uploads/sat/company-a/new.key",
+            "key_password": "new-secret",
+            "label": "New FIEL"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "body: {body}");
+    assert!(!body.contains("new-secret"));
+    assert!(!body.contains("new.key"));
+    let created: serde_json::Value = serde_json::from_str(&body).expect("create response JSON");
+    let created_id = created["id"].as_str().expect("created id").to_string();
+
+    let app = build_app(shared.clone());
+    let (status, body) = post_json_with_cookie(
+        app,
+        host_a,
+        &format!("/api/admin/sat-configs/{created_id}/update"),
+        &admin_token,
+        serde_json::json!({
+            "rfc": "DDD010101DDD",
+            "cer_path": "uploads/sat/company-a/updated.cer",
+            "key_path": "uploads/sat/company-a/updated.key",
+            "key_password": "updated-secret",
+            "label": "Updated FIEL"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    assert!(!body.contains("updated-secret"));
+    assert!(!body.contains("updated.key"));
+
+    let app = build_app(shared.clone());
+    let (status, body) = get_with_cookie(
+        app,
+        host_a,
+        &format!("/api/admin/sat-configs/{created_id}"),
+        &admin_token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    assert!(body.contains("DDD010101DDD"));
+    assert!(!body.contains("updated-secret"));
+    assert!(!body.contains("updated.key"));
+
+    let app = build_app(shared.clone());
+    let (status, _body) = post_json_with_cookie(
+        app,
+        host_a,
+        "/api/admin/sat-configs",
+        &staff_token,
+        serde_json::json!({
+            "rfc": "EEE010101EEE",
+            "cer_path": "x.cer",
+            "key_path": "x.key",
+            "key_password": "secret"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let app = build_app(shared.clone());
+    let (status, body) = post_json_with_cookie(
+        app,
+        host_a,
+        &format!("/api/admin/sat-configs/{created_id}/delete"),
+        &admin_token,
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
 
     let app = build_app(shared);
     let (status, _body) =
