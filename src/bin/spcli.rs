@@ -210,7 +210,60 @@ enum ResourceLogsCommand {
 #[derive(Subcommand)]
 enum ResourceUsagesCommand {
     List,
-    Get { id: String },
+    Get {
+        id: String,
+    },
+    Create(ResourceUsageCreateArgs),
+    Update(ResourceUsageUpdateArgs),
+    Delete(DeleteArgs),
+    Allocations {
+        #[command(subcommand)]
+        command: ResourceUsageAllocationsCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum ResourceUsageAllocationsCommand {
+    List { usage_id: String },
+    Replace(ResourceUsageAllocationsReplaceArgs),
+}
+
+#[derive(Args)]
+struct ResourceUsageCreateArgs {
+    #[arg(long)]
+    resource_id: String,
+    #[arg(long)]
+    started_at: String,
+    #[arg(long)]
+    ended_at: Option<String>,
+    #[arg(long)]
+    operator_name: Option<String>,
+    #[arg(long)]
+    notes: Option<String>,
+}
+
+#[derive(Args)]
+struct ResourceUsageUpdateArgs {
+    id: String,
+    #[arg(long)]
+    started_at: String,
+    #[arg(long)]
+    ended_at: Option<String>,
+    #[arg(long)]
+    hourly_cost_snapshot: f64,
+    #[arg(long)]
+    operator_name: Option<String>,
+    #[arg(long)]
+    notes: Option<String>,
+}
+
+#[derive(Args)]
+struct ResourceUsageAllocationsReplaceArgs {
+    usage_id: String,
+    #[arg(long = "concept-id")]
+    concept_ids: Vec<String>,
+    #[arg(long = "allocation")]
+    allocations: Vec<String>,
 }
 
 #[derive(Subcommand)]
@@ -646,6 +699,25 @@ async fn run(cli: Cli) -> Result<()> {
                     )
                     .await
                 }
+                ResourceUsagesCommand::Create(args) => resource_usage_create(args, cli.json).await,
+                ResourceUsagesCommand::Update(args) => resource_usage_update(args, cli.json).await,
+                ResourceUsagesCommand::Delete(args) => {
+                    delete_command(
+                        "/api/admin/resource_usages",
+                        args,
+                        cli.json,
+                        "resource usage",
+                    )
+                    .await
+                }
+                ResourceUsagesCommand::Allocations { command } => match command {
+                    ResourceUsageAllocationsCommand::List { usage_id } => {
+                        resource_usage_allocations_list(&usage_id, cli.json).await
+                    }
+                    ResourceUsageAllocationsCommand::Replace(args) => {
+                        resource_usage_allocations_replace(args, cli.json).await
+                    }
+                },
             },
         },
         Command::Time { command } => match command {
@@ -1017,6 +1089,113 @@ async fn cfdi_get(uuid: &str, json_output: bool) -> Result<()> {
     json_get_command(&path, json_output, "CFDI").await
 }
 
+async fn resource_usage_create(args: ResourceUsageCreateArgs, json_output: bool) -> Result<()> {
+    validate_object_id(&args.resource_id, "resource-id")?;
+    let started_at = validate_rfc3339(&args.started_at, "started-at")?;
+    let ended_at = match args.ended_at {
+        Some(value) => Some(validate_rfc3339(&value, "ended-at")?),
+        None => None,
+    };
+    let mut state = load_state()?;
+    let value = authenticated_post_json(
+        &mut state,
+        "/api/admin/resource_usages",
+        &json!({
+            "resource_id": args.resource_id,
+            "started_at": started_at,
+            "ended_at": ended_at,
+            "operator_name": args.operator_name,
+            "notes": args.notes,
+        }),
+    )
+    .await?;
+    save_state(&state)?;
+    print_created_output(&value, json_output, "resource usage")
+}
+
+async fn resource_usage_update(args: ResourceUsageUpdateArgs, json_output: bool) -> Result<()> {
+    validate_object_id(&args.id, "id")?;
+    if args.hourly_cost_snapshot < 0.0 {
+        bail!("hourly-cost-snapshot must be greater than or equal to zero");
+    }
+    let started_at = validate_rfc3339(&args.started_at, "started-at")?;
+    let ended_at = match args.ended_at {
+        Some(value) => Some(validate_rfc3339(&value, "ended-at")?),
+        None => None,
+    };
+    let path = format!("/api/admin/resource_usages/{}/update", args.id);
+    let mut state = load_state()?;
+    let value = authenticated_post_json(
+        &mut state,
+        &path,
+        &json!({
+            "started_at": started_at,
+            "ended_at": ended_at,
+            "hourly_cost_snapshot": args.hourly_cost_snapshot,
+            "operator_name": args.operator_name,
+            "notes": args.notes,
+        }),
+    )
+    .await?;
+    save_state(&state)?;
+    print_ok_output(&value, json_output, "resource usage updated")
+}
+
+async fn resource_usage_allocations_list(usage_id: &str, json_output: bool) -> Result<()> {
+    validate_object_id(usage_id, "usage-id")?;
+    let path = format!("/api/admin/resource_usages/{usage_id}/allocations");
+    json_get_command(&path, json_output, "resource usage allocations").await
+}
+
+async fn resource_usage_allocations_replace(
+    args: ResourceUsageAllocationsReplaceArgs,
+    json_output: bool,
+) -> Result<()> {
+    validate_object_id(&args.usage_id, "usage-id")?;
+    let payload = resource_usage_allocations_payload(args.concept_ids, args.allocations)?;
+    let path = format!("/api/admin/resource_usages/{}/allocations", args.usage_id);
+    let mut state = load_state()?;
+    let value = authenticated_post_json(&mut state, &path, &payload).await?;
+    save_state(&state)?;
+    print_ok_output(&value, json_output, "resource usage allocations replaced")
+}
+
+fn resource_usage_allocations_payload(
+    concept_ids: Vec<String>,
+    allocations: Vec<String>,
+) -> Result<Value> {
+    if concept_ids.is_empty() == allocations.is_empty() {
+        bail!("provide either --concept-id values or --allocation values");
+    }
+    if !concept_ids.is_empty() {
+        for concept_id in &concept_ids {
+            validate_object_id(concept_id, "concept-id")?;
+        }
+        return Ok(json!({ "concept_ids": concept_ids }));
+    }
+
+    let mut parsed = Vec::new();
+    for allocation in allocations {
+        let parts = allocation.splitn(3, ':').collect::<Vec<_>>();
+        if parts.len() < 2 {
+            bail!("allocation must be concept_id:ratio[:notes]");
+        }
+        validate_object_id(parts[0], "allocation concept-id")?;
+        let ratio = parts[1]
+            .parse::<f64>()
+            .with_context(|| format!("allocation ratio is invalid: {allocation}"))?;
+        if ratio <= 0.0 {
+            bail!("allocation ratio must be greater than zero");
+        }
+        parsed.push(json!({
+            "concept_id": parts[0],
+            "ratio": ratio,
+            "notes": parts.get(2).copied(),
+        }));
+    }
+    Ok(json!({ "allocations": parsed }))
+}
+
 async fn cfdi_jobs_list(json_output: bool) -> Result<()> {
     let mut state = load_state()?;
     let company_id = selected_company_id(&mut state).await?;
@@ -1148,6 +1327,11 @@ fn print_manifest(json_output: bool) -> Result<()> {
             { "name": "resources logs get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "resource_log" },
             { "name": "resources usages list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "resource_usages" },
             { "name": "resources usages get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "resource_usage" },
+            { "name": "resources usages create", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--resource-id", "--started-at", "--ended-at", "--operator-name", "--notes"], "output_schema": "created_id" },
+            { "name": "resources usages update", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id", "--started-at", "--ended-at", "--hourly-cost-snapshot", "--operator-name", "--notes"], "output_schema": "ok" },
+            { "name": "resources usages delete", "auth_required": true, "company_required": true, "destructive": true, "confirmation_flag": "--yes", "arguments": ["id"], "output_schema": "ok" },
+            { "name": "resources usages allocations list", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["usage-id"], "output_schema": "resource_usage_allocations" },
+            { "name": "resources usages allocations replace", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["usage-id", "--concept-id", "--allocation"], "output_schema": "allocation_ids" },
             { "name": "time timeline", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--mode", "--from", "--to"], "output_schema": "timeline_buckets" },
             { "name": "pdf preview", "auth_required": true, "company_required": false, "destructive": false, "arguments": ["--input", "--source", "--output"], "output_schema": "pdf_preview" },
             { "name": "manifest", "auth_required": false, "company_required": false, "destructive": false }
@@ -1542,6 +1726,12 @@ fn normalize_timeline_bound(value: &str, name: &str) -> Result<String> {
         .and_hms_opt(0, 0, 0)
         .ok_or_else(|| anyhow!("{name} is out of range"))?;
     Ok(format!("{}Z", datetime.format("%Y-%m-%dT%H:%M:%S")))
+}
+
+fn validate_rfc3339(value: &str, name: &str) -> Result<String> {
+    chrono::DateTime::parse_from_rfc3339(value)
+        .with_context(|| format!("{name} must be RFC3339"))?;
+    Ok(value.to_string())
 }
 
 fn read_pdf_source(input: Option<&PathBuf>, source: Option<&str>) -> Result<String> {

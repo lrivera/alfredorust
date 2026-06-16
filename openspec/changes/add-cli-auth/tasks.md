@@ -90,6 +90,7 @@
 - [x] 10.2.1 Add resource log list/get JSON APIs and CLI commands.
 - [ ] 10.3 Add resource usage list/get/create/update/delete commands.
 - [x] 10.3.1 Add resource usage get JSON API and CLI command.
+- [x] 10.3.2 Add resource usage create/update/delete and allocation CLI commands over existing JSON APIs.
 - [ ] 10.4 Add timeline query commands equivalent to `/tiempo` API data access.
 
 ## 11. SAT, CFDI, And PDF Commands

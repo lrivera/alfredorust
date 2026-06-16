@@ -57,6 +57,12 @@ The system SHALL require stable input formats for dates, datetimes, durations, q
 - **THEN** started and ended datetimes are supplied as explicit RFC3339 values
 - **AND** invalid datetimes fail loudly before or at the server validation boundary
 
+#### Scenario: Resource usage is updated or deleted
+
+- **WHEN** the user runs `spcli resources usages update <id>` or `spcli resources usages delete <id> --yes`
+- **THEN** the CLI sends an authenticated request to the resource usage JSON API
+- **AND** the server remains responsible for tenant ownership, admin authorization, and allocation recalculation side effects
+
 ### Requirement: Resource CLI behavior is covered by harness tests
 
 The system SHALL add harness coverage for resource CLI behavior.

@@ -22,12 +22,13 @@ use alfredodev::{
     session::{SESSION_COOKIE_NAME, require_session},
     state::{
         AppState, CfdiJob, CfdiJobStatus, add_user_to_company, create_account, create_category,
-        create_company, create_forecast, create_planned_entry, create_project,
-        create_recurring_plan, create_resource, create_resource_log, create_resource_usage,
-        create_sat_config, create_session, create_transaction, create_user,
-        create_user_with_permissions, get_user_by_id, list_accounts, list_categories,
-        list_companies, list_contacts, list_forecasts, list_planned_entries, list_projects,
-        list_recurring_plans, list_resource_logs, list_resources, list_transactions, list_users,
+        create_company, create_concept_status, create_forecast, create_planned_entry,
+        create_project, create_project_concept, create_recurring_plan, create_resource,
+        create_resource_log, create_resource_usage, create_sat_config, create_session,
+        create_transaction, create_user, create_user_with_permissions, get_user_by_id,
+        list_accounts, list_categories, list_companies, list_contacts, list_forecasts,
+        list_planned_entries, list_projects, list_recurring_plans, list_resource_logs,
+        list_resource_usage_allocations, list_resources, list_transactions, list_users,
     },
 };
 use bson::{DateTime, doc};
@@ -258,6 +259,19 @@ fn build_app(state: Arc<AppState>) -> Router {
             "/api/admin/resource_usages/{id}",
             get(routes::api_resource_usage_detail),
         )
+        .route(
+            "/api/admin/resource_usages/{id}/update",
+            post(routes::api_resource_usages_update),
+        )
+        .route(
+            "/api/admin/resource_usages/{id}/delete",
+            post(routes::api_resource_usages_delete),
+        )
+        .route(
+            "/api/admin/resource_usages/{id}/allocations",
+            get(routes::api_resource_usage_allocations_index)
+                .post(routes::api_resource_usage_allocations_replace),
+        )
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             require_session,
@@ -331,6 +345,30 @@ async fn post_form_with_cookie_response(
         .expect("body read failed");
     let body = String::from_utf8_lossy(&body_bytes).to_string();
     (status, location, body)
+}
+
+async fn post_json_with_cookie(
+    app: Router,
+    host: &str,
+    path: &str,
+    token: &str,
+    payload: serde_json::Value,
+) -> (StatusCode, String) {
+    let req = Request::builder()
+        .method("POST")
+        .uri(path)
+        .header("host", host)
+        .header("cookie", format!("{SESSION_COOKIE_NAME}={token}"))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(payload.to_string()))
+        .unwrap();
+    let res = app.oneshot(req).await.expect("request failed");
+    let status = res.status();
+    let body_bytes = to_bytes(res.into_body(), 1024 * 1024)
+        .await
+        .expect("body read failed");
+    let body = String::from_utf8_lossy(&body_bytes).to_string();
+    (status, body)
 }
 
 #[tokio::test]
@@ -1639,6 +1677,227 @@ async fn resource_usage_json_get_scopes_to_active_tenant_and_admins() {
     let (status, _body) =
         get_with_cookie(app, host_a, "/api/admin/resource_usages", &staff_token).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
+
+    common::teardown(Some(ctx)).await;
+}
+
+#[tokio::test]
+async fn resource_usage_json_mutations_manage_allocations_and_delete() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let shared = Arc::new(state.clone());
+
+    let company = create_company(
+        &state,
+        "Resource Usage Mutation",
+        "resource-usage-mutation",
+        "MXN",
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+    let admin_id = create_user(
+        &state,
+        "resource-usage-mutation-admin@example.com",
+        "SECRET",
+        &[(company.clone(), UserRole::Admin)],
+    )
+    .await
+    .unwrap();
+    let admin = get_user_by_id(&state, &admin_id).await.unwrap().unwrap();
+    let token = create_session(&state, &admin.email).await.unwrap();
+    let host = "resource-usage-mutation.miapp.local";
+
+    let resource_id = create_resource(
+        &state,
+        &company,
+        "Mutation resource",
+        ResourceType::Machinery,
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+    let status_id = create_concept_status(
+        &state,
+        &company,
+        "In Progress",
+        1,
+        None,
+        true,
+        false,
+        false,
+        true,
+    )
+    .await
+    .unwrap();
+    let project_id = create_project(
+        &state,
+        &company,
+        "Allocation Project",
+        None,
+        None,
+        None,
+        ProjectPriority::Medium,
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let concept_a = create_project_concept(
+        &state,
+        &company,
+        &project_id,
+        Some(status_id.clone()),
+        "Concept A",
+        1.0,
+        None,
+        None,
+        None,
+        None,
+        None,
+        1,
+    )
+    .await
+    .unwrap();
+    let concept_b = create_project_concept(
+        &state,
+        &company,
+        &project_id,
+        Some(status_id),
+        "Concept B",
+        1.0,
+        None,
+        None,
+        None,
+        None,
+        None,
+        2,
+    )
+    .await
+    .unwrap();
+
+    let app = build_app(shared.clone());
+    let (status, body) = post_json_with_cookie(
+        app,
+        host,
+        "/api/admin/resource_usages",
+        &token,
+        serde_json::json!({
+            "resource_id": resource_id.to_hex(),
+            "started_at": "2026-06-01T10:00:00Z",
+            "ended_at": "2026-06-01T12:00:00Z",
+            "operator_name": "Mutation Operator",
+            "notes": "Created through JSON",
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let created: serde_json::Value = serde_json::from_str(&body).expect("create response JSON");
+    let usage_id = created["id"].as_str().expect("created id").to_string();
+
+    let app = build_app(shared.clone());
+    let (status, body) = post_json_with_cookie(
+        app,
+        host,
+        &format!("/api/admin/resource_usages/{usage_id}/update"),
+        &token,
+        serde_json::json!({
+            "started_at": "2026-06-01T11:00:00Z",
+            "ended_at": "2026-06-01T13:00:00Z",
+            "hourly_cost_snapshot": 250.0,
+            "operator_name": "Updated Operator",
+            "notes": "Updated through JSON",
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+
+    let app = build_app(shared.clone());
+    let (status, body) = post_json_with_cookie(
+        app,
+        host,
+        &format!("/api/admin/resource_usages/{usage_id}/allocations"),
+        &token,
+        serde_json::json!({ "concept_ids": [concept_a.to_hex(), concept_b.to_hex()] }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let usage_oid = bson::oid::ObjectId::parse_str(&usage_id).unwrap();
+    let allocations = list_resource_usage_allocations(&state, &company, &usage_oid)
+        .await
+        .unwrap();
+    assert_eq!(allocations.len(), 2);
+    assert!(
+        allocations
+            .iter()
+            .all(|allocation| (allocation.allocation_ratio - 0.5).abs() < 0.0001)
+    );
+
+    let app = build_app(shared.clone());
+    let (status, body) = get_with_cookie(
+        app,
+        host,
+        &format!("/api/admin/resource_usages/{usage_id}/allocations"),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains(&concept_a.to_hex()));
+    assert!(body.contains(&concept_b.to_hex()));
+
+    let app = build_app(shared.clone());
+    let (status, body) = post_json_with_cookie(
+        app,
+        host,
+        &format!("/api/admin/resource_usages/{usage_id}/allocations"),
+        &token,
+        serde_json::json!({
+            "allocations": [
+                { "concept_id": concept_a.to_hex(), "ratio": 0.7, "notes": "primary" },
+                { "concept_id": concept_b.to_hex(), "ratio": 0.3, "notes": "secondary" }
+            ]
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let allocations = list_resource_usage_allocations(&state, &company, &usage_oid)
+        .await
+        .unwrap();
+    assert_eq!(allocations.len(), 2);
+    assert!(allocations.iter().any(|allocation| {
+        allocation.concept_id == concept_a && (allocation.allocation_ratio - 0.7).abs() < 0.0001
+    }));
+
+    let app = build_app(shared.clone());
+    let (status, body) = post_json_with_cookie(
+        app,
+        host,
+        &format!("/api/admin/resource_usages/{usage_id}/delete"),
+        &token,
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let allocations = list_resource_usage_allocations(&state, &company, &usage_oid)
+        .await
+        .unwrap();
+    assert!(allocations.is_empty());
+
+    let app = build_app(shared);
+    let (status, _body) = get_with_cookie(
+        app,
+        host,
+        &format!("/api/admin/resource_usages/{usage_id}"),
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 
     common::teardown(Some(ctx)).await;
 }
