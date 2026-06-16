@@ -80,7 +80,9 @@
 - [ ] 9.2 Add project list/get/create/update/delete commands.
 - [x] 9.2.1 Add project list/get JSON APIs and CLI commands.
 - [ ] 9.3 Add project concept list/create/update/delete/advance commands.
+- [x] 9.3.1 Add project concept create/update/delete/advance and status-summary CLI commands over existing JSON APIs.
 - [ ] 9.4 Add concept status list/create/update/delete commands.
+- [x] 9.4.1 Add concept status create/update/delete CLI commands over existing JSON APIs.
 
 ## 10. Resource And Time Commands
 

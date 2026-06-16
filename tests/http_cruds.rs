@@ -194,6 +194,38 @@ fn build_app(state: Arc<AppState>) -> Router {
         )
         .route("/api/admin/projects", get(routes::projects_data_api))
         .route("/api/admin/projects/{id}", get(routes::project_data_api))
+        .route(
+            "/api/admin/concept_statuses",
+            get(routes::api_concept_statuses_index).post(routes::api_concept_statuses_create),
+        )
+        .route(
+            "/api/admin/concept_statuses/{id}/update",
+            post(routes::api_concept_statuses_update),
+        )
+        .route(
+            "/api/admin/concept_statuses/{id}/delete",
+            post(routes::api_concept_statuses_delete),
+        )
+        .route(
+            "/api/admin/projects/{project_id}/concepts",
+            get(routes::api_project_concepts_index).post(routes::api_project_concepts_create),
+        )
+        .route(
+            "/api/admin/projects/{project_id}/status_summary",
+            get(routes::api_project_status_summary),
+        )
+        .route(
+            "/api/admin/project_concepts/{id}/update",
+            post(routes::api_project_concepts_update),
+        )
+        .route(
+            "/api/admin/project_concepts/{id}/advance",
+            post(routes::api_project_concepts_advance),
+        )
+        .route(
+            "/api/admin/project_concepts/{id}/delete",
+            post(routes::api_project_concepts_delete),
+        )
         .route("/admin/projects/new", get(routes::projects_new))
         .route("/admin/projects/{id}/edit", get(routes::projects_edit))
         .route("/admin/projects/{id}/update", post(routes::projects_update))
@@ -1317,6 +1349,215 @@ async fn project_json_endpoints_scope_and_redact_money() {
     let app = build_app(shared);
     let (status, _body) = get_with_cookie(app, host_a, "/api/admin/projects", &blocked_token).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
+
+    common::teardown(Some(ctx)).await;
+}
+
+#[tokio::test]
+async fn project_workflow_json_mutations_manage_statuses_and_concepts() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let shared = Arc::new(state.clone());
+
+    let company = create_company(
+        &state,
+        "Project Workflow JSON",
+        "project-workflow-json",
+        "MXN",
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+    let admin_id = create_user(
+        &state,
+        "project-workflow-json-admin@example.com",
+        "SECRET",
+        &[(company.clone(), UserRole::Admin)],
+    )
+    .await
+    .unwrap();
+    let staff_id = create_user(
+        &state,
+        "project-workflow-json-staff@example.com",
+        "SECRET",
+        &[(company.clone(), UserRole::Staff)],
+    )
+    .await
+    .unwrap();
+    let admin = get_user_by_id(&state, &admin_id).await.unwrap().unwrap();
+    let staff = get_user_by_id(&state, &staff_id).await.unwrap().unwrap();
+    let admin_token = create_session(&state, &admin.email).await.unwrap();
+    let staff_token = create_session(&state, &staff.email).await.unwrap();
+    let host = "project-workflow-json.miapp.local";
+
+    let project_id = create_project(
+        &state,
+        &company,
+        "Workflow Project",
+        None,
+        None,
+        None,
+        ProjectPriority::Medium,
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let app = build_app(shared.clone());
+    let (status, body) = post_json_with_cookie(
+        app,
+        host,
+        "/api/admin/concept_statuses",
+        &admin_token,
+        serde_json::json!({
+            "name": "Started",
+            "position": 1,
+            "is_initial": true,
+            "is_active": true
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "body: {body}");
+    let initial_status_id = serde_json::from_str::<serde_json::Value>(&body).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let app = build_app(shared.clone());
+    let (status, body) = post_json_with_cookie(
+        app,
+        host,
+        "/api/admin/concept_statuses",
+        &admin_token,
+        serde_json::json!({
+            "name": "Done",
+            "position": 2,
+            "is_terminal": true,
+            "is_active": true
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "body: {body}");
+    let terminal_status_id = serde_json::from_str::<serde_json::Value>(&body).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let app = build_app(shared.clone());
+    let (status, body) = post_json_with_cookie(
+        app,
+        host,
+        &format!("/api/admin/projects/{}/concepts", project_id.to_hex()),
+        &admin_token,
+        serde_json::json!({
+            "status_id": initial_status_id,
+            "name": "Workflow Concept",
+            "quantity": 2.0,
+            "unit": "job",
+            "position": 1
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "body: {body}");
+    let concept_id = serde_json::from_str::<serde_json::Value>(&body).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let app = build_app(shared.clone());
+    let (status, body) = get_with_cookie(
+        app,
+        host,
+        &format!("/api/admin/projects/{}/status_summary", project_id.to_hex()),
+        &admin_token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains("Started"));
+
+    let app = build_app(shared.clone());
+    let (status, body) = post_json_with_cookie(
+        app,
+        host,
+        &format!("/api/admin/project_concepts/{concept_id}/advance"),
+        &admin_token,
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    assert!(body.contains("Done"));
+
+    let app = build_app(shared.clone());
+    let (status, body) = post_json_with_cookie(
+        app,
+        host,
+        &format!("/api/admin/project_concepts/{concept_id}/update"),
+        &admin_token,
+        serde_json::json!({
+            "status_id": terminal_status_id,
+            "name": "Workflow Concept Updated",
+            "quantity": 3.0,
+            "unit": "job",
+            "position": 2
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+
+    let app = build_app(shared.clone());
+    let (status, _body) = post_json_with_cookie(
+        app,
+        host,
+        &format!("/api/admin/project_concepts/{concept_id}/delete"),
+        &staff_token,
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let app = build_app(shared.clone());
+    let (status, body) = post_json_with_cookie(
+        app,
+        host,
+        &format!("/api/admin/project_concepts/{concept_id}/delete"),
+        &admin_token,
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+
+    let app = build_app(shared.clone());
+    let (status, body) = post_json_with_cookie(
+        app,
+        host,
+        &format!("/api/admin/concept_statuses/{terminal_status_id}/update"),
+        &admin_token,
+        serde_json::json!({
+            "name": "Archived",
+            "position": 3,
+            "is_terminal": true,
+            "is_active": true
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+
+    let app = build_app(shared);
+    let (status, body) = post_json_with_cookie(
+        app,
+        host,
+        &format!("/api/admin/concept_statuses/{terminal_status_id}/delete"),
+        &admin_token,
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
 
     common::teardown(Some(ctx)).await;
 }

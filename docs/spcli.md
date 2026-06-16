@@ -77,6 +77,7 @@ cargo run --bin spcli -- sat configs list
 cargo run --bin spcli -- projects list
 cargo run --bin spcli -- projects statuses list
 cargo run --bin spcli -- projects concepts list --project-id 64f000000000000000000000
+cargo run --bin spcli -- projects status-summary --project-id 64f000000000000000000000
 cargo run --bin spcli -- resources list
 cargo run --bin spcli -- resources logs list
 cargo run --bin spcli -- resources usages list
@@ -109,6 +110,8 @@ cargo run --bin spcli -- finance accounts create --name "BBVA" --account-type ba
 cargo run --bin spcli -- finance categories create --name "Services" --flow-type expense
 cargo run --bin spcli -- finance contacts create --name "Customer SA" --contact-type customer --rfc XAXX010101000
 cargo run --bin spcli -- finance forecasts create --generated-at 2026-01-01 --start-date 2026-01-01 --end-date 2026-12-31 --currency MXN --projected-income-total 1000 --projected-expense-total 500 --projected-net 500
+cargo run --bin spcli -- projects statuses create --name "In Progress" --position 10 --color sky
+cargo run --bin spcli -- projects concepts create --project-id 64f000000000000000000000 --name "Foundation" --quantity 1 --unit job --position 1
 cargo run --bin spcli -- resources usages create --resource-id 64f000000000000000000000 --started-at 2026-06-01T10:00:00Z --ended-at 2026-06-01T12:00:00Z --operator-name "Operator"
 ```
 
@@ -122,6 +125,11 @@ cargo run --bin spcli -- finance forecasts update 64f000000000000000000000 --gen
 cargo run --bin spcli -- finance contacts delete 64f000000000000000000000 --yes
 cargo run --bin spcli -- resources usages update 64f000000000000000000000 --started-at 2026-06-01T10:00:00Z --ended-at 2026-06-01T12:00:00Z --hourly-cost-snapshot 250
 cargo run --bin spcli -- resources usages delete 64f000000000000000000000 --yes
+cargo run --bin spcli -- projects statuses update 64f000000000000000000000 --name "Done" --position 20 --terminal
+cargo run --bin spcli -- projects statuses delete 64f000000000000000000000 --yes
+cargo run --bin spcli -- projects concepts update 64f000000000000000000000 --name "Foundation" --quantity 2 --status-id 64f000000000000000000001 --position 1
+cargo run --bin spcli -- projects concepts advance 64f000000000000000000000
+cargo run --bin spcli -- projects concepts delete 64f000000000000000000000 --yes
 cargo run --bin spcli -- resources usages allocations replace 64f000000000000000000000 --concept-id 64f000000000000000000001 --concept-id 64f000000000000000000002
 cargo run --bin spcli -- resources usages allocations replace 64f000000000000000000000 --allocation 64f000000000000000000001:0.7 --allocation 64f000000000000000000002:0.3:extra-work
 ```

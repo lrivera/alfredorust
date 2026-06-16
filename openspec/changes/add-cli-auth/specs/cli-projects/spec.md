@@ -32,6 +32,24 @@ The system SHALL use existing `/api/admin/*` project JSON APIs for concept statu
 - **THEN** the CLI consumes the JSON advance endpoint
 - **AND** returns the new status response from the server
 
+#### Scenario: Concept status is created or changed
+
+- **WHEN** the user runs `spcli projects statuses create`, `update`, or `delete --yes`
+- **THEN** the CLI consumes the concept status JSON APIs
+- **AND** the server remains responsible for tenant ownership, admin authorization, and workflow marker validation
+
+#### Scenario: Project concept is created or changed
+
+- **WHEN** the user runs `spcli projects concepts create`, `update`, or `delete --yes`
+- **THEN** the CLI consumes the project concept JSON APIs
+- **AND** the server remains responsible for tenant ownership, admin authorization, and status validation
+
+#### Scenario: Project status summary is requested
+
+- **WHEN** the user runs `spcli projects status-summary --project-id <id>`
+- **THEN** the CLI consumes the project status summary JSON API
+- **AND** returns status quantities for the selected project and company
+
 ### Requirement: CLI does not use project HTML forms as API contracts
 
 The system SHALL add JSON APIs before implementing CLI commands for project capabilities that are currently HTML/form-only.

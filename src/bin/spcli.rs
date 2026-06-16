@@ -164,9 +164,10 @@ enum ProjectsCommand {
     Get {
         id: String,
     },
+    StatusSummary(ProjectStatusSummaryArgs),
     Statuses {
         #[command(subcommand)]
-        command: ListCommand,
+        command: ProjectStatusesCommand,
     },
     Concepts {
         #[command(subcommand)]
@@ -174,15 +175,95 @@ enum ProjectsCommand {
     },
 }
 
+#[derive(Args)]
+struct ProjectStatusSummaryArgs {
+    #[arg(long)]
+    project_id: String,
+}
+
+#[derive(Subcommand)]
+enum ProjectStatusesCommand {
+    List,
+    Create(ProjectStatusWriteArgs),
+    Update(ProjectStatusUpdateArgs),
+    Delete(DeleteArgs),
+}
+
+#[derive(Args)]
+struct ProjectStatusWriteArgs {
+    #[arg(long)]
+    name: String,
+    #[arg(long)]
+    position: i32,
+    #[arg(long)]
+    color: Option<String>,
+    #[arg(long)]
+    initial: bool,
+    #[arg(long)]
+    terminal: bool,
+    #[arg(long)]
+    cancelled: bool,
+    #[arg(long)]
+    inactive: bool,
+}
+
+#[derive(Args)]
+struct ProjectStatusUpdateArgs {
+    id: String,
+    #[command(flatten)]
+    fields: ProjectStatusWriteArgs,
+}
+
 #[derive(Subcommand)]
 enum ProjectConceptsCommand {
     List(ProjectConceptsListArgs),
+    Create(ProjectConceptCreateArgs),
+    Update(ProjectConceptUpdateArgs),
+    Delete(DeleteArgs),
+    Advance { id: String },
 }
 
 #[derive(Args)]
 struct ProjectConceptsListArgs {
     #[arg(long)]
     project_id: String,
+}
+
+#[derive(Args)]
+struct ProjectConceptWriteArgs {
+    #[arg(long)]
+    name: String,
+    #[arg(long)]
+    quantity: f64,
+    #[arg(long)]
+    status_id: Option<String>,
+    #[arg(long)]
+    unit: Option<String>,
+    #[arg(long)]
+    description: Option<String>,
+    #[arg(long)]
+    estimated_hours: Option<f64>,
+    #[arg(long)]
+    estimated_cost: Option<f64>,
+    #[arg(long)]
+    notes: Option<String>,
+    #[arg(long, default_value_t = 0)]
+    position: i32,
+}
+
+#[derive(Args)]
+struct ProjectConceptCreateArgs {
+    #[arg(long)]
+    project_id: String,
+    #[command(flatten)]
+    fields: ProjectConceptWriteArgs,
+}
+
+#[derive(Args)]
+struct ProjectConceptUpdateArgs {
+    id: String,
+    #[command(flatten)]
+    fields: ProjectConceptWriteArgs,
 }
 
 #[derive(Subcommand)]
@@ -654,14 +735,44 @@ async fn run(cli: Cli) -> Result<()> {
             ProjectsCommand::Get { id } => {
                 json_get_by_id_command("/api/admin/projects", &id, cli.json, "project").await
             }
+            ProjectsCommand::StatusSummary(args) => project_status_summary(args, cli.json).await,
             ProjectsCommand::Statuses { command } => match command {
-                ListCommand::List => {
+                ProjectStatusesCommand::List => {
                     json_get_command("/api/admin/concept_statuses", cli.json, "concept statuses")
                         .await
+                }
+                ProjectStatusesCommand::Create(args) => project_status_create(args, cli.json).await,
+                ProjectStatusesCommand::Update(args) => project_status_update(args, cli.json).await,
+                ProjectStatusesCommand::Delete(args) => {
+                    delete_command(
+                        "/api/admin/concept_statuses",
+                        args,
+                        cli.json,
+                        "concept status",
+                    )
+                    .await
                 }
             },
             ProjectsCommand::Concepts { command } => match command {
                 ProjectConceptsCommand::List(args) => project_concepts_list(args, cli.json).await,
+                ProjectConceptsCommand::Create(args) => {
+                    project_concept_create(args, cli.json).await
+                }
+                ProjectConceptsCommand::Update(args) => {
+                    project_concept_update(args, cli.json).await
+                }
+                ProjectConceptsCommand::Delete(args) => {
+                    delete_command(
+                        "/api/admin/project_concepts",
+                        args,
+                        cli.json,
+                        "project concept",
+                    )
+                    .await
+                }
+                ProjectConceptsCommand::Advance { id } => {
+                    project_concept_advance(&id, cli.json).await
+                }
             },
         },
         Command::Resources { command } => match command {
@@ -1077,10 +1188,98 @@ async fn delete_command(
     print_ok_output(&value, json_output, &format!("{label} deleted"))
 }
 
+async fn project_status_create(args: ProjectStatusWriteArgs, json_output: bool) -> Result<()> {
+    let payload = project_status_payload(args)?;
+    let mut state = load_state()?;
+    let value =
+        authenticated_post_json(&mut state, "/api/admin/concept_statuses", &payload).await?;
+    save_state(&state)?;
+    print_created_output(&value, json_output, "concept status")
+}
+
+async fn project_status_update(args: ProjectStatusUpdateArgs, json_output: bool) -> Result<()> {
+    validate_object_id(&args.id, "id")?;
+    let payload = project_status_payload(args.fields)?;
+    let path = format!("/api/admin/concept_statuses/{}/update", args.id);
+    let mut state = load_state()?;
+    let value = authenticated_post_json(&mut state, &path, &payload).await?;
+    save_state(&state)?;
+    print_ok_output(&value, json_output, "concept status updated")
+}
+
+fn project_status_payload(args: ProjectStatusWriteArgs) -> Result<Value> {
+    validate_non_empty(&args.name, "name")?;
+    Ok(json!({
+        "name": args.name,
+        "position": args.position,
+        "color": args.color,
+        "is_initial": args.initial,
+        "is_terminal": args.terminal,
+        "is_cancelled": args.cancelled,
+        "is_active": !args.inactive,
+    }))
+}
+
+async fn project_status_summary(args: ProjectStatusSummaryArgs, json_output: bool) -> Result<()> {
+    validate_object_id(&args.project_id, "project-id")?;
+    let path = format!("/api/admin/projects/{}/status_summary", args.project_id);
+    json_get_command(&path, json_output, "project status summary").await
+}
+
 async fn project_concepts_list(args: ProjectConceptsListArgs, json_output: bool) -> Result<()> {
     validate_object_id(&args.project_id, "project-id")?;
     let path = format!("/api/admin/projects/{}/concepts", args.project_id);
     json_get_command(&path, json_output, "project concepts").await
+}
+
+async fn project_concept_create(args: ProjectConceptCreateArgs, json_output: bool) -> Result<()> {
+    validate_object_id(&args.project_id, "project-id")?;
+    let payload = project_concept_payload(args.fields)?;
+    let path = format!("/api/admin/projects/{}/concepts", args.project_id);
+    let mut state = load_state()?;
+    let value = authenticated_post_json(&mut state, &path, &payload).await?;
+    save_state(&state)?;
+    print_created_output(&value, json_output, "project concept")
+}
+
+async fn project_concept_update(args: ProjectConceptUpdateArgs, json_output: bool) -> Result<()> {
+    validate_object_id(&args.id, "id")?;
+    let payload = project_concept_payload(args.fields)?;
+    let path = format!("/api/admin/project_concepts/{}/update", args.id);
+    let mut state = load_state()?;
+    let value = authenticated_post_json(&mut state, &path, &payload).await?;
+    save_state(&state)?;
+    print_ok_output(&value, json_output, "project concept updated")
+}
+
+async fn project_concept_advance(id: &str, json_output: bool) -> Result<()> {
+    validate_object_id(id, "id")?;
+    let path = format!("/api/admin/project_concepts/{id}/advance");
+    let mut state = load_state()?;
+    let value = authenticated_post_json(&mut state, &path, &json!({})).await?;
+    save_state(&state)?;
+    print_value_output(&value, json_output, "project concept advanced")
+}
+
+fn project_concept_payload(args: ProjectConceptWriteArgs) -> Result<Value> {
+    validate_non_empty(&args.name, "name")?;
+    if args.quantity <= 0.0 {
+        bail!("quantity must be greater than zero");
+    }
+    if let Some(status_id) = args.status_id.as_deref() {
+        validate_object_id(status_id, "status-id")?;
+    }
+    Ok(json!({
+        "status_id": args.status_id,
+        "name": args.name,
+        "quantity": args.quantity,
+        "unit": args.unit,
+        "description": args.description,
+        "estimated_hours": args.estimated_hours,
+        "estimated_cost": args.estimated_cost,
+        "notes": args.notes,
+        "position": args.position,
+    }))
 }
 
 async fn cfdi_get(uuid: &str, json_output: bool) -> Result<()> {
@@ -1319,8 +1518,16 @@ fn print_manifest(json_output: bool) -> Result<()> {
             { "name": "sat configs get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "sat_config" },
             { "name": "projects list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "projects" },
             { "name": "projects get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "project" },
+            { "name": "projects status-summary", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--project-id"], "output_schema": "project_status_summary" },
             { "name": "projects statuses list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "concept_statuses" },
+            { "name": "projects statuses create", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--name", "--position", "--color", "--initial", "--terminal", "--cancelled", "--inactive"], "output_schema": "created_id" },
+            { "name": "projects statuses update", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id", "--name", "--position", "--color", "--initial", "--terminal", "--cancelled", "--inactive"], "output_schema": "ok" },
+            { "name": "projects statuses delete", "auth_required": true, "company_required": true, "destructive": true, "confirmation_flag": "--yes", "arguments": ["id"], "output_schema": "ok" },
             { "name": "projects concepts list", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--project-id"], "output_schema": "project_concepts" },
+            { "name": "projects concepts create", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--project-id", "--name", "--quantity", "--status-id", "--unit", "--description", "--estimated-hours", "--estimated-cost", "--notes", "--position"], "output_schema": "created_id" },
+            { "name": "projects concepts update", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id", "--name", "--quantity", "--status-id", "--unit", "--description", "--estimated-hours", "--estimated-cost", "--notes", "--position"], "output_schema": "ok" },
+            { "name": "projects concepts advance", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "concept_status" },
+            { "name": "projects concepts delete", "auth_required": true, "company_required": true, "destructive": true, "confirmation_flag": "--yes", "arguments": ["id"], "output_schema": "ok" },
             { "name": "resources list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "resources" },
             { "name": "resources get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "resource" },
             { "name": "resources logs list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "resource_logs" },
