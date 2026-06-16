@@ -247,8 +247,23 @@ fn build_app(state: Arc<AppState>) -> Router {
             "/admin/projects",
             get(routes::projects_index).post(routes::projects_create),
         )
-        .route("/api/admin/projects", get(routes::projects_data_api))
+        .route(
+            "/api/admin/projects",
+            get(routes::projects_data_api).post(routes::projects_create_api),
+        )
         .route("/api/admin/projects/{id}", get(routes::project_data_api))
+        .route(
+            "/api/admin/projects/{id}/update",
+            post(routes::project_update_api),
+        )
+        .route(
+            "/api/admin/projects/{id}/delete",
+            post(routes::project_delete_api),
+        )
+        .route(
+            "/api/admin/projects/{id}/advance",
+            post(routes::project_advance_api),
+        )
         .route(
             "/api/admin/concept_statuses",
             get(routes::api_concept_statuses_index).post(routes::api_concept_statuses_create),
@@ -293,8 +308,19 @@ fn build_app(state: Arc<AppState>) -> Router {
             "/admin/resources",
             get(routes::resources_index).post(routes::resources_create),
         )
-        .route("/api/admin/resources", get(routes::resources_data_api))
+        .route(
+            "/api/admin/resources",
+            get(routes::resources_data_api).post(routes::resources_create_api),
+        )
         .route("/api/admin/resources/{id}", get(routes::resource_data_api))
+        .route(
+            "/api/admin/resources/{id}/update",
+            post(routes::resource_update_api),
+        )
+        .route(
+            "/api/admin/resources/{id}/delete",
+            post(routes::resource_delete_api),
+        )
         .route("/admin/resources/new", get(routes::resources_new))
         .route("/admin/resources/{id}/edit", get(routes::resources_edit))
         .route(
@@ -311,11 +337,23 @@ fn build_app(state: Arc<AppState>) -> Router {
         )
         .route(
             "/api/admin/resource_logs",
-            get(routes::resource_logs_data_api),
+            get(routes::resource_logs_data_api).post(routes::resource_logs_create_api),
         )
         .route(
             "/api/admin/resource_logs/{id}",
             get(routes::resource_log_data_api),
+        )
+        .route(
+            "/api/admin/resource_logs/{id}/update",
+            post(routes::resource_log_update_api),
+        )
+        .route(
+            "/api/admin/resource_logs/{id}/delete",
+            post(routes::resource_log_delete_api),
+        )
+        .route(
+            "/api/admin/resource_logs/{id}/end",
+            post(routes::resource_log_end_api),
         )
         .route("/admin/resource_logs/new", get(routes::resource_logs_new))
         .route(
@@ -2230,6 +2268,185 @@ async fn project_json_endpoints_scope_and_redact_money() {
 }
 
 #[tokio::test]
+async fn project_json_mutations_scope_and_advance_base_project() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let shared = Arc::new(state.clone());
+
+    let company_a = create_company(
+        &state,
+        "Project Mutation A",
+        "project-mutation-a",
+        "MXN",
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+    let company_b = create_company(
+        &state,
+        "Project Mutation B",
+        "project-mutation-b",
+        "MXN",
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+    let admin_id = create_user(
+        &state,
+        "project-mutation-admin@example.com",
+        "SECRET",
+        &[(company_a.clone(), UserRole::Admin)],
+    )
+    .await
+    .unwrap();
+    let staff_id = create_user_with_permissions(
+        &state,
+        "project-mutation-staff@example.com",
+        "SECRET",
+        &[(
+            company_a.clone(),
+            UserRole::Staff,
+            vec![UserPermission::ViewProjects],
+        )],
+    )
+    .await
+    .unwrap();
+    let admin = get_user_by_id(&state, &admin_id).await.unwrap().unwrap();
+    let staff = get_user_by_id(&state, &staff_id).await.unwrap().unwrap();
+    let admin_token = create_session(&state, &admin.email).await.unwrap();
+    let staff_token = create_session(&state, &staff.email).await.unwrap();
+    let host_a = "project-mutation-a.miapp.local";
+
+    let category_a = create_category(
+        &state,
+        &company_a,
+        "Project Mutation Category A",
+        FlowType::Expense,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let category_b = create_category(
+        &state,
+        &company_b,
+        "Project Mutation Category B",
+        FlowType::Expense,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let app = build_app(shared.clone());
+    let (status, body) = post_json_with_cookie(
+        app,
+        host_a,
+        "/api/admin/projects",
+        &admin_token,
+        serde_json::json!({
+            "title": "Project created",
+            "category_id": category_a.to_hex(),
+            "description": "created",
+            "priority": "high",
+            "total_budget": 1000.0,
+            "scheduled_at": "2026-07-01T00:00:00Z",
+            "notes": "created notes"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "body: {body}");
+    let created: serde_json::Value = serde_json::from_str(&body).expect("create response JSON");
+    let project_id = created["id"].as_str().expect("created id").to_string();
+
+    let app = build_app(shared.clone());
+    let (status, _body) = post_json_with_cookie(
+        app,
+        host_a,
+        "/api/admin/projects",
+        &staff_token,
+        serde_json::json!({ "title": "Forbidden", "priority": "medium" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let app = build_app(shared.clone());
+    let (status, _body) = post_json_with_cookie(
+        app,
+        host_a,
+        "/api/admin/projects",
+        &admin_token,
+        serde_json::json!({
+            "title": "Bad tenant ref",
+            "category_id": category_b.to_hex(),
+            "priority": "medium"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let app = build_app(shared.clone());
+    let (status, body) = post_json_with_cookie(
+        app,
+        host_a,
+        &format!("/api/admin/projects/{project_id}/update"),
+        &admin_token,
+        serde_json::json!({
+            "title": "Project updated",
+            "category_id": category_a.to_hex(),
+            "description": "updated",
+            "priority": "urgent",
+            "total_budget": 1200.0,
+            "scheduled_at": "2026-07-02T00:00:00Z"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+
+    let app = build_app(shared.clone());
+    let (status, body) = post_json_with_cookie(
+        app,
+        host_a,
+        &format!("/api/admin/projects/{project_id}/advance"),
+        &admin_token,
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let advanced: serde_json::Value = serde_json::from_str(&body).expect("advance response JSON");
+    assert_eq!(advanced["status"], "analisis");
+
+    assert!(
+        list_projects(&state, &company_a)
+            .await
+            .unwrap()
+            .into_iter()
+            .any(|project| {
+                project.id.as_ref().map(|id| id.to_hex()) == Some(project_id.clone())
+                    && project.title == "Project updated"
+            })
+    );
+
+    let app = build_app(shared);
+    let (status, body) = post_json_with_cookie(
+        app,
+        host_a,
+        &format!("/api/admin/projects/{project_id}/delete"),
+        &admin_token,
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+
+    common::teardown(Some(ctx)).await;
+}
+
+#[tokio::test]
 async fn project_workflow_json_mutations_manage_statuses_and_concepts() {
     let ctx = match common::setup_state().await {
         Some(c) => c,
@@ -2547,6 +2764,156 @@ async fn resource_json_endpoints_scope_to_active_tenant_and_admins() {
 }
 
 #[tokio::test]
+async fn resource_json_mutations_scope_and_validate_allowed_statuses() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let shared = Arc::new(state.clone());
+
+    let company_a = create_company(
+        &state,
+        "Resource Mutation A",
+        "resource-mutation-a",
+        "MXN",
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+    let company_b = create_company(
+        &state,
+        "Resource Mutation B",
+        "resource-mutation-b",
+        "MXN",
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+    let admin_id = create_user(
+        &state,
+        "resource-mutation-admin@example.com",
+        "SECRET",
+        &[(company_a.clone(), UserRole::Admin)],
+    )
+    .await
+    .unwrap();
+    let staff_id = create_user(
+        &state,
+        "resource-mutation-staff@example.com",
+        "SECRET",
+        &[(company_a.clone(), UserRole::Staff)],
+    )
+    .await
+    .unwrap();
+    let admin = get_user_by_id(&state, &admin_id).await.unwrap().unwrap();
+    let staff = get_user_by_id(&state, &staff_id).await.unwrap().unwrap();
+    let admin_token = create_session(&state, &admin.email).await.unwrap();
+    let staff_token = create_session(&state, &staff.email).await.unwrap();
+    let host_a = "resource-mutation-a.miapp.local";
+
+    let status_a = create_concept_status(
+        &state, &company_a, "Allowed", 1, None, true, false, false, true,
+    )
+    .await
+    .unwrap();
+    let status_b = create_concept_status(
+        &state, &company_b, "Hidden", 1, None, true, false, false, true,
+    )
+    .await
+    .unwrap();
+
+    let app = build_app(shared.clone());
+    let (status, body) = post_json_with_cookie(
+        app,
+        host_a,
+        "/api/admin/resources",
+        &admin_token,
+        serde_json::json!({
+            "name": "Resource created",
+            "resource_type": "vehicle",
+            "is_active": true,
+            "hourly_cost": 250.0,
+            "currency": "MXN",
+            "allowed_status_ids": [status_a.to_hex()],
+            "notes": "created"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "body: {body}");
+    let created: serde_json::Value = serde_json::from_str(&body).expect("create response JSON");
+    let resource_id = created["id"].as_str().expect("created id").to_string();
+
+    let app = build_app(shared.clone());
+    let (status, _body) = post_json_with_cookie(
+        app,
+        host_a,
+        "/api/admin/resources",
+        &staff_token,
+        serde_json::json!({ "name": "Forbidden", "resource_type": "machinery" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let app = build_app(shared.clone());
+    let (status, _body) = post_json_with_cookie(
+        app,
+        host_a,
+        "/api/admin/resources",
+        &admin_token,
+        serde_json::json!({
+            "name": "Bad tenant status",
+            "resource_type": "machinery",
+            "allowed_status_ids": [status_b.to_hex()]
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let app = build_app(shared.clone());
+    let (status, body) = post_json_with_cookie(
+        app,
+        host_a,
+        &format!("/api/admin/resources/{resource_id}/update"),
+        &admin_token,
+        serde_json::json!({
+            "name": "Resource updated",
+            "resource_type": "equipment",
+            "is_active": false,
+            "hourly_cost": 300.0,
+            "currency": "USD",
+            "allowed_status_ids": [status_a.to_hex()]
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+
+    let resources = list_resources(&state, &company_a).await.unwrap();
+    assert!(resources.iter().any(|resource| {
+        resource.id.as_ref().map(|id| id.to_hex()) == Some(resource_id.clone())
+            && resource.name == "Resource updated"
+            && !resource.is_active
+            && resource.hourly_cost == 300.0
+            && resource.currency == "USD"
+    }));
+
+    let app = build_app(shared);
+    let (status, body) = post_json_with_cookie(
+        app,
+        host_a,
+        &format!("/api/admin/resources/{resource_id}/delete"),
+        &admin_token,
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+
+    common::teardown(Some(ctx)).await;
+}
+
+#[tokio::test]
 async fn resource_log_json_endpoints_scope_to_active_tenant_and_admins() {
     let ctx = match common::setup_state().await {
         Some(c) => c,
@@ -2659,6 +3026,171 @@ async fn resource_log_json_endpoints_scope_to_active_tenant_and_admins() {
     let (status, _body) =
         get_with_cookie(app, host_a, "/api/admin/resource_logs", &staff_token).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
+
+    common::teardown(Some(ctx)).await;
+}
+
+#[tokio::test]
+async fn resource_log_json_mutations_scope_and_compute_duration() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let shared = Arc::new(state.clone());
+
+    let company_a = create_company(
+        &state,
+        "Resource Log Mutation A",
+        "resource-log-mutation-a",
+        "MXN",
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+    let company_b = create_company(
+        &state,
+        "Resource Log Mutation B",
+        "resource-log-mutation-b",
+        "MXN",
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+    let admin_id = create_user(
+        &state,
+        "resource-log-mutation-admin@example.com",
+        "SECRET",
+        &[(company_a.clone(), UserRole::Admin)],
+    )
+    .await
+    .unwrap();
+    let admin = get_user_by_id(&state, &admin_id).await.unwrap().unwrap();
+    let token = create_session(&state, &admin.email).await.unwrap();
+    let host_a = "resource-log-mutation-a.miapp.local";
+
+    let project_a = create_project(
+        &state,
+        &company_a,
+        "Resource Log Project A",
+        None,
+        None,
+        None,
+        ProjectPriority::Medium,
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let project_b = create_project(
+        &state,
+        &company_b,
+        "Resource Log Project B",
+        None,
+        None,
+        None,
+        ProjectPriority::Medium,
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let resource_a = create_resource(
+        &state,
+        &company_a,
+        "Resource Log Resource A",
+        ResourceType::Machinery,
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let app = build_app(shared.clone());
+    let (status, body) = post_json_with_cookie(
+        app,
+        host_a,
+        "/api/admin/resource_logs",
+        &token,
+        serde_json::json!({
+            "project_id": project_a.to_hex(),
+            "phase": "assembly",
+            "resource_id": resource_a.to_hex(),
+            "started_at": "2026-07-01T10:00:00Z",
+            "operator_name": "Operator",
+            "notes": "created"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "body: {body}");
+    let created: serde_json::Value = serde_json::from_str(&body).expect("create response JSON");
+    let log_id = created["id"].as_str().expect("created id").to_string();
+
+    let app = build_app(shared.clone());
+    let (status, _body) = post_json_with_cookie(
+        app,
+        host_a,
+        "/api/admin/resource_logs",
+        &token,
+        serde_json::json!({
+            "project_id": project_b.to_hex(),
+            "started_at": "2026-07-01T10:00:00Z"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let app = build_app(shared.clone());
+    let (status, body) = post_json_with_cookie(
+        app,
+        host_a,
+        &format!("/api/admin/resource_logs/{log_id}/update"),
+        &token,
+        serde_json::json!({
+            "project_id": project_a.to_hex(),
+            "phase": "testing",
+            "resource_id": resource_a.to_hex(),
+            "started_at": "2026-07-01T10:00:00Z",
+            "ended_at": "2026-07-01T11:30:00Z"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+
+    let app = build_app(shared.clone());
+    let (status, body) = post_json_with_cookie(
+        app,
+        host_a,
+        &format!("/api/admin/resource_logs/{log_id}/end"),
+        &token,
+        serde_json::json!({ "ended_at": "2026-07-01T12:00:00Z" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let ended: serde_json::Value = serde_json::from_str(&body).expect("end response JSON");
+    assert_eq!(ended["duration_hours"], 2.0);
+
+    let logs = list_resource_logs(&state, &company_a).await.unwrap();
+    assert!(logs.iter().any(|log| {
+        log.id.as_ref().map(|id| id.to_hex()) == Some(log_id.clone())
+            && log.phase.as_deref() == Some("testing")
+            && log.duration_hours == Some(2.0)
+    }));
+
+    let app = build_app(shared);
+    let (status, body) = post_json_with_cookie(
+        app,
+        host_a,
+        &format!("/api/admin/resource_logs/{log_id}/delete"),
+        &token,
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
 
     common::teardown(Some(ctx)).await;
 }

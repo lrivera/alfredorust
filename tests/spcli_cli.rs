@@ -65,7 +65,25 @@ fn manifest_json_is_machine_readable() {
             && command["destructive"].as_bool() == Some(false)
     }));
     assert!(commands.iter().any(|command| {
+        command["name"].as_str() == Some("resources create")
+            && command["auth_required"].as_bool() == Some(true)
+            && command["company_required"].as_bool() == Some(true)
+            && command["destructive"].as_bool() == Some(false)
+    }));
+    assert!(commands.iter().any(|command| {
+        command["name"].as_str() == Some("resources logs end")
+            && command["auth_required"].as_bool() == Some(true)
+            && command["company_required"].as_bool() == Some(true)
+            && command["destructive"].as_bool() == Some(false)
+    }));
+    assert!(commands.iter().any(|command| {
         command["name"].as_str() == Some("projects concepts advance")
+            && command["auth_required"].as_bool() == Some(true)
+            && command["company_required"].as_bool() == Some(true)
+            && command["destructive"].as_bool() == Some(false)
+    }));
+    assert!(commands.iter().any(|command| {
+        command["name"].as_str() == Some("projects advance")
             && command["auth_required"].as_bool() == Some(true)
             && command["company_required"].as_bool() == Some(true)
             && command["destructive"].as_bool() == Some(false)

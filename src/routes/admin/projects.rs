@@ -74,6 +74,34 @@ pub struct ProjectData {
     pub notes: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct ProjectPayload {
+    pub title: String,
+    pub contact_id: Option<String>,
+    pub category_id: Option<String>,
+    pub description: Option<String>,
+    #[serde(default = "default_priority")]
+    pub priority: String,
+    pub total_budget: Option<f64>,
+    pub scheduled_at: Option<String>,
+    pub notes: Option<String>,
+}
+
+struct ParsedProjectPayload {
+    title: String,
+    contact_id: Option<ObjectId>,
+    category_id: Option<ObjectId>,
+    description: Option<String>,
+    priority: ProjectPriority,
+    total_budget: Option<f64>,
+    scheduled_at: Option<bson::DateTime>,
+    notes: Option<String>,
+}
+
+fn default_priority() -> String {
+    "medium".to_string()
+}
+
 pub async fn projects_index(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -235,6 +263,16 @@ fn parse_priority(s: &str) -> ProjectPriority {
     }
 }
 
+fn parse_priority_strict(s: &str) -> Result<ProjectPriority, StatusCode> {
+    match s {
+        "low" => Ok(ProjectPriority::Low),
+        "medium" => Ok(ProjectPriority::Medium),
+        "high" => Ok(ProjectPriority::High),
+        "urgent" => Ok(ProjectPriority::Urgent),
+        _ => Err(StatusCode::BAD_REQUEST),
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct ProjectForm {
     pub title: String,
@@ -356,6 +394,43 @@ pub async fn projects_create(
     .await
     {
         Ok(_) => Redirect::to("/admin/projects").into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+pub async fn projects_create_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<ProjectPayload>,
+) -> impl IntoResponse {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+    let parsed = match parse_project_payload(&state, &company_id, payload).await {
+        Ok(parsed) => parsed,
+        Err(status) => return status.into_response(),
+    };
+
+    match create_project(
+        &state,
+        &company_id,
+        &parsed.title,
+        parsed.contact_id,
+        parsed.category_id,
+        parsed.description,
+        parsed.priority,
+        parsed.total_budget,
+        parsed.scheduled_at,
+        parsed.notes,
+    )
+    .await
+    {
+        Ok(id) => (
+            StatusCode::CREATED,
+            Json(serde_json::json!({ "id": id.to_hex() })),
+        )
+            .into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
@@ -499,6 +574,50 @@ pub async fn projects_update(
     }
 }
 
+pub async fn project_update_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(payload): Json<ProjectPayload>,
+) -> impl IntoResponse {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+    let oid = match ObjectId::parse_str(&id) {
+        Ok(id) => id,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    match get_project_by_id_for_company(&state, &oid, &company_id).await {
+        Ok(Some(_)) => {}
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+    let parsed = match parse_project_payload(&state, &company_id, payload).await {
+        Ok(parsed) => parsed,
+        Err(status) => return status.into_response(),
+    };
+
+    match update_project(
+        &state,
+        &oid,
+        &company_id,
+        &parsed.title,
+        parsed.contact_id,
+        parsed.category_id,
+        parsed.description,
+        parsed.priority,
+        parsed.total_budget,
+        parsed.scheduled_at,
+        parsed.notes,
+    )
+    .await
+    {
+        Ok(_) => Json(serde_json::json!({ "ok": true })).into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
 pub async fn projects_delete(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -514,6 +633,25 @@ pub async fn projects_delete(
     Ok(Redirect::to("/admin/projects").into_response())
 }
 
+pub async fn project_delete_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let company_id = require_admin_active(&session_user)?;
+    let oid = ObjectId::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    get_project_by_id_for_company(&state, &oid, &company_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    delete_project(&state, &oid, &company_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(serde_json::json!({ "ok": true })).into_response())
+}
+
 pub async fn projects_advance(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -527,6 +665,26 @@ pub async fn projects_advance(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Redirect::to("/admin/projects").into_response())
+}
+
+pub async fn project_advance_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let company_id = require_admin_active(&session_user)?;
+    let oid = ObjectId::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let status = advance_project_phase(&state, &oid, &company_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    Ok(Json(serde_json::json!({
+        "ok": true,
+        "status": status.as_str(),
+        "status_label": status.label()
+    }))
+    .into_response())
 }
 
 fn parse_datetime(s: &str) -> Option<bson::DateTime> {
@@ -567,6 +725,80 @@ fn project_data(project: Project, can_view_money: bool) -> Option<ProjectData> {
             .map(|date| date.to_chrono().to_rfc3339()),
         notes: project.notes,
     })
+}
+
+async fn parse_project_payload(
+    state: &AppState,
+    company_id: &ObjectId,
+    payload: ProjectPayload,
+) -> Result<ParsedProjectPayload, StatusCode> {
+    let title = payload.title.trim().to_string();
+    if title.is_empty() || payload.total_budget.is_some_and(|amount| amount < 0.0) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let contact_id = parse_optional_object_id(payload.contact_id)?;
+    let category_id = parse_optional_object_id(payload.category_id)?;
+    validate_project_refs(state, company_id, category_id.as_ref(), contact_id.as_ref()).await?;
+    let scheduled_at = match clean_opt(payload.scheduled_at) {
+        Some(value) => {
+            Some(bson::DateTime::parse_rfc3339_str(&value).map_err(|_| StatusCode::BAD_REQUEST)?)
+        }
+        None => None,
+    };
+
+    Ok(ParsedProjectPayload {
+        title,
+        contact_id,
+        category_id,
+        description: clean_opt(payload.description),
+        priority: parse_priority_strict(&payload.priority)?,
+        total_budget: payload.total_budget,
+        scheduled_at,
+        notes: clean_opt(payload.notes),
+    })
+}
+
+fn parse_optional_object_id(value: Option<String>) -> Result<Option<ObjectId>, StatusCode> {
+    match clean_opt(value) {
+        Some(value) => ObjectId::parse_str(&value)
+            .map(Some)
+            .map_err(|_| StatusCode::BAD_REQUEST),
+        None => Ok(None),
+    }
+}
+
+fn clean_opt(input: Option<String>) -> Option<String> {
+    input.and_then(|value| {
+        let trimmed = value.trim().to_string();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
+    })
+}
+
+async fn validate_project_refs(
+    state: &AppState,
+    company_id: &ObjectId,
+    category_id: Option<&ObjectId>,
+    contact_id: Option<&ObjectId>,
+) -> Result<(), StatusCode> {
+    if let Some(category_id) = category_id {
+        let category = crate::state::get_category_by_id(state, category_id)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+            .ok_or(StatusCode::BAD_REQUEST)?;
+        ensure_same_company(&category.company_id, company_id)?;
+    }
+    if let Some(contact_id) = contact_id {
+        let contact = crate::state::get_contact_by_id(state, contact_id)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+            .ok_or(StatusCode::BAD_REQUEST)?;
+        ensure_same_company(&contact.company_id, company_id)?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]

@@ -65,6 +65,39 @@ pub struct ResourceData {
     pub updated_at: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct ResourcePayload {
+    pub name: String,
+    #[serde(default = "default_resource_type")]
+    pub resource_type: String,
+    #[serde(default = "default_true")]
+    pub is_active: bool,
+    #[serde(default)]
+    pub hourly_cost: f64,
+    pub currency: Option<String>,
+    #[serde(default)]
+    pub allowed_status_ids: Vec<String>,
+    pub notes: Option<String>,
+}
+
+struct ParsedResourcePayload {
+    name: String,
+    resource_type: ResourceType,
+    is_active: bool,
+    hourly_cost: f64,
+    currency: String,
+    allowed_status_ids: Vec<ObjectId>,
+    notes: Option<String>,
+}
+
+fn default_resource_type() -> String {
+    "machinery".to_string()
+}
+
+fn default_true() -> bool {
+    true
+}
+
 pub async fn resources_index(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -200,6 +233,16 @@ fn parse_resource_type(s: &str) -> ResourceType {
         "equipment" => ResourceType::Equipment,
         "other" => ResourceType::Other,
         _ => ResourceType::Machinery,
+    }
+}
+
+fn parse_resource_type_strict(s: &str) -> Result<ResourceType, StatusCode> {
+    match s {
+        "machinery" => Ok(ResourceType::Machinery),
+        "vehicle" => Ok(ResourceType::Vehicle),
+        "equipment" => Ok(ResourceType::Equipment),
+        "other" => Ok(ResourceType::Other),
+        _ => Err(StatusCode::BAD_REQUEST),
     }
 }
 
@@ -365,6 +408,49 @@ pub async fn resources_create(
     }
 }
 
+pub async fn resources_create_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<ResourcePayload>,
+) -> impl IntoResponse {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+    let parsed = match parse_resource_payload(&state, &company_id, payload).await {
+        Ok(parsed) => parsed,
+        Err(status) => return status.into_response(),
+    };
+
+    let id = match create_resource_with_cost(
+        &state,
+        &company_id,
+        &parsed.name,
+        parsed.resource_type,
+        parsed.is_active,
+        parsed.hourly_cost,
+        &parsed.currency,
+        parsed.notes,
+    )
+    .await
+    {
+        Ok(id) => id,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+    if update_resource_allowed_statuses(&state, &id, &company_id, parsed.allowed_status_ids)
+        .await
+        .is_err()
+    {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+
+    (
+        StatusCode::CREATED,
+        Json(serde_json::json!({ "id": id.to_hex() })),
+    )
+        .into_response()
+}
+
 pub async fn resources_edit(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -481,6 +567,64 @@ pub async fn resources_update(
     }
 }
 
+pub async fn resource_update_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(payload): Json<ResourcePayload>,
+) -> impl IntoResponse {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+    let oid = match ObjectId::parse_str(&id) {
+        Ok(id) => id,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    match get_resource_by_id_for_company(&state, &oid, &company_id).await {
+        Ok(Some(_)) => {}
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+    let parsed = match parse_resource_payload(&state, &company_id, payload).await {
+        Ok(parsed) => parsed,
+        Err(status) => return status.into_response(),
+    };
+
+    if update_resource(
+        &state,
+        &oid,
+        &company_id,
+        &parsed.name,
+        parsed.resource_type,
+        parsed.is_active,
+        parsed.notes,
+    )
+    .await
+    .is_err()
+    {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+    if update_resource_cost(
+        &state,
+        &oid,
+        &company_id,
+        parsed.hourly_cost,
+        &parsed.currency,
+    )
+    .await
+    .is_err()
+    {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+    match update_resource_allowed_statuses(&state, &oid, &company_id, parsed.allowed_status_ids)
+        .await
+    {
+        Ok(_) => Json(serde_json::json!({ "ok": true })).into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
 async fn resource_status_options(
     state: &AppState,
     company_id: &ObjectId,
@@ -547,4 +691,82 @@ pub async fn resources_delete(
         Ok(_) => Redirect::to("/admin/resources").into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
+}
+
+pub async fn resource_delete_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let company_id = require_admin_active(&session_user)?;
+    let oid = ObjectId::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    get_resource_by_id_for_company(&state, &oid, &company_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    delete_resource(&state, &oid, &company_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(serde_json::json!({ "ok": true })).into_response())
+}
+
+async fn parse_resource_payload(
+    state: &AppState,
+    company_id: &ObjectId,
+    payload: ResourcePayload,
+) -> Result<ParsedResourcePayload, StatusCode> {
+    let name = payload.name.trim().to_string();
+    if name.is_empty() || payload.hourly_cost < 0.0 {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let allowed_status_ids = parse_status_ids_strict(payload.allowed_status_ids)?;
+    validate_allowed_statuses(state, company_id, &allowed_status_ids).await?;
+    Ok(ParsedResourcePayload {
+        name,
+        resource_type: parse_resource_type_strict(&payload.resource_type)?,
+        is_active: payload.is_active,
+        hourly_cost: payload.hourly_cost,
+        currency: clean_opt(payload.currency).unwrap_or_else(|| "MXN".to_string()),
+        allowed_status_ids,
+        notes: clean_opt(payload.notes),
+    })
+}
+
+fn clean_opt(input: Option<String>) -> Option<String> {
+    input.and_then(|value| {
+        let trimmed = value.trim().to_string();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
+    })
+}
+
+fn parse_status_ids_strict(values: Vec<String>) -> Result<Vec<ObjectId>, StatusCode> {
+    values
+        .into_iter()
+        .map(|id| ObjectId::parse_str(id).map_err(|_| StatusCode::BAD_REQUEST))
+        .collect()
+}
+
+async fn validate_allowed_statuses(
+    state: &AppState,
+    company_id: &ObjectId,
+    ids: &[ObjectId],
+) -> Result<(), StatusCode> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let statuses = list_concept_statuses(state, company_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    for id in ids {
+        if !statuses.iter().any(|status| status.id.as_ref() == Some(id)) {
+            return Err(StatusCode::FORBIDDEN);
+        }
+    }
+    Ok(())
 }

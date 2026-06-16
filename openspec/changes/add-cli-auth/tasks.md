@@ -80,8 +80,9 @@
 
 - [x] 9.1 Add service order list/get/create/update/delete/complete commands.
 - [x] 9.1.1 Add service order JSON APIs and CLI commands with planned-entry and completion side-effect responses.
-- [ ] 9.2 Add project list/get/create/update/delete commands.
+- [x] 9.2 Add project list/get/create/update/delete/advance commands.
 - [x] 9.2.1 Add project list/get JSON APIs and CLI commands.
+- [x] 9.2.2 Add project create/update/delete/advance JSON APIs and CLI commands.
 - [ ] 9.3 Add project concept list/create/update/delete/advance commands.
 - [x] 9.3.1 Add project concept create/update/delete/advance and status-summary CLI commands over existing JSON APIs.
 - [ ] 9.4 Add concept status list/create/update/delete commands.
@@ -89,10 +90,12 @@
 
 ## 10. Resource And Time Commands
 
-- [ ] 10.1 Add resource list/get/create/update/delete commands.
+- [x] 10.1 Add resource list/get/create/update/delete commands.
 - [x] 10.1.1 Add resource list/get JSON APIs and CLI commands.
-- [ ] 10.2 Add resource log list/get/create/update/delete/start/end commands.
+- [x] 10.1.2 Add resource create/update/delete JSON APIs and CLI commands.
+- [x] 10.2 Add resource log list/get/create/update/delete/end commands.
 - [x] 10.2.1 Add resource log list/get JSON APIs and CLI commands.
+- [x] 10.2.2 Add resource log create/update/delete/end JSON APIs and CLI commands.
 - [ ] 10.3 Add resource usage list/get/create/update/delete commands.
 - [x] 10.3.1 Add resource usage get JSON API and CLI command.
 - [x] 10.3.2 Add resource usage create/update/delete and allocation CLI commands over existing JSON APIs.

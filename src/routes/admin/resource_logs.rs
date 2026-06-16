@@ -87,6 +87,33 @@ pub struct ResourceLogData {
     pub created_at: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct ResourceLogPayload {
+    pub project_id: Option<String>,
+    pub phase: Option<String>,
+    pub resource_id: Option<String>,
+    pub started_at: String,
+    pub ended_at: Option<String>,
+    pub operator_name: Option<String>,
+    pub notes: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct ResourceLogEndPayload {
+    pub ended_at: Option<String>,
+}
+
+struct ParsedResourceLogPayload {
+    project_id: Option<ObjectId>,
+    phase: Option<String>,
+    resource_id: Option<ObjectId>,
+    resource_name: Option<String>,
+    started_at: bson::DateTime,
+    ended_at: Option<bson::DateTime>,
+    operator_name: Option<String>,
+    notes: Option<String>,
+}
+
 pub async fn resource_logs_index(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -318,6 +345,62 @@ pub async fn resource_logs_create(
     Ok(Redirect::to("/admin/resource_logs"))
 }
 
+pub async fn resource_logs_create_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<ResourceLogPayload>,
+) -> impl IntoResponse {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+    let parsed = match parse_resource_log_payload(&state, &company_id, payload).await {
+        Ok(parsed) => parsed,
+        Err(status) => return status.into_response(),
+    };
+    let id = match create_resource_log(
+        &state,
+        &company_id,
+        parsed.project_id.clone(),
+        parsed.phase.clone(),
+        parsed.resource_id.clone(),
+        parsed.resource_name.clone(),
+        parsed.started_at,
+        parsed.operator_name.clone(),
+        parsed.notes.clone(),
+    )
+    .await
+    {
+        Ok(id) => id,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+    if parsed.ended_at.is_some()
+        && update_resource_log(
+            &state,
+            &id,
+            &company_id,
+            parsed.project_id,
+            parsed.phase,
+            parsed.resource_id,
+            parsed.resource_name,
+            parsed.started_at,
+            parsed.ended_at,
+            parsed.operator_name,
+            parsed.notes,
+        )
+        .await
+        .is_err()
+    {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+
+    (
+        StatusCode::CREATED,
+        Json(serde_json::json!({ "id": id.to_hex() })),
+    )
+        .into_response()
+}
+
 pub async fn resource_logs_edit(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -449,6 +532,50 @@ pub async fn resource_logs_update(
     Ok(Redirect::to("/admin/resource_logs"))
 }
 
+pub async fn resource_log_update_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(payload): Json<ResourceLogPayload>,
+) -> impl IntoResponse {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+    let oid = match ObjectId::parse_str(&id) {
+        Ok(id) => id,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    match get_resource_log_by_id_for_company(&state, &oid, &company_id).await {
+        Ok(Some(_)) => {}
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+    let parsed = match parse_resource_log_payload(&state, &company_id, payload).await {
+        Ok(parsed) => parsed,
+        Err(status) => return status.into_response(),
+    };
+
+    match update_resource_log(
+        &state,
+        &oid,
+        &company_id,
+        parsed.project_id,
+        parsed.phase,
+        parsed.resource_id,
+        parsed.resource_name,
+        parsed.started_at,
+        parsed.ended_at,
+        parsed.operator_name,
+        parsed.notes,
+    )
+    .await
+    {
+        Ok(_) => Json(serde_json::json!({ "ok": true })).into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
 pub async fn resource_logs_end(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -466,6 +593,32 @@ pub async fn resource_logs_end(
     Ok(Redirect::to("/admin/resource_logs"))
 }
 
+pub async fn resource_log_end_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(payload): Json<ResourceLogEndPayload>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let company_id = require_admin_active(&session_user)?;
+    let oid = ObjectId::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let ended_at = match clean_opt(payload.ended_at) {
+        Some(value) => {
+            bson::DateTime::parse_rfc3339_str(&value).map_err(|_| StatusCode::BAD_REQUEST)?
+        }
+        None => bson::DateTime::from_system_time(std::time::SystemTime::now()),
+    };
+    let duration_hours = end_resource_log(&state, &oid, &company_id, ended_at)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    Ok(Json(serde_json::json!({
+        "ok": true,
+        "duration_hours": duration_hours
+    }))
+    .into_response())
+}
+
 pub async fn resource_logs_delete(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -479,6 +632,90 @@ pub async fn resource_logs_delete(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Redirect::to("/admin/resource_logs"))
+}
+
+pub async fn resource_log_delete_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let company_id = require_admin_active(&session_user)?;
+    let oid = ObjectId::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    get_resource_log_by_id_for_company(&state, &oid, &company_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    delete_resource_log(&state, &oid, &company_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(serde_json::json!({ "ok": true })).into_response())
+}
+
+async fn parse_resource_log_payload(
+    state: &AppState,
+    company_id: &ObjectId,
+    payload: ResourceLogPayload,
+) -> Result<ParsedResourceLogPayload, StatusCode> {
+    let project_id = parse_optional_object_id(payload.project_id)?;
+    let resource_id = parse_optional_object_id(payload.resource_id)?;
+    if let Some(project_id) = &project_id {
+        let project = get_project_by_id(state, project_id)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+            .ok_or(StatusCode::BAD_REQUEST)?;
+        ensure_same_company(&project.company_id, company_id)?;
+    }
+    let resource_name = if let Some(resource_id) = &resource_id {
+        let resource = get_resource_by_id_state(state, resource_id)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+            .ok_or(StatusCode::BAD_REQUEST)?;
+        ensure_same_company(&resource.company_id, company_id)?;
+        Some(resource.name)
+    } else {
+        None
+    };
+    let started_at = bson::DateTime::parse_rfc3339_str(&payload.started_at)
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    let ended_at = match clean_opt(payload.ended_at) {
+        Some(value) => {
+            Some(bson::DateTime::parse_rfc3339_str(&value).map_err(|_| StatusCode::BAD_REQUEST)?)
+        }
+        None => None,
+    };
+
+    Ok(ParsedResourceLogPayload {
+        project_id,
+        phase: clean_opt(payload.phase),
+        resource_id,
+        resource_name,
+        started_at,
+        ended_at,
+        operator_name: clean_opt(payload.operator_name),
+        notes: clean_opt(payload.notes),
+    })
+}
+
+fn parse_optional_object_id(value: Option<String>) -> Result<Option<ObjectId>, StatusCode> {
+    match clean_opt(value) {
+        Some(value) => ObjectId::parse_str(&value)
+            .map(Some)
+            .map_err(|_| StatusCode::BAD_REQUEST),
+        None => Ok(None),
+    }
+}
+
+fn clean_opt(input: Option<String>) -> Option<String> {
+    input.and_then(|value| {
+        let trimmed = value.trim().to_string();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
+    })
 }
 
 fn format_datetime(dt: &bson::DateTime) -> String {

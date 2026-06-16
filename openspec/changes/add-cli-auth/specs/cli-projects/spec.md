@@ -16,9 +16,16 @@ The system SHALL provide project CLI commands that use authenticated, tenant-sco
 - **THEN** the CLI returns the project detail only if it belongs to the selected company
 - **AND** fails with a structured not-found or forbidden error otherwise
 
-### Requirement: CLI uses existing project JSON APIs where available
+### Requirement: CLI uses project JSON APIs for workflow mutations
 
 The system SHALL use existing `/api/admin/*` project JSON APIs for concept statuses, project concepts, status summaries, and resource usage relationships before adding new APIs.
+
+#### Scenario: Project is created, updated, deleted, or advanced
+
+- **WHEN** the user runs `spcli projects create`, `update`, `delete --yes`, or `advance`
+- **THEN** the CLI consumes tenant-scoped project JSON APIs
+- **AND** the server validates contact and category ownership for the active company
+- **AND** non-admin users are rejected for mutation requests
 
 #### Scenario: Concept statuses are listed
 
@@ -54,9 +61,9 @@ The system SHALL use existing `/api/admin/*` project JSON APIs for concept statu
 
 The system SHALL add JSON APIs before implementing CLI commands for project capabilities that are currently HTML/form-only.
 
-#### Scenario: Project CRUD is not yet JSON-ready
+#### Scenario: Project capability is not yet JSON-ready
 
-- **WHEN** project list, get, create, update, delete, or advance behavior is only available through `/admin/projects*` HTML/form routes
+- **WHEN** a project capability is only available through `/admin/projects*` HTML/form routes
 - **THEN** `spcli` SHALL wait for documented JSON APIs before exposing those mutations
 
 ### Requirement: Project CLI mutations enforce destructive confirmation and permissions
@@ -87,3 +94,8 @@ The system SHALL add harness coverage for project CLI behavior.
 
 - **WHEN** the harness advances a project concept through the CLI
 - **THEN** the persisted concept status changes according to the configured workflow
+
+#### Scenario: Project lifecycle mutation is tested
+
+- **WHEN** the harness creates, updates, advances, and deletes a project through JSON APIs
+- **THEN** it verifies active-tenant scoping, persisted project data, and returned status metadata

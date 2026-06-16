@@ -26,19 +26,32 @@ The system SHALL keep resource logs and resource usages as separate CLI command 
 - **THEN** the command operates on resource log records
 - **AND** does not mutate resource usage allocation records
 
+#### Scenario: Resource log is created, updated, ended, or deleted
+
+- **WHEN** the user runs `spcli resources logs create`, `update`, `end`, or `delete --yes`
+- **THEN** the CLI consumes tenant-scoped resource-log JSON APIs
+- **AND** the server validates project and resource ownership for the active company
+- **AND** ending a log returns the computed duration when the end time is not before the start time
+
 #### Scenario: Resource usage allocation command is requested
 
 - **WHEN** the user runs `spcli resources usages allocations replace <usage-id>`
 - **THEN** the command replaces allocations for that usage through the JSON API
 - **AND** returns the resulting allocation ids or a structured error
 
+#### Scenario: Resource is created, updated, or deleted
+
+- **WHEN** the user runs `spcli resources create`, `update`, or `delete --yes`
+- **THEN** the CLI consumes tenant-scoped resource JSON APIs
+- **AND** the server validates resource type, active status, cost, and allowed concept status ownership for the active company
+
 ### Requirement: CLI resource commands require APIs for HTML-only capabilities
 
 The system SHALL add JSON APIs before implementing CLI commands for resource capabilities that are currently HTML/form-only.
 
-#### Scenario: Resource CRUD is not yet JSON-ready
+#### Scenario: Resource capability is not yet JSON-ready
 
-- **WHEN** resource create, update, delete, or detail behavior is only available through `/admin/resources*` HTML/form routes
+- **WHEN** a resource capability is only available through `/admin/resources*` HTML/form routes
 - **THEN** `spcli` SHALL NOT scrape or submit those pages
 - **AND** backend JSON APIs SHALL be specified and implemented first
 
@@ -76,3 +89,13 @@ The system SHALL add harness coverage for resource CLI behavior.
 
 - **WHEN** a staff user runs resource commands
 - **THEN** the harness verifies the allowed read or mutation behavior for that user's permissions
+
+#### Scenario: Resource lifecycle mutation is tested
+
+- **WHEN** the harness creates, updates, and deletes a resource through JSON APIs
+- **THEN** it verifies active-tenant scoping, allowed status validation, and persisted resource data
+
+#### Scenario: Resource log lifecycle mutation is tested
+
+- **WHEN** the harness creates, updates, ends, and deletes a resource log through JSON APIs
+- **THEN** it verifies active-tenant scoping, persisted log data, and duration metadata

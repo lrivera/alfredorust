@@ -334,6 +334,12 @@ enum ProjectsCommand {
     Get {
         id: String,
     },
+    Create(ProjectWriteArgs),
+    Update(ProjectUpdateArgs),
+    Delete(DeleteArgs),
+    Advance {
+        id: String,
+    },
     StatusSummary(ProjectStatusSummaryArgs),
     Statuses {
         #[command(subcommand)]
@@ -343,6 +349,33 @@ enum ProjectsCommand {
         #[command(subcommand)]
         command: ProjectConceptsCommand,
     },
+}
+
+#[derive(Args)]
+struct ProjectWriteArgs {
+    #[arg(long)]
+    title: String,
+    #[arg(long)]
+    contact_id: Option<String>,
+    #[arg(long)]
+    category_id: Option<String>,
+    #[arg(long)]
+    description: Option<String>,
+    #[arg(long, default_value = "medium")]
+    priority: String,
+    #[arg(long)]
+    total_budget: Option<f64>,
+    #[arg(long)]
+    scheduled_at: Option<String>,
+    #[arg(long)]
+    notes: Option<String>,
+}
+
+#[derive(Args)]
+struct ProjectUpdateArgs {
+    id: String,
+    #[command(flatten)]
+    fields: ProjectWriteArgs,
 }
 
 #[derive(Subcommand)]
@@ -481,6 +514,9 @@ enum ResourcesCommand {
     Get {
         id: String,
     },
+    Create(ResourceWriteArgs),
+    Update(ResourceUpdateArgs),
+    Delete(DeleteArgs),
     Logs {
         #[command(subcommand)]
         command: ResourceLogsCommand,
@@ -491,10 +527,71 @@ enum ResourcesCommand {
     },
 }
 
+#[derive(Args)]
+struct ResourceWriteArgs {
+    #[arg(long)]
+    name: String,
+    #[arg(long, default_value = "machinery")]
+    resource_type: String,
+    #[arg(long)]
+    inactive: bool,
+    #[arg(long, default_value_t = 0.0)]
+    hourly_cost: f64,
+    #[arg(long, default_value = "MXN")]
+    currency: String,
+    #[arg(long = "allowed-status-id")]
+    allowed_status_ids: Vec<String>,
+    #[arg(long)]
+    notes: Option<String>,
+}
+
+#[derive(Args)]
+struct ResourceUpdateArgs {
+    id: String,
+    #[command(flatten)]
+    fields: ResourceWriteArgs,
+}
+
 #[derive(Subcommand)]
 enum ResourceLogsCommand {
     List,
     Get { id: String },
+    Create(ResourceLogWriteArgs),
+    Update(ResourceLogUpdateArgs),
+    End(ResourceLogEndArgs),
+    Delete(DeleteArgs),
+}
+
+#[derive(Args)]
+struct ResourceLogWriteArgs {
+    #[arg(long)]
+    project_id: Option<String>,
+    #[arg(long)]
+    phase: Option<String>,
+    #[arg(long)]
+    resource_id: Option<String>,
+    #[arg(long)]
+    started_at: String,
+    #[arg(long)]
+    ended_at: Option<String>,
+    #[arg(long)]
+    operator_name: Option<String>,
+    #[arg(long)]
+    notes: Option<String>,
+}
+
+#[derive(Args)]
+struct ResourceLogUpdateArgs {
+    id: String,
+    #[command(flatten)]
+    fields: ResourceLogWriteArgs,
+}
+
+#[derive(Args)]
+struct ResourceLogEndArgs {
+    id: String,
+    #[arg(long)]
+    ended_at: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -978,6 +1075,12 @@ async fn run(cli: Cli) -> Result<()> {
             ProjectsCommand::Get { id } => {
                 json_get_by_id_command("/api/admin/projects", &id, cli.json, "project").await
             }
+            ProjectsCommand::Create(args) => project_create(args, cli.json).await,
+            ProjectsCommand::Update(args) => project_update(args, cli.json).await,
+            ProjectsCommand::Delete(args) => {
+                delete_command("/api/admin/projects", args, cli.json, "project").await
+            }
+            ProjectsCommand::Advance { id } => project_advance(id, cli.json).await,
             ProjectsCommand::StatusSummary(args) => project_status_summary(args, cli.json).await,
             ProjectsCommand::Statuses { command } => match command {
                 ProjectStatusesCommand::List => {
@@ -1037,6 +1140,11 @@ async fn run(cli: Cli) -> Result<()> {
             ResourcesCommand::Get { id } => {
                 json_get_by_id_command("/api/admin/resources", &id, cli.json, "resource").await
             }
+            ResourcesCommand::Create(args) => resource_create(args, cli.json).await,
+            ResourcesCommand::Update(args) => resource_update(args, cli.json).await,
+            ResourcesCommand::Delete(args) => {
+                delete_command("/api/admin/resources", args, cli.json, "resource").await
+            }
             ResourcesCommand::Logs { command } => match command {
                 ResourceLogsCommand::List => {
                     json_get_command("/api/admin/resource_logs", cli.json, "resource logs").await
@@ -1049,6 +1157,12 @@ async fn run(cli: Cli) -> Result<()> {
                         "resource log",
                     )
                     .await
+                }
+                ResourceLogsCommand::Create(args) => resource_log_create(args, cli.json).await,
+                ResourceLogsCommand::Update(args) => resource_log_update(args, cli.json).await,
+                ResourceLogsCommand::End(args) => resource_log_end(args, cli.json).await,
+                ResourceLogsCommand::Delete(args) => {
+                    delete_command("/api/admin/resource_logs", args, cli.json, "resource log").await
                 }
             },
             ResourcesCommand::Usages { command } => match command {
@@ -1660,6 +1774,57 @@ async fn project_status_create(args: ProjectStatusWriteArgs, json_output: bool) 
     print_created_output(&value, json_output, "concept status")
 }
 
+async fn project_create(args: ProjectWriteArgs, json_output: bool) -> Result<()> {
+    let payload = project_payload(args)?;
+    let mut state = load_state()?;
+    let value = authenticated_post_json(&mut state, "/api/admin/projects", &payload).await?;
+    save_state(&state)?;
+    print_created_output(&value, json_output, "project")
+}
+
+async fn project_update(args: ProjectUpdateArgs, json_output: bool) -> Result<()> {
+    validate_object_id(&args.id, "id")?;
+    let payload = project_payload(args.fields)?;
+    let path = format!("/api/admin/projects/{}/update", args.id);
+    let mut state = load_state()?;
+    let value = authenticated_post_json(&mut state, &path, &payload).await?;
+    save_state(&state)?;
+    print_ok_output(&value, json_output, "project updated")
+}
+
+async fn project_advance(id: String, json_output: bool) -> Result<()> {
+    validate_object_id(&id, "id")?;
+    let path = format!("/api/admin/projects/{id}/advance");
+    let mut state = load_state()?;
+    let value = authenticated_post_json(&mut state, &path, &json!({})).await?;
+    save_state(&state)?;
+    print_value_output(&value, json_output, "project advanced")
+}
+
+fn project_payload(args: ProjectWriteArgs) -> Result<Value> {
+    validate_non_empty(&args.title, "title")?;
+    validate_project_priority(&args.priority)?;
+    validate_optional_object_id(args.contact_id.as_deref(), "contact-id")?;
+    validate_optional_object_id(args.category_id.as_deref(), "category-id")?;
+    if args.total_budget.is_some_and(|amount| amount < 0.0) {
+        bail!("total-budget must be greater than or equal to zero");
+    }
+    let scheduled_at = match args.scheduled_at.as_deref() {
+        Some(value) => Some(validate_rfc3339(value, "scheduled-at")?),
+        None => None,
+    };
+    Ok(json!({
+        "title": args.title,
+        "contact_id": args.contact_id,
+        "category_id": args.category_id,
+        "description": args.description,
+        "priority": args.priority,
+        "total_budget": args.total_budget,
+        "scheduled_at": scheduled_at,
+        "notes": args.notes,
+    }))
+}
+
 async fn project_status_update(args: ProjectStatusUpdateArgs, json_output: bool) -> Result<()> {
     validate_object_id(&args.id, "id")?;
     let payload = project_status_payload(args.fields)?;
@@ -1770,6 +1935,95 @@ async fn order_complete(id: String, json_output: bool) -> Result<()> {
     let value = authenticated_post_json(&mut state, &path, &json!({})).await?;
     save_state(&state)?;
     print_ok_output(&value, json_output, "order completed")
+}
+
+async fn resource_create(args: ResourceWriteArgs, json_output: bool) -> Result<()> {
+    let payload = resource_payload(args)?;
+    let mut state = load_state()?;
+    let value = authenticated_post_json(&mut state, "/api/admin/resources", &payload).await?;
+    save_state(&state)?;
+    print_created_output(&value, json_output, "resource")
+}
+
+async fn resource_update(args: ResourceUpdateArgs, json_output: bool) -> Result<()> {
+    validate_object_id(&args.id, "id")?;
+    let payload = resource_payload(args.fields)?;
+    let path = format!("/api/admin/resources/{}/update", args.id);
+    let mut state = load_state()?;
+    let value = authenticated_post_json(&mut state, &path, &payload).await?;
+    save_state(&state)?;
+    print_ok_output(&value, json_output, "resource updated")
+}
+
+fn resource_payload(args: ResourceWriteArgs) -> Result<Value> {
+    validate_non_empty(&args.name, "name")?;
+    validate_resource_type(&args.resource_type)?;
+    if args.hourly_cost < 0.0 {
+        bail!("hourly-cost must be greater than or equal to zero");
+    }
+    for id in &args.allowed_status_ids {
+        validate_object_id(id, "allowed-status-id")?;
+    }
+    Ok(json!({
+        "name": args.name,
+        "resource_type": args.resource_type,
+        "is_active": !args.inactive,
+        "hourly_cost": args.hourly_cost,
+        "currency": args.currency,
+        "allowed_status_ids": args.allowed_status_ids,
+        "notes": args.notes,
+    }))
+}
+
+async fn resource_log_create(args: ResourceLogWriteArgs, json_output: bool) -> Result<()> {
+    let payload = resource_log_payload(args)?;
+    let mut state = load_state()?;
+    let value = authenticated_post_json(&mut state, "/api/admin/resource_logs", &payload).await?;
+    save_state(&state)?;
+    print_created_output(&value, json_output, "resource log")
+}
+
+async fn resource_log_update(args: ResourceLogUpdateArgs, json_output: bool) -> Result<()> {
+    validate_object_id(&args.id, "id")?;
+    let payload = resource_log_payload(args.fields)?;
+    let path = format!("/api/admin/resource_logs/{}/update", args.id);
+    let mut state = load_state()?;
+    let value = authenticated_post_json(&mut state, &path, &payload).await?;
+    save_state(&state)?;
+    print_ok_output(&value, json_output, "resource log updated")
+}
+
+async fn resource_log_end(args: ResourceLogEndArgs, json_output: bool) -> Result<()> {
+    validate_object_id(&args.id, "id")?;
+    let ended_at = match args.ended_at.as_deref() {
+        Some(value) => Some(validate_rfc3339(value, "ended-at")?),
+        None => None,
+    };
+    let path = format!("/api/admin/resource_logs/{}/end", args.id);
+    let mut state = load_state()?;
+    let value =
+        authenticated_post_json(&mut state, &path, &json!({ "ended_at": ended_at })).await?;
+    save_state(&state)?;
+    print_ok_output(&value, json_output, "resource log ended")
+}
+
+fn resource_log_payload(args: ResourceLogWriteArgs) -> Result<Value> {
+    validate_optional_object_id(args.project_id.as_deref(), "project-id")?;
+    validate_optional_object_id(args.resource_id.as_deref(), "resource-id")?;
+    let started_at = validate_rfc3339(&args.started_at, "started-at")?;
+    let ended_at = match args.ended_at.as_deref() {
+        Some(value) => Some(validate_rfc3339(value, "ended-at")?),
+        None => None,
+    };
+    Ok(json!({
+        "project_id": args.project_id,
+        "phase": args.phase,
+        "resource_id": args.resource_id,
+        "started_at": started_at,
+        "ended_at": ended_at,
+        "operator_name": args.operator_name,
+        "notes": args.notes,
+    }))
 }
 
 fn order_payload(args: OrderWriteArgs) -> Result<Value> {
@@ -2071,6 +2325,10 @@ fn print_manifest(json_output: bool) -> Result<()> {
             { "name": "sat configs get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "sat_config" },
             { "name": "projects list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "projects" },
             { "name": "projects get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "project" },
+            { "name": "projects create", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--title", "--contact-id", "--category-id", "--description", "--priority", "--total-budget", "--scheduled-at", "--notes"], "output_schema": "created_id" },
+            { "name": "projects update", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id", "--title", "--contact-id", "--category-id", "--description", "--priority", "--total-budget", "--scheduled-at", "--notes"], "output_schema": "ok" },
+            { "name": "projects delete", "auth_required": true, "company_required": true, "destructive": true, "confirmation_flag": "--yes", "arguments": ["id"], "output_schema": "ok" },
+            { "name": "projects advance", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "project_status" },
             { "name": "projects status-summary", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--project-id"], "output_schema": "project_status_summary" },
             { "name": "projects statuses list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "concept_statuses" },
             { "name": "projects statuses create", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--name", "--position", "--color", "--initial", "--terminal", "--cancelled", "--inactive"], "output_schema": "created_id" },
@@ -2089,8 +2347,15 @@ fn print_manifest(json_output: bool) -> Result<()> {
             { "name": "orders delete", "auth_required": true, "company_required": true, "destructive": true, "confirmation_flag": "--yes", "arguments": ["id"], "output_schema": "ok" },
             { "name": "resources list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "resources" },
             { "name": "resources get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "resource" },
+            { "name": "resources create", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--name", "--resource-type", "--inactive", "--hourly-cost", "--currency", "--allowed-status-id", "--notes"], "output_schema": "created_id" },
+            { "name": "resources update", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id", "--name", "--resource-type", "--inactive", "--hourly-cost", "--currency", "--allowed-status-id", "--notes"], "output_schema": "ok" },
+            { "name": "resources delete", "auth_required": true, "company_required": true, "destructive": true, "confirmation_flag": "--yes", "arguments": ["id"], "output_schema": "ok" },
             { "name": "resources logs list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "resource_logs" },
             { "name": "resources logs get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "resource_log" },
+            { "name": "resources logs create", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--project-id", "--phase", "--resource-id", "--started-at", "--ended-at", "--operator-name", "--notes"], "output_schema": "created_id" },
+            { "name": "resources logs update", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id", "--project-id", "--phase", "--resource-id", "--started-at", "--ended-at", "--operator-name", "--notes"], "output_schema": "ok" },
+            { "name": "resources logs end", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id", "--ended-at"], "output_schema": "ok" },
+            { "name": "resources logs delete", "auth_required": true, "company_required": true, "destructive": true, "confirmation_flag": "--yes", "arguments": ["id"], "output_schema": "ok" },
             { "name": "resources usages list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "resource_usages" },
             { "name": "resources usages get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "resource_usage" },
             { "name": "resources usages create", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--resource-id", "--started-at", "--ended-at", "--operator-name", "--notes"], "output_schema": "created_id" },
@@ -2516,6 +2781,20 @@ fn validate_order_status(value: &str) -> Result<()> {
     match value {
         "pending" | "confirmed" | "in_progress" | "completed" | "cancelled" => Ok(()),
         _ => bail!("status must be one of: pending, confirmed, in_progress, completed, cancelled"),
+    }
+}
+
+fn validate_project_priority(value: &str) -> Result<()> {
+    match value {
+        "low" | "medium" | "high" | "urgent" => Ok(()),
+        _ => bail!("priority must be one of: low, medium, high, urgent"),
+    }
+}
+
+fn validate_resource_type(value: &str) -> Result<()> {
+    match value {
+        "machinery" | "vehicle" | "equipment" | "other" => Ok(()),
+        _ => bail!("resource-type must be one of: machinery, vehicle, equipment, other"),
     }
 }
 

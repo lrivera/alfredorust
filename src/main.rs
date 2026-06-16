@@ -372,8 +372,23 @@ async fn main() {
             "/admin/projects",
             get(routes::projects_index).post(routes::projects_create),
         )
-        .route("/api/admin/projects", get(routes::projects_data_api))
+        .route(
+            "/api/admin/projects",
+            get(routes::projects_data_api).post(routes::projects_create_api),
+        )
         .route("/api/admin/projects/{id}", get(routes::project_data_api))
+        .route(
+            "/api/admin/projects/{id}/update",
+            post(routes::project_update_api),
+        )
+        .route(
+            "/api/admin/projects/{id}/delete",
+            post(routes::project_delete_api),
+        )
+        .route(
+            "/api/admin/projects/{id}/advance",
+            post(routes::project_advance_api),
+        )
         .route("/admin/projects/new", get(routes::projects_new))
         .route("/admin/projects/{id}", get(routes::project_detail))
         .route("/admin/projects/{id}/edit", get(routes::projects_edit))
@@ -431,8 +446,19 @@ async fn main() {
             "/admin/resources",
             get(routes::resources_index).post(routes::resources_create),
         )
-        .route("/api/admin/resources", get(routes::resources_data_api))
+        .route(
+            "/api/admin/resources",
+            get(routes::resources_data_api).post(routes::resources_create_api),
+        )
         .route("/api/admin/resources/{id}", get(routes::resource_data_api))
+        .route(
+            "/api/admin/resources/{id}/update",
+            post(routes::resource_update_api),
+        )
+        .route(
+            "/api/admin/resources/{id}/delete",
+            post(routes::resource_delete_api),
+        )
         .route("/admin/resources/new", get(routes::resources_new))
         .route("/admin/resources/{id}/edit", get(routes::resources_edit))
         .route(
@@ -449,11 +475,23 @@ async fn main() {
         )
         .route(
             "/api/admin/resource_logs",
-            get(routes::resource_logs_data_api),
+            get(routes::resource_logs_data_api).post(routes::resource_logs_create_api),
         )
         .route(
             "/api/admin/resource_logs/{id}",
             get(routes::resource_log_data_api),
+        )
+        .route(
+            "/api/admin/resource_logs/{id}/update",
+            post(routes::resource_log_update_api),
+        )
+        .route(
+            "/api/admin/resource_logs/{id}/delete",
+            post(routes::resource_log_delete_api),
+        )
+        .route(
+            "/api/admin/resource_logs/{id}/end",
+            post(routes::resource_log_end_api),
         )
         .route("/admin/resource_logs/new", get(routes::resource_logs_new))
         .route(
