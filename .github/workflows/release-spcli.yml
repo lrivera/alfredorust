@@ -1,0 +1,93 @@
+name: Release spcli
+
+# Builds the spcli CLI for macOS (arm64 + x86_64), Linux (x86_64) and Windows
+# (x86_64), bundles each with the Claude skill, command reference, installers and
+# a README, and attaches the archives to a GitHub Release. Coworkers download the
+# archive for their OS, run the installer, and drive the platform through Claude.
+#
+# Trigger: push a tag like `spcli-v1.0.0`, or run it manually (Actions tab) with
+# a tag name.
+
+on:
+  push:
+    tags:
+      - "spcli-v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish (e.g. spcli-v1.0.0)"
+        required: true
+        default: "spcli-vdev"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, target: aarch64-apple-darwin, label: macos-arm64, bin: spcli, archive: tar }
+          - { os: macos-latest, target: x86_64-apple-darwin, label: macos-x86_64, bin: spcli, archive: tar }
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, label: linux-x86_64, bin: spcli, archive: tar }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, label: windows-x86_64, bin: spcli.exe, archive: zip }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: spcli-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}
+
+      - name: Build spcli
+        run: cargo build --release --bin spcli --target ${{ matrix.target }}
+
+      - name: Resolve tag
+        id: tag
+        shell: bash
+        run: echo "name=${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}" >> "$GITHUB_OUTPUT"
+
+      - name: Stage package
+        shell: bash
+        run: |
+          pkg="spcli-${{ steps.tag.outputs.name }}-${{ matrix.label }}"
+          mkdir -p "$pkg/skills/spcli"
+          cp "target/${{ matrix.target }}/release/${{ matrix.bin }}" "$pkg/${{ matrix.bin }}"
+          cp dist/install.sh dist/install.ps1 dist/README.md "$pkg/"
+          cp dist/skill/SKILL.md "$pkg/skills/spcli/SKILL.md"
+          cp docs/spcli.md "$pkg/skills/spcli/reference.md"
+          echo "PKG=$pkg" >> "$GITHUB_ENV"
+
+      - name: Archive (tar.gz)
+        if: matrix.archive == 'tar'
+        shell: bash
+        run: |
+          tar -czf "$PKG.tar.gz" "$PKG"
+          echo "ASSET=$PKG.tar.gz" >> "$GITHUB_ENV"
+
+      - name: Archive (zip)
+        if: matrix.archive == 'zip'
+        shell: bash
+        run: |
+          7z a -tzip "$PKG.zip" "$PKG" >/dev/null
+          echo "ASSET=$PKG.zip" >> "$GITHUB_ENV"
+
+      - name: Publish to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.name }}
+          name: spcli ${{ steps.tag.outputs.name }}
+          fail_on_unmatched_files: true
+          files: ${{ env.ASSET }}

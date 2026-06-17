@@ -6,7 +6,6 @@ use aes_gcm::{
     Aes256Gcm, Nonce,
     aead::{Aead, KeyInit},
 };
-use alfredodev::totp::build_totp;
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Args, Parser, Subcommand};
 use rand::RngCore;
@@ -14,6 +13,36 @@ use reqwest::{Client, StatusCode, header};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use totp_rs::{Algorithm, Secret, TOTP};
+
+/// Minimum TOTP shared-secret length (128 bits) after Base32 decoding.
+const MIN_SECRET_BYTES: usize = 16;
+
+/// Build a TOTP instance from the issuer (company), account (email) and Base32
+/// secret. Inlined here so `spcli` stays a standalone binary that does not pull
+/// in the server library (and its native deps like openssl/mongodb) — keeping it
+/// small and trivial to cross-compile for macOS / Windows / Linux.
+fn build_totp(issuer: &str, email: &str, base32_secret: &str) -> Result<TOTP> {
+    let secret = Secret::Encoded(base32_secret.to_string()).to_bytes()?;
+    if secret.len() < MIN_SECRET_BYTES {
+        bail!(
+            "Shared secret too short: {} bytes, need >= {} ({} bits)",
+            secret.len(),
+            MIN_SECRET_BYTES,
+            MIN_SECRET_BYTES * 8
+        );
+    }
+    let totp = TOTP::new(
+        Algorithm::SHA1,
+        6,
+        1,
+        30,
+        secret,
+        Some(issuer.to_string()),
+        email.to_string(),
+    )?;
+    Ok(totp)
+}
 
 const APP_NAME: &str = "spcli";
 const CREDENTIAL_FILE: &str = "credentials.bin";
