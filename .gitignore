@@ -3,7 +3,8 @@
 /tmp
 .DS_Store
 .secret
-.claude/
+.claude/*
+!.claude/skills/
 /uploads/
 /cfdi_data/
 /graphify-out/
