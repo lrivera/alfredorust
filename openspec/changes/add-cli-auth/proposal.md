@@ -31,3 +31,9 @@ The application now exposes enough protected HTTP APIs that operators need a scr
 - Affected APIs: existing `/login`, protected session validation, company/profile endpoints, protected business APIs, and logout behavior.
 - Dependencies: likely `clap` for command parsing, `reqwest` for HTTP, and a small user-directory helper for storing CLI session state.
 - Systems: local developer/operator machines and existing Axum server instances.
+
+## Current Implementation Status
+
+Most planned CLI coverage is now implemented. The completed surface includes auth/session handling, company selection, account profile, company metadata admin, finance, service orders, projects, resources, SAT configs, CFDI reads/jobs, time timeline, PDF preview, command manifest metadata, and representative harness coverage.
+
+Remaining work is limited to users admin APIs/CLI, the safe TOTP provisioning decision for user creation, and CLI-safe CFDI import/download commands. See `implementation-status.md` for the current checklist-level summary.

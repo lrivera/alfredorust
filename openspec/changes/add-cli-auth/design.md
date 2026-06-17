@@ -82,7 +82,7 @@ The server already authenticates users through passwordless email plus TOTP and 
 
 ## Open Questions
 
-- Should the first CLI support only JSON output, or both human-readable and JSON output?
-- Which keyring crate and encrypted-envelope format should be used for Linux/macOS/Windows support?
-- Which machine-readable documentation format should drive the future AI skill: generated command manifest JSON, OpenAPI-like metadata, or both?
-- Should logout delete only the local session cookie, or delete the stored TOTP secret as well?
+- Which keyring crate should be used later for Linux/macOS/Windows support? The current implementation uses an encrypted local envelope without OS keyring integration.
+- Should machine-readable documentation eventually move from the static `spcli manifest` to generated metadata or an OpenAPI-like description?
+- What is the safe TOTP provisioning contract for `spcli admin users create`?
+- Which CFDI import/download operations are safe to expose through CLI, and how should SAT/FIEL secrets and in-memory job lifecycle limits be documented?

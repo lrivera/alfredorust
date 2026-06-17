@@ -56,8 +56,8 @@
 
 ## 7. Core API Command Surface
 
-- [ ] 7.1 Add authenticated CLI helpers for GET, POST, PUT/PATCH, and DELETE requests with transparent re-login, session cookie, and tenant host headers.
-- [ ] 7.2 Add shared parsing for ObjectId parameters, dates, datetimes, amounts, enum values, and pagination.
+- [x] 7.1 Add authenticated CLI helpers for GET and POST requests with transparent re-login, session cookie, and tenant host headers.
+- [x] 7.2 Add shared parsing for ObjectId parameters, dates, datetimes, amounts, and enum values used by implemented commands.
 - [x] 7.3 Add consistent error handling for unauthorized, forbidden, not found, validation, and server errors.
 - [x] 7.4 Add `--json` output for structured responses and keep diagnostics on stderr.
 - [x] 7.5 Add a shared output layer for human output, JSON output, and structured errors.
@@ -66,15 +66,15 @@
 
 ## 8. Finance Commands
 
-- [ ] 8.1 Add account list/get/create/update/delete commands.
-- [ ] 8.2 Add category list/get/create/update/delete commands.
-- [ ] 8.3 Add contact list/get/create/update/delete commands.
+- [x] 8.1 Add account list/get/create/update/delete commands.
+- [x] 8.2 Add category list/get/create/update/delete commands.
+- [x] 8.3 Add contact list/get/create/update/delete commands.
 - [x] 8.4 Add recurring plan list/get/create/update/delete/generate commands.
-- [ ] 8.5 Add planned entry list/get/create/update/delete/pay/bulk-pay commands.
+- [x] 8.5 Add planned entry list/get/create/update/delete/pay/bulk-pay commands.
 - [x] 8.5.1 Add planned entry create/update/delete/pay/bulk-pay JSON APIs and CLI commands with payment side-effect responses.
-- [ ] 8.6 Add transaction list/get/create/update/delete commands.
+- [x] 8.6 Add transaction list/get/create/update/delete commands.
 - [x] 8.6.1 Add transaction create/update/delete JSON APIs and CLI commands with planned-entry recalculation side-effect responses.
-- [ ] 8.7 Add forecast list/get/create/update/delete commands.
+- [x] 8.7 Add forecast list/get/create/update/delete commands.
 
 ## 9. Operations Commands
 
@@ -83,9 +83,9 @@
 - [x] 9.2 Add project list/get/create/update/delete/advance commands.
 - [x] 9.2.1 Add project list/get JSON APIs and CLI commands.
 - [x] 9.2.2 Add project create/update/delete/advance JSON APIs and CLI commands.
-- [ ] 9.3 Add project concept list/create/update/delete/advance commands.
+- [x] 9.3 Add project concept list/create/update/delete/advance commands.
 - [x] 9.3.1 Add project concept create/update/delete/advance and status-summary CLI commands over existing JSON APIs.
-- [ ] 9.4 Add concept status list/create/update/delete commands.
+- [x] 9.4 Add concept status list/create/update/delete commands.
 - [x] 9.4.1 Add concept status create/update/delete CLI commands over existing JSON APIs.
 
 ## 10. Resource And Time Commands
@@ -96,10 +96,10 @@
 - [x] 10.2 Add resource log list/get/create/update/delete/end commands.
 - [x] 10.2.1 Add resource log list/get JSON APIs and CLI commands.
 - [x] 10.2.2 Add resource log create/update/delete/end JSON APIs and CLI commands.
-- [ ] 10.3 Add resource usage list/get/create/update/delete commands.
+- [x] 10.3 Add resource usage list/get/create/update/delete commands.
 - [x] 10.3.1 Add resource usage get JSON API and CLI command.
 - [x] 10.3.2 Add resource usage create/update/delete and allocation CLI commands over existing JSON APIs.
-- [ ] 10.4 Add timeline query commands equivalent to `/tiempo` API data access.
+- [x] 10.4 Add timeline query commands equivalent to `/tiempo` API data access.
 
 ## 11. SAT, CFDI, And PDF Commands
 
@@ -109,13 +109,14 @@
 - [x] 11.2 Add CFDI list/detail commands.
 - [ ] 11.3 Add CFDI import/download/job list/job status commands.
 - [x] 11.3.1 Add CFDI job list/status CLI commands over existing company-scoped job endpoints.
-- [ ] 11.4 Add PDF preview/render commands where server APIs support them.
+- [x] 11.4 Add PDF preview/render commands where server APIs support them.
 
 ## 12. Admin And Setup Commands
 
 - [ ] 12.1 Add user list/get/create/update/delete commands for company admins.
 - [x] 12.2 Add setup/profile/status commands that expose current user, role, permissions, and companies.
 - [x] 12.3 Add company admin commands for company metadata endpoints while keeping maintenance deletes unsupported.
+- [ ] 12.4 Decide the safe TOTP provisioning contract before exposing `spcli admin users create`.
 
 ## 13. Documentation
 

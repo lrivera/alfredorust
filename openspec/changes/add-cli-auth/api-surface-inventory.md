@@ -6,10 +6,18 @@ This inventory maps the current web application route surface before expanding `
 
 | CLI area | Current commands | Backend routes consumed | Status |
 | --- | --- | --- | --- |
-| Authentication | `login`, `logout`, `reset-auth` | `POST /login`, `POST /logout` | Covered |
-| Profile/status | `status` | `GET /setup` | Covered, sanitized client-side |
+| Authentication | `login`, `status`, `logout`, `reset-auth` | `POST /login`, `GET /setup`, `POST /logout` | Covered |
+| Account profile | `account get`, `account update` | `GET/POST /api/account` | Covered; profile reads redact TOTP setup data |
 | Company selection | `company list`, `company use` | `GET /api/me/companies` | Covered |
-| Machine metadata | `manifest` | local manifest | Partial; needs full command metadata as commands are added |
+| Company admin | `admin companies list/get/create/update` | `/api/admin/companies*` | Covered for metadata; delete and maintenance remain unsupported |
+| Finance | `finance accounts/categories/contacts/forecasts/recurring-plans/planned-entries/transactions ...` | `/api/admin/*` finance routes | Covered for implemented CRUD and side-effect commands |
+| Orders | `orders list/get/create/update/delete/complete` | `/api/admin/orders*` | Covered |
+| Projects | `projects list/get/create/update/delete/advance/status-summary/statuses/concepts ...` | `/api/admin/projects*`, `/api/admin/concept_statuses*`, `/api/admin/project_concepts*` | Covered |
+| Resources | `resources list/get/create/update/delete/logs/usages/allocations ...` | `/api/admin/resources*`, `/api/admin/resource_logs*`, `/api/admin/resource_usages*` | Covered |
+| SAT configs | `sat configs list/get/create/update/delete` | `/api/admin/sat-configs*` | Covered with redacted output and env-based password input |
+| CFDI | `cfdi list/get/jobs list/jobs status` | `/api/admin/cfdis*`, `/admin/companies/{id}/cfdi/jobs*` | Reads and job status covered; import/download still pending |
+| Time/PDF | `time timeline`, `pdf preview` | `GET /api/tiempo`, `POST /pdf/preview` | Covered |
+| Machine metadata | `manifest` | local manifest | Covered for implemented commands |
 
 ## Route Protection Boundary
 
@@ -56,45 +64,44 @@ These routes already return JSON responses and can be consumed by `spcli` once c
 | Resource usage allocations | `GET /api/admin/resource_usages/{id}/allocations` | Lists usage allocations. | `spcli resources usages allocations list` |
 | Resource usage allocations | `POST /api/admin/resource_usages/{id}/allocations` | Replaces usage allocations. | `spcli resources usages allocations replace` |
 
-## HTML/Form-Only Routes Needing API Work
+## Original HTML/Form-Only Routes And Current Status
 
-These routes currently render Askama templates or consume browser form submissions with redirects. `spcli` should not scrape these pages. Add JSON endpoints or dual-mode handlers before implementing CLI commands for them.
+These routes originally rendered Askama templates or consumed browser form submissions with redirects. `spcli` should not scrape these pages. Completed areas now have explicit JSON endpoints; pending areas still need a CLI-grade JSON contract.
 
-| Area | Existing routes | Missing CLI-grade API capability |
+| Area | Existing routes | Current status |
 | --- | --- | --- |
-| Account | `GET/POST /account` | Profile/account read and update JSON contract. |
-| Users | `/admin/users`, `/admin/users/new`, `/admin/users/{id}/edit`, `/update`, `/delete`, `/qrcode` | User list/get/create/update/delete and QR/setup API with admin checks. |
-| Companies | `/admin/companies`, `/new`, `/{id}/edit`, `/update`, `/delete`, `/cfdis/delete_all`, `/transactions/delete_all` | Company admin API and explicit destructive maintenance endpoints with confirmation semantics. |
-| SAT configs | `/admin/companies/{id}/sat_configs`, `/new`, `/{config_id}/delete` | SAT config list/get/create/update/delete JSON API; must avoid leaking certificate password material. |
-| Finance accounts | `/admin/accounts`, `/new`, `/{id}/edit`, `/update`, `/delete` | Account list/get/create/update/delete JSON API. |
-| Finance categories | `/admin/categories`, `/new`, `/{id}/edit`, `/update`, `/delete` | Category list/get/create/update/delete JSON API. |
-| Finance contacts | `/admin/contacts`, `/new`, `/{id}/edit`, `/update`, `/delete` | Contact list/get/create/update/delete JSON API. |
-| Recurring plans | `/admin/recurring_plans`, `/new`, `/{id}/edit`, `/update`, `/delete`, `/{id}/generate` | Recurring plan CRUD/generate JSON API with side-effect summary. |
-| Planned entries | `/admin/planned_entries`, `/new`, `/bulk_pay`, `/{id}/edit`, `/update`, `/delete`, `/{id}/pay` | Planned entry CRUD/pay/bulk-pay JSON API with transaction side-effect summary. |
-| Transactions | `/admin/transactions`, `/new`, `/{id}/edit`, `/update`, `/delete` | Full transaction CRUD JSON API; existing `/api/admin/transactions/data` is list-only dashboard data. |
-| Forecasts | `/admin/forecasts`, `/new`, `/{id}/edit`, `/update`, `/delete` | Forecast CRUD JSON API. |
-| Service orders | `/admin/orders`, `/new`, `/{id}/edit`, `/update`, `/delete`, `/{id}/complete` | Order CRUD/complete JSON API with transaction/planned-entry side-effect summary. |
-| Projects | `/admin/projects`, `/new`, `/{id}`, `/{id}/edit`, `/update`, `/delete`, `/{id}/advance` | Project list/get/create/update/delete/advance JSON API. Existing concept APIs do not cover project CRUD. |
-| Project concept forms | `/admin/projects/{project_id}/concepts/new`, `/admin/project_concepts/{id}/edit`, form update/advance/delete routes | Already has JSON API equivalents for most concept actions; CLI should use `/api/admin/*` variants. |
-| Concept status forms | `/admin/concept_statuses`, `/new`, `/{id}/edit`, form update/delete routes | Already has JSON API equivalents; CLI should use `/api/admin/concept_statuses*`. |
-| Resources | `/admin/resources`, `/new`, `/{id}/edit`, `/update`, `/delete` | Resource list/get/create/update/delete JSON API. |
-| Resource logs | `/admin/resource_logs`, `/new`, `/{id}/edit`, `/update`, `/delete`, `/{id}/end` | Resource log CRUD/end JSON API. Distinguish logs from resource usages. |
-| Resource usage forms/grid | `/admin/resource_usages`, `/create`, `/new`, `/{id}/edit`, `/update`, `/delete` | Existing JSON API covers individual usages and allocations; grid save needs either explicit CLI support or stays web-only. |
-| CFDI HTML list | `GET /admin/cfdis` | Existing JSON list exists at `/api/admin/cfdis/data`; detail/query/import APIs are still missing. |
-| PDF editor | `GET /pdf` | Human editor only; CLI should use `POST /pdf/preview`. |
-| Time page | `GET /tiempo` | Human page only; CLI should use `GET /api/tiempo`. |
+| Account | `GET/POST /account` | Covered by `GET/POST /api/account`; reads redact TOTP secret and setup URLs. |
+| Users | `/admin/users`, `/admin/users/new`, `/admin/users/{id}/edit`, `/update`, `/delete`, `/qrcode` | Pending. Blocked on safe TOTP provisioning for create; list/get/update/delete can proceed after JSON admin APIs are added. |
+| Companies | `/admin/companies`, `/new`, `/{id}/edit`, `/update`, `/delete`, `/cfdis/delete_all`, `/transactions/delete_all` | Metadata list/get/create/update covered by `/api/admin/companies*`; delete and delete-all maintenance remain intentionally unsupported. |
+| SAT configs | `/admin/companies/{id}/sat_configs`, `/new`, `/{config_id}/delete` | Covered by `/api/admin/sat-configs*`; output redacts secret-bearing fields. |
+| Finance accounts | `/admin/accounts`, `/new`, `/{id}/edit`, `/update`, `/delete` | Covered by `/api/admin/accounts*`. |
+| Finance categories | `/admin/categories`, `/new`, `/{id}/edit`, `/update`, `/delete` | Covered by `/api/admin/categories*`. |
+| Finance contacts | `/admin/contacts`, `/new`, `/{id}/edit`, `/update`, `/delete` | Covered by `/api/admin/contacts*`. |
+| Recurring plans | `/admin/recurring_plans`, `/new`, `/{id}/edit`, `/update`, `/delete`, `/{id}/generate` | Covered by `/api/admin/recurring-plans*` with side-effect summaries. |
+| Planned entries | `/admin/planned_entries`, `/new`, `/bulk_pay`, `/{id}/edit`, `/update`, `/delete`, `/{id}/pay` | Covered by `/api/admin/planned-entries*` with payment side-effect summaries. |
+| Transactions | `/admin/transactions`, `/new`, `/{id}/edit`, `/update`, `/delete` | Covered by `/api/admin/transactions*` with planned-entry recalculation summaries. |
+| Forecasts | `/admin/forecasts`, `/new`, `/{id}/edit`, `/update`, `/delete` | Covered by `/api/admin/forecasts*`. |
+| Service orders | `/admin/orders`, `/new`, `/{id}/edit`, `/update`, `/delete`, `/{id}/complete` | Covered by `/api/admin/orders*` with transaction/planned-entry side-effect summaries. |
+| Projects | `/admin/projects`, `/new`, `/{id}`, `/{id}/edit`, `/update`, `/delete`, `/{id}/advance` | Covered by `/api/admin/projects*`. |
+| Project concept forms | `/admin/projects/{project_id}/concepts/new`, `/admin/project_concepts/{id}/edit`, form update/advance/delete routes | Covered through `/api/admin/projects/{project_id}/concepts` and `/api/admin/project_concepts*`. |
+| Concept status forms | `/admin/concept_statuses`, `/new`, `/{id}/edit`, form update/delete routes | Covered through `/api/admin/concept_statuses*`. |
+| Resources | `/admin/resources`, `/new`, `/{id}/edit`, `/update`, `/delete` | Covered by `/api/admin/resources*`. |
+| Resource logs | `/admin/resource_logs`, `/new`, `/{id}/edit`, `/update`, `/delete`, `/{id}/end` | Covered by `/api/admin/resource_logs*`. |
+| Resource usage forms/grid | `/admin/resource_usages`, `/create`, `/new`, `/{id}/edit`, `/update`, `/delete` | Individual usages and allocations are covered; bulk grid save remains web-only unless a future spec adds it. |
+| CFDI HTML list | `GET /admin/cfdis` | List/detail reads covered; CLI-safe import/download remains pending. |
+| PDF editor | `GET /pdf` | Human editor only; CLI uses `POST /pdf/preview`. |
+| Time page | `GET /tiempo` | Human page only; CLI uses `GET /api/tiempo`. |
 
 ## CLI Expansion Order
 
-1. Add shared HTTP helpers first: JSON `GET`, JSON `POST`, form `POST` only where unavoidable, tenant-aware base URL, transparent re-login retry, response status mapping, and destructive confirmation enforcement.
-2. Add read-only commands for existing JSON APIs: `time timeline`, `cfdi list`, `transactions list`, project concept/status reads, resource usage reads, PDF preview.
-3. Expand `spcli manifest` with schema version, arguments, permissions, output schemas, destructive flags, and examples for every implemented command.
-4. Add harness coverage for read-only commands, JSON output, structured errors, transparent re-login, tenant isolation, and forbidden cases.
-5. Add JSON backend endpoints for finance master data: accounts, categories, contacts. These unlock most finance create/update flows.
-6. Add JSON backend endpoints for transactions, planned entries, recurring plans, forecasts, and service orders, documenting finance side effects.
-7. Add JSON backend endpoints for projects, resources, resource logs, users, companies, and SAT configs.
-8. Add SAT/CFDI job commands after documenting secret handling, in-memory job limitations, and payment/planned-entry side effects.
-9. Add higher-risk mutations after their APIs, side-effect responses, destructive confirmations, and harness tests exist.
+1. Done: shared JSON `GET`/`POST` helpers, tenant-aware host context, transparent re-login retry, response status mapping, JSON output, and destructive confirmation enforcement.
+2. Done: read-only commands for existing JSON APIs including time, CFDI reads, transaction reads, project concepts/statuses, resource usages, and PDF preview.
+3. Done: `spcli manifest` entries for implemented commands with arguments, auth requirements, company requirements, destructive flags, and output schemas.
+4. Done: JSON backend endpoints and CLI commands for finance master data, forecasts, transactions, planned entries, recurring plans, service orders, projects, resources, resource logs, resource usages, SAT configs, company metadata, and account profile.
+5. Done: representative harness coverage for JSON APIs, redaction, tenant isolation, forbidden cases, side effects, CLI manifest output, structured errors, and destructive confirmation checks.
+6. Next: add users admin APIs/CLI after deciding the safe TOTP provisioning contract for create.
+7. Next: add CLI-safe CFDI import/download commands after documenting secret handling, in-memory job limits, and operational side effects.
+8. Later: add optional OS keyring support, stronger local key derivation, richer machine-readable API metadata, and any higher-risk maintenance operations only after a future spec adds audit/recovery requirements.
 
 ## Resolved Design Decisions
 
