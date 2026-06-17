@@ -115,7 +115,7 @@ pub struct PlannedEntryFormData {
     notes: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct PlannedEntryPayload {
     pub name: String,
     pub flow_type: String,
@@ -146,7 +146,7 @@ struct ParsedPlannedEntryPayload {
     notes: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct PlannedEntryPayPayload {
     pub paid_at: String,
     pub amount: f64,
@@ -156,7 +156,7 @@ pub struct PlannedEntryPayPayload {
     pub notes: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct PlannedEntryBulkPayPayload {
     pub entry_ids: Vec<String>,
     pub paid_at: String,
@@ -196,6 +196,17 @@ pub async fn planned_entries_index(
     render(PlannedEntriesIndexTemplate { entries: rows })
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/planned-entries",
+    tag = "finance",
+    responses(
+        (status = 200, description = "List planned entries"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden")
+    ),
+    security(("session" = []))
+)]
 pub async fn planned_entries_data_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -215,6 +226,19 @@ pub async fn planned_entries_data_api(
     Ok(Json(rows))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/planned-entries/{id}",
+    tag = "finance",
+    params(("id" = String, Path, description = "Record id")),
+    responses(
+        (status = 200, description = "Get planned entry"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found")
+    ),
+    security(("session" = []))
+)]
 pub async fn planned_entry_data_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -233,6 +257,19 @@ pub async fn planned_entry_data_api(
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/planned-entries",
+    tag = "finance",
+    request_body = PlannedEntryPayload,
+    responses(
+        (status = 201, description = "Create planned entry"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 400, description = "Invalid input")
+    ),
+    security(("session" = []))
+)]
 pub async fn planned_entries_create_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -293,6 +330,21 @@ pub async fn planned_entries_create_api(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/planned-entries/{id}/update",
+    tag = "finance",
+    params(("id" = String, Path, description = "Record id")),
+    request_body = PlannedEntryPayload,
+    responses(
+        (status = 200, description = "Update planned entry"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found"),
+        (status = 400, description = "Invalid input")
+    ),
+    security(("session" = []))
+)]
 pub async fn planned_entry_update_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -360,6 +412,19 @@ pub async fn planned_entry_update_api(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/planned-entries/{id}/delete",
+    tag = "finance",
+    params(("id" = String, Path, description = "Record id")),
+    responses(
+        (status = 200, description = "Delete planned entry"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found")
+    ),
+    security(("session" = []))
+)]
 pub async fn planned_entry_delete_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -1265,6 +1330,21 @@ pub async fn planned_entries_pay(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/planned-entries/{id}/pay",
+    tag = "finance",
+    params(("id" = String, Path, description = "Record id")),
+    request_body = PlannedEntryPayPayload,
+    responses(
+        (status = 200, description = "Pay planned entry"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found"),
+        (status = 400, description = "Invalid input")
+    ),
+    security(("session" = []))
+)]
 pub async fn planned_entry_pay_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -1328,6 +1408,18 @@ pub async fn planned_entry_pay_api(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/planned-entries/bulk-pay",
+    tag = "finance",
+    request_body = PlannedEntryBulkPayPayload,
+    responses(
+        (status = 200, description = "Bulk pay planned entries"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden")
+    ),
+    security(("session" = []))
+)]
 pub async fn planned_entries_bulk_pay_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,

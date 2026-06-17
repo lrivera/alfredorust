@@ -50,7 +50,7 @@ pub struct AccountDetail {
     pub notes: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct AccountCreatePayload {
     pub name: String,
     pub account_type: String,
@@ -60,7 +60,7 @@ pub struct AccountCreatePayload {
     pub notes: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct AccountUpdatePayload {
     pub name: String,
     pub account_type: String,
@@ -74,6 +74,17 @@ fn default_true_payload() -> bool {
     true
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/accounts",
+    tag = "finance",
+    responses(
+        (status = 200, description = "List of accounts"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden")
+    ),
+    security(("session" = []))
+)]
 pub async fn accounts_data_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -102,6 +113,19 @@ pub async fn accounts_data_api(
     Ok(Json(rows))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/accounts",
+    tag = "finance",
+    request_body = AccountCreatePayload,
+    responses(
+        (status = 201, description = "Account created"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 400, description = "Invalid input")
+    ),
+    security(("session" = []))
+)]
 pub async fn accounts_create_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -157,6 +181,19 @@ pub async fn accounts_create_api(
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/accounts/{id}",
+    tag = "finance",
+    params(("id" = String, Path, description = "Record id")),
+    responses(
+        (status = 200, description = "Account detail"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found")
+    ),
+    security(("session" = []))
+)]
 pub async fn account_data_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -182,6 +219,21 @@ pub async fn account_data_api(
     }))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/accounts/{id}/update",
+    tag = "finance",
+    params(("id" = String, Path, description = "Record id")),
+    request_body = AccountUpdatePayload,
+    responses(
+        (status = 200, description = "Account updated"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found"),
+        (status = 400, description = "Invalid input")
+    ),
+    security(("session" = []))
+)]
 pub async fn account_update_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -248,6 +300,19 @@ pub async fn account_update_api(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/accounts/{id}/delete",
+    tag = "finance",
+    params(("id" = String, Path, description = "Record id")),
+    responses(
+        (status = 200, description = "Account deleted"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found")
+    ),
+    security(("session" = []))
+)]
 pub async fn account_delete_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,

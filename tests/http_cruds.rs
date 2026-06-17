@@ -15,20 +15,22 @@ use tower::ServiceExt; // for oneshot
 
 use alfredodev::{
     models::{
-        AccountType, FlowType, PlannedStatus, ProjectPriority, ResourceType, TransactionType,
-        UserPermission, UserRole,
+        AccountType, ContactType, FlowType, PlannedStatus, ProjectPriority, ResourceType,
+        TransactionType, UserPermission, UserRole,
     },
     routes,
     session::{SESSION_COOKIE_NAME, require_session},
     state::{
         AppState, CfdiJob, CfdiJobStatus, add_user_to_company, create_account, create_category,
-        create_company, create_concept_status, create_forecast, create_planned_entry,
+        create_company, create_concept_status, create_contact, create_forecast,
+        create_planned_entry,
         create_project, create_project_concept, create_recurring_plan, create_resource,
         create_resource_log, create_resource_usage, create_sat_config, create_session,
         create_transaction, create_user, create_user_with_permissions, get_user_by_id,
         list_accounts, list_categories, list_companies, list_contacts, list_forecasts,
         list_planned_entries, list_projects, list_recurring_plans, list_resource_logs,
-        list_resource_usage_allocations, list_resources, list_transactions, list_users,
+        list_resource_usage_allocations, list_resource_usages, list_resources, list_transactions,
+        list_users, update_resource_allowed_statuses,
     },
 };
 use bson::{DateTime, doc};
@@ -48,12 +50,26 @@ fn build_app(state: Arc<AppState>) -> Router {
             "/admin/users",
             get(routes::users_index).post(routes::users_create),
         )
+        .route(
+            "/api/admin/users",
+            get(routes::api_users_index).post(routes::api_users_create),
+        )
+        .route("/api/admin/users/{id}", get(routes::api_user_detail))
+        .route(
+            "/api/admin/users/{id}/update",
+            post(routes::api_users_update),
+        )
+        .route(
+            "/api/admin/users/{id}/delete",
+            post(routes::api_users_delete),
+        )
         .route("/admin/users/new", get(routes::users_new))
         .route("/admin/users/{id}/edit", get(routes::users_edit))
         .route("/admin/users/{id}/update", post(routes::users_update))
         .route("/admin/users/{id}/delete", post(routes::users_delete))
         .route("/admin/users/{id}/qrcode", get(routes::users_qrcode))
         .route("/pdf", get(routes::pdf_editor))
+        .route("/pdf/preview", post(routes::pdf_preview))
         .route("/tiempo", get(routes::tiempo_page))
         .route("/api/me/companies", get(routes::me_companies))
         .route("/admin/companies", get(routes::companies_index))
@@ -84,6 +100,10 @@ fn build_app(state: Arc<AppState>) -> Router {
             get(routes::sat_configs_data_api).post(routes::sat_config_create_api),
         )
         .route(
+            "/api/admin/sat-configs/upload",
+            post(routes::sat_config_upload_api),
+        )
+        .route(
             "/api/admin/sat-configs/{id}",
             get(routes::sat_config_data_api),
         )
@@ -105,6 +125,14 @@ fn build_app(state: Arc<AppState>) -> Router {
         )
         .route("/api/admin/accounts", get(routes::accounts_data_api))
         .route("/api/admin/accounts/{id}", get(routes::account_data_api))
+        .route(
+            "/api/admin/accounts/{id}/update",
+            post(routes::account_update_api),
+        )
+        .route(
+            "/api/admin/accounts/{id}/delete",
+            post(routes::account_delete_api),
+        )
         .route("/admin/accounts/new", get(routes::accounts_new))
         .route("/admin/accounts/{id}/edit", get(routes::accounts_edit))
         .route("/admin/accounts/{id}/update", post(routes::accounts_update))
@@ -115,6 +143,14 @@ fn build_app(state: Arc<AppState>) -> Router {
         )
         .route("/api/admin/categories", get(routes::categories_data_api))
         .route("/api/admin/categories/{id}", get(routes::category_data_api))
+        .route(
+            "/api/admin/categories/{id}/update",
+            post(routes::category_update_api),
+        )
+        .route(
+            "/api/admin/categories/{id}/delete",
+            post(routes::category_delete_api),
+        )
         .route("/admin/categories/new", get(routes::categories_new))
         .route("/admin/categories/{id}/edit", get(routes::categories_edit))
         .route(
@@ -131,6 +167,14 @@ fn build_app(state: Arc<AppState>) -> Router {
         )
         .route("/api/admin/contacts", get(routes::contacts_data_api))
         .route("/api/admin/contacts/{id}", get(routes::contact_data_api))
+        .route(
+            "/api/admin/contacts/{id}/update",
+            post(routes::contact_update_api),
+        )
+        .route(
+            "/api/admin/contacts/{id}/delete",
+            post(routes::contact_delete_api),
+        )
         .route("/admin/contacts/new", get(routes::contacts_new))
         .route("/admin/contacts/{id}/edit", get(routes::contacts_edit))
         .route("/admin/contacts/{id}/update", post(routes::contacts_update))
@@ -247,6 +291,14 @@ fn build_app(state: Arc<AppState>) -> Router {
         )
         .route("/api/admin/forecasts", get(routes::forecasts_data_api))
         .route("/api/admin/forecasts/{id}", get(routes::forecast_data_api))
+        .route(
+            "/api/admin/forecasts/{id}/update",
+            post(routes::forecast_update_api),
+        )
+        .route(
+            "/api/admin/forecasts/{id}/delete",
+            post(routes::forecast_delete_api),
+        )
         .route("/admin/forecasts/new", get(routes::forecasts_new))
         .route("/admin/forecasts/{id}/edit", get(routes::forecasts_edit))
         // POST routes for forecasts omitted in tests (use private types)
@@ -403,6 +455,10 @@ fn build_app(state: Arc<AppState>) -> Router {
         .route(
             "/api/admin/resource_usages",
             get(routes::api_resource_usages_index).post(routes::api_resource_usages_create),
+        )
+        .route(
+            "/api/admin/resource_usages/grid",
+            post(routes::api_resource_usages_grid_save),
         )
         .route(
             "/api/admin/resource_usages/{id}",
@@ -673,6 +729,32 @@ async fn company_admin_json_endpoints_enforce_admin_and_update_metadata() {
     let created: serde_json::Value = serde_json::from_str(&body).unwrap();
     assert!(created["id"].as_str().is_some());
 
+    // Staff must be forbidden on the company JSON admin endpoints. Assert this
+    // BEFORE renaming company_a's slug below, otherwise the host subdomain no
+    // longer resolves to the staff user's company and the request would 401
+    // instead of 403.
+    let (status, _) = get_with_cookie(
+        build_app(shared.clone()),
+        host,
+        "/api/admin/companies",
+        &staff_token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _) = post_json_with_cookie(
+        build_app(shared.clone()),
+        host,
+        &format!("/api/admin/companies/{}/update", company_b.to_hex()),
+        &staff_token,
+        serde_json::json!({
+            "name": "Forbidden",
+            "slug": "forbidden",
+            "default_currency": "MXN"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
     let path = format!("/api/admin/companies/{}/update", company_a.to_hex());
     let (status, body) = post_json_with_cookie(
         build_app(shared.clone()),
@@ -700,28 +782,6 @@ async fn company_admin_json_endpoints_enforce_admin_and_update_metadata() {
     assert_eq!(updated.slug, "admin-company-json-a-updated");
     assert_eq!(updated.default_currency, "USD");
     assert!(!updated.is_active);
-
-    let (status, _) = get_with_cookie(
-        build_app(shared.clone()),
-        host,
-        "/api/admin/companies",
-        &staff_token,
-    )
-    .await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
-    let (status, _) = post_json_with_cookie(
-        build_app(shared.clone()),
-        host,
-        &format!("/api/admin/companies/{}/update", company_b.to_hex()),
-        &staff_token,
-        serde_json::json!({
-            "name": "Forbidden",
-            "slug": "forbidden",
-            "default_currency": "MXN"
-        }),
-    )
-    .await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
 
     common::teardown(Some(ctx)).await;
 }
@@ -4518,6 +4578,1040 @@ async fn project_resource_endpoints_render_and_submit() {
             .iter()
             .any(|log| log.phase.as_deref() == Some("Calidad") && log.duration_hours.is_some())
     );
+
+    common::teardown(Some(ctx)).await;
+}
+
+// ---------------------------------------------------------------------------
+// New JSON API coverage: users admin, resource usage grid bulk-save, SAT upload
+// ---------------------------------------------------------------------------
+
+async fn post_multipart_with_cookie(
+    app: Router,
+    host: &str,
+    path: &str,
+    token: &str,
+    fields: &[(&str, Option<&str>, &[u8])],
+) -> (StatusCode, String) {
+    let boundary = "TESTBOUNDARYabc123";
+    let mut body: Vec<u8> = Vec::new();
+    for (name, filename, bytes) in fields {
+        body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+        match filename {
+            Some(fname) => body.extend_from_slice(
+                format!(
+                    "Content-Disposition: form-data; name=\"{name}\"; filename=\"{fname}\"\r\nContent-Type: application/octet-stream\r\n\r\n"
+                )
+                .as_bytes(),
+            ),
+            None => body.extend_from_slice(
+                format!("Content-Disposition: form-data; name=\"{name}\"\r\n\r\n").as_bytes(),
+            ),
+        }
+        body.extend_from_slice(bytes);
+        body.extend_from_slice(b"\r\n");
+    }
+    body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(path)
+        .header("host", host)
+        .header("cookie", format!("{SESSION_COOKIE_NAME}={token}"))
+        .header(
+            header::CONTENT_TYPE,
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body))
+        .unwrap();
+    let res = app.oneshot(req).await.expect("request failed");
+    let status = res.status();
+    let body_bytes = to_bytes(res.into_body(), 4 * 1024 * 1024)
+        .await
+        .expect("body read failed");
+    (status, String::from_utf8_lossy(&body_bytes).to_string())
+}
+
+#[tokio::test]
+async fn users_json_api_crud_scopes_and_enforces_admin() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let shared = Arc::new(state.clone());
+
+    let company_a = create_company(&state, "Users JSON A", "users-json-a", "MXN", true, None)
+        .await
+        .unwrap();
+    let company_b = create_company(&state, "Users JSON B", "users-json-b", "MXN", true, None)
+        .await
+        .unwrap();
+
+    let admin_id = create_user_with_permissions(
+        &state,
+        "users-json-admin@example.com",
+        "SECRET",
+        &[(company_a.clone(), UserRole::Admin, vec![])],
+    )
+    .await
+    .unwrap();
+    create_user_with_permissions(
+        &state,
+        "users-json-staff@example.com",
+        "SECRET",
+        &[(company_a.clone(), UserRole::Staff, vec![])],
+    )
+    .await
+    .unwrap();
+    let b_only_id = create_user_with_permissions(
+        &state,
+        "users-json-bonly@example.com",
+        "SECRET",
+        &[(company_b.clone(), UserRole::Admin, vec![])],
+    )
+    .await
+    .unwrap();
+
+    let admin_token = create_session(&state, "users-json-admin@example.com")
+        .await
+        .unwrap();
+    let staff_token = create_session(&state, "users-json-staff@example.com")
+        .await
+        .unwrap();
+    let host = "users-json-a.miapp.local";
+
+    let (status, body) =
+        get_with_cookie(build_app(shared.clone()), host, "/api/admin/users", &admin_token).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let users: Vec<serde_json::Value> = serde_json::from_str(&body).unwrap();
+    assert!(users.iter().any(|u| u["email"] == "users-json-admin@example.com"));
+    assert!(users.iter().any(|u| u["email"] == "users-json-staff@example.com"));
+    assert!(!users.iter().any(|u| u["email"] == "users-json-bonly@example.com"));
+    assert!(users.iter().all(|u| u.get("secret").is_none()));
+
+    let (status, _) =
+        get_with_cookie(build_app(shared.clone()), host, "/api/admin/users", &staff_token).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let (status, body) = post_json_with_cookie(
+        build_app(shared.clone()),
+        host,
+        "/api/admin/users",
+        &admin_token,
+        serde_json::json!({
+            "email": "users-json-new@example.com",
+            "memberships": [
+                { "company_id": company_a.to_hex(), "role": "staff", "permissions": ["view_projects"] }
+            ]
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let created: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let new_id = created["id"].as_str().unwrap().to_string();
+    assert!(created.get("secret").is_none());
+
+    // membership only in a company the admin does not administer -> rejected
+    let (status, _) = post_json_with_cookie(
+        build_app(shared.clone()),
+        host,
+        "/api/admin/users",
+        &admin_token,
+        serde_json::json!({
+            "email": "users-json-bad@example.com",
+            "memberships": [ { "company_id": company_b.to_hex(), "role": "admin" } ]
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+
+    let (status, body) = get_with_cookie(
+        build_app(shared.clone()),
+        host,
+        &format!("/api/admin/users/{new_id}"),
+        &admin_token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let detail: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(detail["email"], "users-json-new@example.com");
+    assert_eq!(detail["memberships"][0]["company_id"], company_a.to_hex());
+    assert_eq!(detail["memberships"][0]["role"], "staff");
+
+    // user that only belongs to company B is invisible to company A admin
+    let (status, _) = get_with_cookie(
+        build_app(shared.clone()),
+        host,
+        &format!("/api/admin/users/{}", b_only_id.to_hex()),
+        &admin_token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let (status, body) = post_json_with_cookie(
+        build_app(shared.clone()),
+        host,
+        &format!("/api/admin/users/{new_id}/update"),
+        &admin_token,
+        serde_json::json!({
+            "email": "users-json-updated@example.com",
+            "memberships": [ { "company_id": company_a.to_hex(), "role": "admin" } ]
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let new_oid = bson::oid::ObjectId::parse_str(&new_id).unwrap();
+    let updated = get_user_by_id(&state, &new_oid).await.unwrap().unwrap();
+    assert_eq!(updated.email, "users-json-updated@example.com");
+    assert_eq!(updated.role, UserRole::Admin);
+
+    // cannot delete yourself
+    let (status, _) = post_json_with_cookie(
+        build_app(shared.clone()),
+        host,
+        &format!("/api/admin/users/{}/delete", admin_id.to_hex()),
+        &admin_token,
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let (status, body) = post_json_with_cookie(
+        build_app(shared.clone()),
+        host,
+        &format!("/api/admin/users/{new_id}/delete"),
+        &admin_token,
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(get_user_by_id(&state, &new_oid).await.unwrap().is_none());
+
+    common::teardown(Some(ctx)).await;
+}
+
+#[tokio::test]
+async fn resource_usages_grid_json_saves_and_enforces_today_window() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let shared = Arc::new(state.clone());
+
+    let company = create_company(&state, "Grid JSON Co", "grid-json-co", "MXN", true, None)
+        .await
+        .unwrap();
+    create_user_with_permissions(
+        &state,
+        "grid-json-admin@example.com",
+        "SECRET",
+        &[(company.clone(), UserRole::Admin, vec![])],
+    )
+    .await
+    .unwrap();
+    create_user_with_permissions(
+        &state,
+        "grid-json-staff-noperm@example.com",
+        "SECRET",
+        &[(company.clone(), UserRole::Staff, vec![])],
+    )
+    .await
+    .unwrap();
+    create_user_with_permissions(
+        &state,
+        "grid-json-staff-today@example.com",
+        "SECRET",
+        &[(
+            company.clone(),
+            UserRole::Staff,
+            vec![UserPermission::EditResourceUsageToday],
+        )],
+    )
+    .await
+    .unwrap();
+    let admin_token = create_session(&state, "grid-json-admin@example.com")
+        .await
+        .unwrap();
+    let staff_noperm_token = create_session(&state, "grid-json-staff-noperm@example.com")
+        .await
+        .unwrap();
+    let staff_today_token = create_session(&state, "grid-json-staff-today@example.com")
+        .await
+        .unwrap();
+    let host = "grid-json-co.miapp.local";
+
+    let status_id = create_concept_status(
+        &state, &company, "Produccion", 1, None, true, false, false, true,
+    )
+    .await
+    .unwrap();
+    let project_id = create_project(
+        &state,
+        &company,
+        "Grid Project",
+        None,
+        None,
+        None,
+        ProjectPriority::Medium,
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let concept_id = create_project_concept(
+        &state,
+        &company,
+        &project_id,
+        Some(status_id.clone()),
+        "Grid Concept",
+        1.0,
+        Some("job".into()),
+        None,
+        None,
+        None,
+        None,
+        1,
+    )
+    .await
+    .unwrap();
+    let resource_id = create_resource(
+        &state,
+        &company,
+        "Grid Machine",
+        ResourceType::Machinery,
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+    update_resource_allowed_statuses(&state, &resource_id, &company, vec![status_id.clone()])
+        .await
+        .unwrap();
+
+    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+
+    let (status, body) = post_json_with_cookie(
+        build_app(shared.clone()),
+        host,
+        "/api/admin/resource_usages/grid",
+        &admin_token,
+        serde_json::json!({
+            "date": today,
+            "status_id": "all",
+            "selections": [
+                { "concept_id": concept_id.to_hex(), "hour": 8, "resource_id": resource_id.to_hex() }
+            ]
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let usages = list_resource_usages(&state, &company).await.unwrap();
+    assert_eq!(usages.len(), 1, "one usage should be created for the selected hour");
+    let usage_id = usages[0].id.clone().unwrap();
+    let allocations = list_resource_usage_allocations(&state, &company, &usage_id)
+        .await
+        .unwrap();
+    assert!(allocations.iter().any(|a| a.concept_id == concept_id));
+
+    // staff without the today permission cannot save
+    let (status, _) = post_json_with_cookie(
+        build_app(shared.clone()),
+        host,
+        "/api/admin/resource_usages/grid",
+        &staff_noperm_token,
+        serde_json::json!({ "date": today, "selections": [] }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    // staff with the today permission can save today's grid
+    let (status, body) = post_json_with_cookie(
+        build_app(shared.clone()),
+        host,
+        "/api/admin/resource_usages/grid",
+        &staff_today_token,
+        serde_json::json!({ "date": today, "status_id": "all", "selections": [] }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    // ...but not a date outside the 4-day window
+    let old_date = (chrono::Utc::now() - chrono::Duration::days(10))
+        .format("%Y-%m-%d")
+        .to_string();
+    let (status, _) = post_json_with_cookie(
+        build_app(shared.clone()),
+        host,
+        "/api/admin/resource_usages/grid",
+        &staff_today_token,
+        serde_json::json!({ "date": old_date, "selections": [] }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    // malformed date is a client error
+    let (status, _) = post_json_with_cookie(
+        build_app(shared.clone()),
+        host,
+        "/api/admin/resource_usages/grid",
+        &admin_token,
+        serde_json::json!({ "date": "not-a-date", "selections": [] }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    common::teardown(Some(ctx)).await;
+}
+
+#[tokio::test]
+async fn sat_config_upload_json_creates_config_and_enforces_admin() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let shared = Arc::new(state.clone());
+
+    let company = create_company(&state, "SAT Upload Co", "sat-upload-co", "MXN", true, None)
+        .await
+        .unwrap();
+    create_user_with_permissions(
+        &state,
+        "sat-upload-admin@example.com",
+        "SECRET",
+        &[(company.clone(), UserRole::Admin, vec![])],
+    )
+    .await
+    .unwrap();
+    create_user_with_permissions(
+        &state,
+        "sat-upload-staff@example.com",
+        "SECRET",
+        &[(company.clone(), UserRole::Staff, vec![])],
+    )
+    .await
+    .unwrap();
+    let admin_token = create_session(&state, "sat-upload-admin@example.com")
+        .await
+        .unwrap();
+    let staff_token = create_session(&state, "sat-upload-staff@example.com")
+        .await
+        .unwrap();
+    let host = "sat-upload-co.miapp.local";
+
+    let cert_bytes: &[u8] = b"\x30\x82DUMMYCERTDATA";
+    let key_bytes: &[u8] = b"\x30\x82DUMMYKEYDATA";
+    let (status, body) = post_multipart_with_cookie(
+        build_app(shared.clone()),
+        host,
+        "/api/admin/sat-configs/upload",
+        &admin_token,
+        &[
+            ("rfc", None, b"aaa010101aaa"),
+            ("label", None, b"Test FIEL"),
+            ("key_password", None, b"supersecret"),
+            ("cer_file", Some("cert.cer"), cert_bytes),
+            ("key_file", Some("private.key"), key_bytes),
+        ],
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let created: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert!(created["id"].as_str().is_some());
+
+    let (status, body) = get_with_cookie(
+        build_app(shared.clone()),
+        host,
+        "/api/admin/sat-configs",
+        &admin_token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains("AAA010101AAA"), "RFC should be uppercased: {body}");
+    assert!(body.contains("Test FIEL"));
+    assert!(!body.contains("supersecret"));
+    assert!(!body.contains("private.key"));
+    assert!(!body.contains("cert.cer"));
+
+    // missing key_file -> validation error
+    let (status, _) = post_multipart_with_cookie(
+        build_app(shared.clone()),
+        host,
+        "/api/admin/sat-configs/upload",
+        &admin_token,
+        &[
+            ("rfc", None, b"bbb010101bbb"),
+            ("key_password", None, b"x"),
+            ("cer_file", Some("c.cer"), b"data"),
+        ],
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // staff cannot upload
+    let (status, _) = post_multipart_with_cookie(
+        build_app(shared.clone()),
+        host,
+        "/api/admin/sat-configs/upload",
+        &staff_token,
+        &[
+            ("rfc", None, b"ccc010101ccc"),
+            ("key_password", None, b"x"),
+            ("cer_file", Some("c.cer"), b"data"),
+            ("key_file", Some("k.key"), b"data"),
+        ],
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let _ = std::fs::remove_dir_all(format!("uploads/sat/{}", company.to_hex()));
+
+    common::teardown(Some(ctx)).await;
+}
+
+// ---------------------------------------------------------------------------
+// Security: authentication enforcement + cross-tenant isolation
+//
+// These tests treat the API as hostile input: an authenticated user of tenant A
+// must never be able to read, mutate, or delete a record that belongs to tenant
+// B, and every protected endpoint must reject requests with no session.
+// ---------------------------------------------------------------------------
+
+async fn assert_requires_auth_get(shared: &Arc<AppState>, path: &str) {
+    let req = Request::builder()
+        .uri(path)
+        .header("host", "localhost")
+        .body(Body::empty())
+        .unwrap();
+    let res = build_app(shared.clone())
+        .oneshot(req)
+        .await
+        .expect("request failed");
+    assert_eq!(
+        res.status(),
+        StatusCode::UNAUTHORIZED,
+        "GET {path} must require authentication"
+    );
+}
+
+async fn assert_requires_auth_post(shared: &Arc<AppState>, path: &str) {
+    let req = Request::builder()
+        .method("POST")
+        .uri(path)
+        .header("host", "localhost")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from("{}"))
+        .unwrap();
+    let res = build_app(shared.clone())
+        .oneshot(req)
+        .await
+        .expect("request failed");
+    assert_eq!(
+        res.status(),
+        StatusCode::UNAUTHORIZED,
+        "POST {path} must require authentication"
+    );
+}
+
+async fn assert_get_denied_no_leak(
+    shared: &Arc<AppState>,
+    host: &str,
+    token: &str,
+    path: &str,
+    needle: &str,
+) {
+    let (status, body) = get_with_cookie(build_app(shared.clone()), host, path, token).await;
+    assert!(
+        status == StatusCode::FORBIDDEN || status == StatusCode::NOT_FOUND,
+        "GET {path} must be denied cross-tenant, got {status}: {body}"
+    );
+    assert!(
+        !body.contains(needle),
+        "cross-tenant data leak on GET {path}: found `{needle}` in body {body}"
+    );
+}
+
+async fn assert_post_denied(
+    shared: &Arc<AppState>,
+    host: &str,
+    token: &str,
+    path: &str,
+    payload: serde_json::Value,
+) {
+    let (status, _) =
+        post_json_with_cookie(build_app(shared.clone()), host, path, token, payload).await;
+    assert!(
+        status == StatusCode::FORBIDDEN || status == StatusCode::NOT_FOUND,
+        "POST {path} must be denied cross-tenant, got {status}"
+    );
+}
+
+#[tokio::test]
+async fn protected_endpoints_require_authentication() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let shared = Arc::new(ctx.state.clone());
+
+    // A representative read endpoint from every resource group.
+    for path in [
+        "/api/account",
+        "/api/me/companies",
+        "/api/admin/users",
+        "/api/admin/companies",
+        "/api/admin/accounts",
+        "/api/admin/categories",
+        "/api/admin/contacts",
+        "/api/admin/forecasts",
+        "/api/admin/recurring-plans",
+        "/api/admin/planned-entries",
+        "/api/admin/transactions/data",
+        "/api/admin/orders",
+        "/api/admin/projects",
+        "/api/admin/resources",
+        "/api/admin/resource_logs",
+        "/api/admin/resource_usages",
+        "/api/admin/concept_statuses",
+        "/api/admin/sat-configs",
+        "/api/admin/cfdis/data",
+        "/api/tiempo",
+    ] {
+        assert_requires_auth_get(&shared, path).await;
+    }
+
+    // Representative write endpoints, including the three newly added ones.
+    for path in [
+        "/api/admin/users",
+        "/api/admin/accounts",
+        "/api/admin/companies",
+        "/api/admin/sat-configs/upload",
+        "/api/admin/resource_usages/grid",
+        "/api/admin/transactions",
+        "/pdf/preview",
+    ] {
+        assert_requires_auth_post(&shared, path).await;
+    }
+
+    common::teardown(Some(ctx)).await;
+}
+
+#[tokio::test]
+async fn cross_tenant_record_access_is_denied() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let shared = Arc::new(state.clone());
+
+    let company_a = create_company(&state, "Tenant A", "tenant-a", "MXN", true, None)
+        .await
+        .unwrap();
+    let company_b = create_company(&state, "Tenant B", "tenant-b", "MXN", true, None)
+        .await
+        .unwrap();
+
+    // Attacker: admin of tenant A ONLY, probing tenant B's record ids.
+    create_user_with_permissions(
+        &state,
+        "tenant-a-admin@example.com",
+        "SECRET",
+        &[(company_a.clone(), UserRole::Admin, vec![])],
+    )
+    .await
+    .unwrap();
+    let token = create_session(&state, "tenant-a-admin@example.com")
+        .await
+        .unwrap();
+    let host = "tenant-a.miapp.local";
+
+    // Seed tenant B records with unique, greppable needles.
+    let b_account = create_account(
+        &state,
+        &company_b,
+        "tenant-b-secret-account",
+        AccountType::Bank,
+        "MXN",
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+    let b_category = create_category(
+        &state,
+        &company_b,
+        "tenant-b-secret-category",
+        FlowType::Expense,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let b_contact = create_contact(
+        &state,
+        &company_b,
+        "tenant-b-secret-contact",
+        ContactType::Customer,
+        None,
+        Some("tenant-b-secret@example.com".into()),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let b_forecast = create_forecast(
+        &state,
+        &company_b,
+        DateTime::parse_rfc3339_str("2026-01-01T00:00:00Z").unwrap(),
+        None,
+        DateTime::parse_rfc3339_str("2026-01-01T00:00:00Z").unwrap(),
+        DateTime::parse_rfc3339_str("2026-12-31T00:00:00Z").unwrap(),
+        "MXN",
+        1000.0,
+        500.0,
+        500.0,
+        None,
+        None,
+        None,
+        Some("tenant-b-secret-forecast".into()),
+        None,
+    )
+    .await
+    .unwrap();
+
+    // Reads by id must be denied and must not leak the needle.
+    assert_get_denied_no_leak(
+        &shared,
+        host,
+        &token,
+        &format!("/api/admin/accounts/{}", b_account.to_hex()),
+        "tenant-b-secret-account",
+    )
+    .await;
+    assert_get_denied_no_leak(
+        &shared,
+        host,
+        &token,
+        &format!("/api/admin/categories/{}", b_category.to_hex()),
+        "tenant-b-secret-category",
+    )
+    .await;
+    assert_get_denied_no_leak(
+        &shared,
+        host,
+        &token,
+        &format!("/api/admin/contacts/{}", b_contact.to_hex()),
+        "tenant-b-secret",
+    )
+    .await;
+    assert_get_denied_no_leak(
+        &shared,
+        host,
+        &token,
+        &format!("/api/admin/forecasts/{}", b_forecast.to_hex()),
+        "tenant-b-secret-forecast",
+    )
+    .await;
+
+    // List endpoints must only return tenant A's data (which is empty here).
+    for (path, needle) in [
+        ("/api/admin/accounts", "tenant-b-secret-account"),
+        ("/api/admin/categories", "tenant-b-secret-category"),
+        ("/api/admin/contacts", "tenant-b-secret"),
+        ("/api/admin/forecasts", "tenant-b-secret-forecast"),
+    ] {
+        let (status, body) = get_with_cookie(build_app(shared.clone()), host, path, &token).await;
+        assert_eq!(status, StatusCode::OK, "{path}: {body}");
+        assert!(
+            !body.contains(needle),
+            "tenant B data leaked in list {path}: {body}"
+        );
+    }
+
+    // Cross-tenant deletes must be denied...
+    for path in [
+        format!("/api/admin/accounts/{}/delete", b_account.to_hex()),
+        format!("/api/admin/categories/{}/delete", b_category.to_hex()),
+        format!("/api/admin/contacts/{}/delete", b_contact.to_hex()),
+        format!("/api/admin/forecasts/{}/delete", b_forecast.to_hex()),
+    ] {
+        assert_post_denied(&shared, host, &token, &path, serde_json::json!({})).await;
+    }
+
+    // ...and cross-tenant updates with fully valid payloads (so the request
+    // reaches the handler's tenant check rather than failing body validation)
+    // must also be denied for every resource.
+    assert_post_denied(
+        &shared,
+        host,
+        &token,
+        &format!("/api/admin/accounts/{}/update", b_account.to_hex()),
+        serde_json::json!({ "name": "hijacked", "account_type": "bank" }),
+    )
+    .await;
+    assert_post_denied(
+        &shared,
+        host,
+        &token,
+        &format!("/api/admin/categories/{}/update", b_category.to_hex()),
+        serde_json::json!({ "name": "hijacked", "flow_type": "expense" }),
+    )
+    .await;
+    assert_post_denied(
+        &shared,
+        host,
+        &token,
+        &format!("/api/admin/contacts/{}/update", b_contact.to_hex()),
+        serde_json::json!({ "name": "hijacked", "contact_type": "customer" }),
+    )
+    .await;
+    assert_post_denied(
+        &shared,
+        host,
+        &token,
+        &format!("/api/admin/forecasts/{}/update", b_forecast.to_hex()),
+        serde_json::json!({
+            "generated_at": "2026-01-01T00:00:00Z",
+            "start_date": "2026-01-01T00:00:00Z",
+            "end_date": "2026-12-31T00:00:00Z",
+            "currency": "MXN",
+            "projected_income_total": 1.0,
+            "projected_expense_total": 1.0,
+            "projected_net": 0.0
+        }),
+    )
+    .await;
+
+    // The tenant B records must still exist and be unchanged.
+    assert!(
+        list_accounts(&state)
+            .await
+            .unwrap()
+            .iter()
+            .any(|a| a.id.as_ref() == Some(&b_account) && a.name == "tenant-b-secret-account"),
+        "tenant B account must survive cross-tenant attacks unchanged"
+    );
+    assert!(
+        list_categories(&state)
+            .await
+            .unwrap()
+            .iter()
+            .any(|c| c.id.as_ref() == Some(&b_category) && c.name == "tenant-b-secret-category"),
+        "tenant B category must survive cross-tenant attacks unchanged"
+    );
+    assert!(
+        list_contacts(&state)
+            .await
+            .unwrap()
+            .iter()
+            .any(|c| c.id.as_ref() == Some(&b_contact) && c.name == "tenant-b-secret-contact"),
+        "tenant B contact must survive cross-tenant attacks unchanged"
+    );
+    assert!(
+        list_forecasts(&state)
+            .await
+            .unwrap()
+            .iter()
+            .any(|f| f.id.as_ref() == Some(&b_forecast)),
+        "tenant B forecast must survive cross-tenant delete"
+    );
+
+    common::teardown(Some(ctx)).await;
+}
+
+#[tokio::test]
+async fn cross_tenant_user_mutations_are_denied() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let shared = Arc::new(state.clone());
+
+    let company_a = create_company(&state, "User Tenant A", "user-tenant-a", "MXN", true, None)
+        .await
+        .unwrap();
+    let company_b = create_company(&state, "User Tenant B", "user-tenant-b", "MXN", true, None)
+        .await
+        .unwrap();
+
+    create_user_with_permissions(
+        &state,
+        "user-tenant-a-admin@example.com",
+        "SECRET",
+        &[(company_a.clone(), UserRole::Admin, vec![])],
+    )
+    .await
+    .unwrap();
+    // Victim belongs ONLY to tenant B.
+    let b_user = create_user_with_permissions(
+        &state,
+        "victim-tenant-b@example.com",
+        "VICTIMSECRET",
+        &[(company_b.clone(), UserRole::Admin, vec![])],
+    )
+    .await
+    .unwrap();
+    let token = create_session(&state, "user-tenant-a-admin@example.com")
+        .await
+        .unwrap();
+    let host = "user-tenant-a.miapp.local";
+
+    // Read, update, and delete of the tenant B user are all denied.
+    assert_get_denied_no_leak(
+        &shared,
+        host,
+        &token,
+        &format!("/api/admin/users/{}", b_user.to_hex()),
+        "victim-tenant-b@example.com",
+    )
+    .await;
+    assert_post_denied(
+        &shared,
+        host,
+        &token,
+        &format!("/api/admin/users/{}/update", b_user.to_hex()),
+        serde_json::json!({
+            "email": "hijacked@example.com",
+            "memberships": [ { "company_id": company_a.to_hex(), "role": "admin" } ]
+        }),
+    )
+    .await;
+    assert_post_denied(
+        &shared,
+        host,
+        &token,
+        &format!("/api/admin/users/{}/delete", b_user.to_hex()),
+        serde_json::json!({}),
+    )
+    .await;
+
+    // The tenant A admin must not see the tenant B user in their listing.
+    let (status, body) =
+        get_with_cookie(build_app(shared.clone()), host, "/api/admin/users", &token).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        !body.contains("victim-tenant-b@example.com"),
+        "tenant B user leaked into tenant A user list: {body}"
+    );
+
+    // Victim is intact: still exists, email and secret unchanged.
+    let victim = get_user_by_id(&state, &b_user).await.unwrap().unwrap();
+    assert_eq!(victim.email, "victim-tenant-b@example.com");
+    assert_eq!(victim.secret, "VICTIMSECRET");
+
+    common::teardown(Some(ctx)).await;
+}
+
+#[tokio::test]
+async fn staff_cannot_reach_admin_json_endpoints() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let shared = Arc::new(state.clone());
+
+    let company = create_company(&state, "Staff Guard Co", "staff-guard-co", "MXN", true, None)
+        .await
+        .unwrap();
+    create_user_with_permissions(
+        &state,
+        "staff-guard@example.com",
+        "SECRET",
+        &[(company.clone(), UserRole::Staff, vec![])],
+    )
+    .await
+    .unwrap();
+    let token = create_session(&state, "staff-guard@example.com")
+        .await
+        .unwrap();
+    let host = "staff-guard-co.miapp.local";
+
+    // Admin-only reads must be forbidden for a staff member.
+    for path in [
+        "/api/admin/users",
+        "/api/admin/companies",
+        "/api/admin/accounts",
+        "/api/admin/categories",
+        "/api/admin/contacts",
+        "/api/admin/forecasts",
+        "/api/admin/recurring-plans",
+        "/api/admin/transactions/data",
+        "/api/admin/orders",
+        "/api/admin/sat-configs",
+    ] {
+        let (status, body) = get_with_cookie(build_app(shared.clone()), host, path, &token).await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "staff must be forbidden on {path}, got {status}: {body}"
+        );
+    }
+
+    common::teardown(Some(ctx)).await;
+}
+
+#[tokio::test]
+async fn pdf_preview_renders_for_authenticated_user() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let shared = Arc::new(state.clone());
+
+    let company = create_company(&state, "PDF Co", "pdf-co", "MXN", true, None)
+        .await
+        .unwrap();
+    create_user_with_permissions(
+        &state,
+        "pdf-user@example.com",
+        "SECRET",
+        &[(company.clone(), UserRole::Staff, vec![])],
+    )
+    .await
+    .unwrap();
+    let token = create_session(&state, "pdf-user@example.com").await.unwrap();
+    let host = "pdf-co.miapp.local";
+
+    // An authenticated user gets a JSON envelope (200) regardless of whether the
+    // typst binary is present; the handler degrades gracefully to ok:false.
+    let (status, body) = post_json_with_cookie(
+        build_app(shared.clone()),
+        host,
+        "/pdf/preview",
+        &token,
+        serde_json::json!({ "source": "= Test\n\nHello from the test suite." }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let resp: serde_json::Value = serde_json::from_str(&body).expect("preview must be JSON");
+    assert!(resp.get("ok").and_then(|v| v.as_bool()).is_some());
+
+    // If typst is available on this machine, the preview must actually compile a
+    // real PDF (base64 that decodes to a `%PDF` document).
+    let typst_available = std::process::Command::new(
+        std::env::var("TYPST_BIN").unwrap_or_else(|_| "typst".to_string()),
+    )
+    .arg("--version")
+    .output()
+    .map(|o| o.status.success())
+    .unwrap_or(false);
+
+    if typst_available {
+        assert_eq!(resp["ok"], true, "typst is installed, preview should succeed: {body}");
+        let b64 = resp["pdf_base64"].as_str().expect("pdf_base64 present");
+        let bytes = data_encoding::BASE64.decode(b64.as_bytes()).expect("valid base64");
+        assert!(
+            bytes.starts_with(b"%PDF"),
+            "decoded preview must be a real PDF document"
+        );
+    }
 
     common::teardown(Some(ctx)).await;
 }

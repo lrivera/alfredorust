@@ -11,6 +11,17 @@ use crate::session::SessionUser;
 use crate::totp::build_totp;
 
 /// Returns a JSON with { email, company, otpauth_url } to enroll in authenticator apps.
+#[utoipa::path(
+    get,
+    path = "/setup",
+    tag = "auth",
+    responses(
+        (status = 200, description = "Returns otpauth URL for enrollment"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden")
+    ),
+    security(("session" = []))
+)]
 pub async fn setup(session: SessionUser) -> Response {
     let current = session.user();
     let permissions = current

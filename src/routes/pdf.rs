@@ -27,13 +27,13 @@ struct PdfEditorTemplate {
     session_email: String,
 }
 
-#[derive(Deserialize)]
-pub(crate) struct PdfPreviewRequest {
+#[derive(Deserialize, utoipa::ToSchema)]
+pub struct PdfPreviewRequest {
     source: String,
 }
 
 #[derive(Serialize)]
-pub(crate) struct PdfPreviewResponse {
+pub struct PdfPreviewResponse {
     ok: bool,
     pdf_base64: Option<String>,
     error: Option<String>,
@@ -45,6 +45,18 @@ pub async fn pdf_editor(SessionUser(session): SessionUser) -> Result<Html<String
     })
 }
 
+#[utoipa::path(
+    post,
+    path = "/pdf/preview",
+    tag = "auth",
+    request_body = PdfPreviewRequest,
+    responses(
+        (status = 200, description = "Returns the compiled PDF as base64"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden")
+    ),
+    security(("session" = []))
+)]
 pub async fn pdf_preview(
     SessionUser(_session): SessionUser,
     State(_state): State<Arc<AppState>>,

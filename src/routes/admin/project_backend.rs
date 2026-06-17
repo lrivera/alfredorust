@@ -47,7 +47,7 @@ fn parse_oid(id: &str) -> Result<ObjectId, Response> {
     ObjectId::parse_str(id).map_err(|_| json_error(StatusCode::BAD_REQUEST, "invalid id"))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct ConceptStatusPayload {
     pub name: String,
     pub position: i32,
@@ -66,6 +66,17 @@ fn default_true() -> bool {
     true
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/concept_statuses",
+    tag = "operations",
+    responses(
+        (status = 200, description = "List of concept statuses"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden")
+    ),
+    security(("session" = []))
+)]
 pub async fn api_concept_statuses_index(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -80,6 +91,19 @@ pub async fn api_concept_statuses_index(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/concept_statuses",
+    tag = "operations",
+    request_body = ConceptStatusPayload,
+    responses(
+        (status = 201, description = "Concept status created"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 400, description = "Invalid input")
+    ),
+    security(("session" = []))
+)]
 pub async fn api_concept_statuses_create(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -111,6 +135,21 @@ pub async fn api_concept_statuses_create(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/concept_statuses/{id}/update",
+    tag = "operations",
+    params(("id" = String, Path, description = "Concept status id")),
+    request_body = ConceptStatusPayload,
+    responses(
+        (status = 200, description = "Concept status updated"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found"),
+        (status = 400, description = "Invalid input")
+    ),
+    security(("session" = []))
+)]
 pub async fn api_concept_statuses_update(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -144,6 +183,19 @@ pub async fn api_concept_statuses_update(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/concept_statuses/{id}/delete",
+    tag = "operations",
+    params(("id" = String, Path, description = "Concept status id")),
+    responses(
+        (status = 200, description = "Concept status deleted"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found")
+    ),
+    security(("session" = []))
+)]
 pub async fn api_concept_statuses_delete(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -163,7 +215,7 @@ pub async fn api_concept_statuses_delete(
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct ProjectConceptPayload {
     pub status_id: Option<String>,
     pub name: String,
@@ -177,6 +229,19 @@ pub struct ProjectConceptPayload {
     pub position: i32,
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/projects/{project_id}/concepts",
+    tag = "operations",
+    params(("project_id" = String, Path, description = "Project id")),
+    responses(
+        (status = 200, description = "List of project concepts"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found")
+    ),
+    security(("session" = []))
+)]
 pub async fn api_project_concepts_index(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -196,6 +261,21 @@ pub async fn api_project_concepts_index(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/projects/{project_id}/concepts",
+    tag = "operations",
+    params(("project_id" = String, Path, description = "Project id")),
+    request_body = ProjectConceptPayload,
+    responses(
+        (status = 201, description = "Project concept created"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found"),
+        (status = 400, description = "Invalid input")
+    ),
+    security(("session" = []))
+)]
 pub async fn api_project_concepts_create(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -242,6 +322,21 @@ pub async fn api_project_concepts_create(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/project_concepts/{id}/update",
+    tag = "operations",
+    params(("id" = String, Path, description = "Project concept id")),
+    request_body = ProjectConceptPayload,
+    responses(
+        (status = 200, description = "Project concept updated"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found"),
+        (status = 400, description = "Invalid input")
+    ),
+    security(("session" = []))
+)]
 pub async fn api_project_concepts_update(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -290,6 +385,20 @@ pub async fn api_project_concepts_update(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/project_concepts/{id}/advance",
+    tag = "operations",
+    params(("id" = String, Path, description = "Project concept id")),
+    responses(
+        (status = 200, description = "Project concept advanced"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found"),
+        (status = 400, description = "Invalid input")
+    ),
+    security(("session" = []))
+)]
 pub async fn api_project_concepts_advance(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -309,6 +418,19 @@ pub async fn api_project_concepts_advance(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/project_concepts/{id}/delete",
+    tag = "operations",
+    params(("id" = String, Path, description = "Project concept id")),
+    responses(
+        (status = 200, description = "Project concept deleted"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found")
+    ),
+    security(("session" = []))
+)]
 pub async fn api_project_concepts_delete(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -328,6 +450,19 @@ pub async fn api_project_concepts_delete(
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/projects/{project_id}/status_summary",
+    tag = "operations",
+    params(("project_id" = String, Path, description = "Project id")),
+    responses(
+        (status = 200, description = "Project status summary"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found")
+    ),
+    security(("session" = []))
+)]
 pub async fn api_project_status_summary(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -350,7 +485,7 @@ pub async fn api_project_status_summary(
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct ResourceUsagePayload {
     pub resource_id: String,
     pub started_at: String,
@@ -364,6 +499,17 @@ fn parse_datetime(value: &str) -> Result<DateTime, Response> {
         .map_err(|_| json_error(StatusCode::BAD_REQUEST, "invalid datetime"))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/resource_usages",
+    tag = "operations",
+    responses(
+        (status = 200, description = "List of resource usages"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden")
+    ),
+    security(("session" = []))
+)]
 pub async fn api_resource_usages_index(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -381,6 +527,19 @@ pub async fn api_resource_usages_index(
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/resource_usages/{id}",
+    tag = "operations",
+    params(("id" = String, Path, description = "Resource usage id")),
+    responses(
+        (status = 200, description = "Resource usage detail"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found")
+    ),
+    security(("session" = []))
+)]
 pub async fn api_resource_usage_detail(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -404,6 +563,19 @@ pub async fn api_resource_usage_detail(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/resource_usages",
+    tag = "operations",
+    request_body = ResourceUsagePayload,
+    responses(
+        (status = 201, description = "Resource usage created"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 400, description = "Invalid input")
+    ),
+    security(("session" = []))
+)]
 pub async fn api_resource_usages_create(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -448,7 +620,7 @@ pub async fn api_resource_usages_create(
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct ResourceUsageUpdatePayload {
     pub started_at: String,
     pub ended_at: Option<String>,
@@ -457,6 +629,21 @@ pub struct ResourceUsageUpdatePayload {
     pub notes: Option<String>,
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/resource_usages/{id}/update",
+    tag = "operations",
+    params(("id" = String, Path, description = "Resource usage id")),
+    request_body = ResourceUsageUpdatePayload,
+    responses(
+        (status = 200, description = "Resource usage updated"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found"),
+        (status = 400, description = "Invalid input")
+    ),
+    security(("session" = []))
+)]
 pub async fn api_resource_usages_update(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -499,19 +686,32 @@ pub async fn api_resource_usages_update(
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct AllocationPayload {
     pub concept_id: String,
     pub ratio: f64,
     pub notes: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct AllocationsPayload {
     pub allocations: Option<Vec<AllocationPayload>>,
     pub concept_ids: Option<Vec<String>>,
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/resource_usages/{id}/allocations",
+    tag = "operations",
+    params(("id" = String, Path, description = "Resource usage id")),
+    responses(
+        (status = 200, description = "List of resource usage allocations"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found")
+    ),
+    security(("session" = []))
+)]
 pub async fn api_resource_usage_allocations_index(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -534,6 +734,20 @@ pub async fn api_resource_usage_allocations_index(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/resource_usages/{id}/allocations",
+    tag = "operations",
+    params(("id" = String, Path, description = "Resource usage id")),
+    request_body = AllocationsPayload,
+    responses(
+        (status = 200, description = "Resource usage allocations replaced"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found")
+    ),
+    security(("session" = []))
+)]
 pub async fn api_resource_usage_allocations_replace(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -584,6 +798,19 @@ pub async fn api_resource_usage_allocations_replace(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/resource_usages/{id}/delete",
+    tag = "operations",
+    params(("id" = String, Path, description = "Resource usage id")),
+    responses(
+        (status = 200, description = "Resource usage deleted"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found")
+    ),
+    security(("session" = []))
+)]
 pub async fn api_resource_usages_delete(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -1553,6 +1780,94 @@ pub async fn resource_usages_save_grid(
         ))
         .into_response(),
         Err(err) => (StatusCode::BAD_REQUEST, err.to_string()).into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+pub struct ResourceUsageGridSelectionPayload {
+    pub concept_id: String,
+    pub hour: i32,
+    pub resource_id: String,
+}
+
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+pub struct ResourceUsageGridPayload {
+    pub date: String,
+    #[serde(default)]
+    pub status_id: Option<String>,
+    #[serde(default)]
+    pub selections: Vec<ResourceUsageGridSelectionPayload>,
+}
+
+/// JSON twin of `resource_usages_save_grid` for SPA/spcli clients: replaces the
+/// full hourly grid for one day (optionally scoped to a concept status) with the
+/// provided cell selections. Honors the same staff "today window" permission.
+#[utoipa::path(
+    post,
+    path = "/api/admin/resource_usages/grid",
+    tag = "operations",
+    request_body = ResourceUsageGridPayload,
+    responses(
+        (status = 200, description = "Resource usage grid saved"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden")
+    ),
+    security(("session" = []))
+)]
+pub async fn api_resource_usages_grid_save(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<ResourceUsageGridPayload>,
+) -> Response {
+    let company_id = require_active_company(&session_user);
+    let date = payload.date.trim().to_string();
+    let status_id = match payload.status_id.as_deref() {
+        Some(value) if value != "all" && !value.is_empty() => match ObjectId::parse_str(value) {
+            Ok(id) => Some(id),
+            Err(_) => return json_error(StatusCode::BAD_REQUEST, "invalid status_id"),
+        },
+        _ => None,
+    };
+    let date_start = match parse_html_date(&date) {
+        Some(date) => date,
+        None => return json_error(StatusCode::BAD_REQUEST, "invalid date"),
+    };
+    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    if !can_save_resource_usage_date(
+        session_user.active_role(),
+        &session_user.user().permissions,
+        &date,
+        &today,
+    ) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+
+    let mut selections = Vec::new();
+    for selection in &payload.selections {
+        let concept_id = match ObjectId::parse_str(selection.concept_id.trim()) {
+            Ok(id) => id,
+            Err(_) => return json_error(StatusCode::BAD_REQUEST, "invalid concept_id"),
+        };
+        let resource_id = match ObjectId::parse_str(selection.resource_id.trim()) {
+            Ok(id) => id,
+            Err(_) => return json_error(StatusCode::BAD_REQUEST, "invalid resource_id"),
+        };
+        selections.push((concept_id, selection.hour, resource_id));
+    }
+
+    match replace_hourly_resource_usage_grid(
+        &state,
+        &company_id,
+        status_id.as_ref(),
+        date_start,
+        0,
+        24,
+        &selections,
+    )
+    .await
+    {
+        Ok(_) => Json(serde_json::json!({ "ok": true })).into_response(),
+        Err(err) => json_error(StatusCode::BAD_REQUEST, &err.to_string()),
     }
 }
 

@@ -1,4 +1,4 @@
-#![recursion_limit = "256"]
+#![recursion_limit = "512"]
 
 use std::{env, fs, io::Read, path::PathBuf, process::ExitCode};
 
@@ -120,6 +120,47 @@ enum AdminCommand {
         #[command(subcommand)]
         command: AdminCompanyCommand,
     },
+    Users {
+        #[command(subcommand)]
+        command: AdminUsersCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum AdminUsersCommand {
+    List,
+    Get { id: String },
+    Create(UserCreateArgs),
+    Update(UserUpdateArgs),
+    Delete(DeleteArgs),
+}
+
+#[derive(Args)]
+struct UserCreateArgs {
+    #[arg(long)]
+    email: String,
+    /// Name of an environment variable holding the TOTP secret. If omitted, the
+    /// server generates one (it is never printed; read it via the QR endpoint).
+    #[arg(long)]
+    secret_env: Option<String>,
+    /// Company id to grant membership in. Use --input for multiple memberships.
+    #[arg(long)]
+    company_id: Option<String>,
+    #[arg(long, default_value = "staff")]
+    role: String,
+    /// Permission to grant (repeatable), e.g. view_projects, view_timeline.
+    #[arg(long = "permission")]
+    permissions: Vec<String>,
+    /// Path to a JSON file with the full request body, overriding the flags above.
+    #[arg(long)]
+    input: Option<String>,
+}
+
+#[derive(Args)]
+struct UserUpdateArgs {
+    id: String,
+    #[command(flatten)]
+    fields: UserCreateArgs,
 }
 
 #[derive(Subcommand)]
@@ -386,8 +427,24 @@ enum SatConfigsCommand {
     List,
     Get { id: String },
     Create(SatConfigWriteArgs),
+    /// Create a SAT config by uploading the actual .cer and .key files.
+    Upload(SatConfigUploadArgs),
     Update(SatConfigUpdateArgs),
     Delete(DeleteArgs),
+}
+
+#[derive(Args)]
+struct SatConfigUploadArgs {
+    #[arg(long)]
+    rfc: String,
+    #[arg(long)]
+    cer_file: String,
+    #[arg(long)]
+    key_file: String,
+    #[arg(long)]
+    key_password_env: String,
+    #[arg(long)]
+    label: Option<String>,
 }
 
 #[derive(Args)]
@@ -686,10 +743,27 @@ enum ResourceUsagesCommand {
     Create(ResourceUsageCreateArgs),
     Update(ResourceUsageUpdateArgs),
     Delete(DeleteArgs),
+    /// Bulk-save the hourly usage grid for one day.
+    Grid(ResourceUsageGridArgs),
     Allocations {
         #[command(subcommand)]
         command: ResourceUsageAllocationsCommand,
     },
+}
+
+#[derive(Args)]
+struct ResourceUsageGridArgs {
+    #[arg(long)]
+    date: String,
+    /// Concept status to scope the grid to, or "all" (default).
+    #[arg(long)]
+    status_id: Option<String>,
+    /// Grid cell as concept_id:hour:resource_id (repeatable).
+    #[arg(long = "cell")]
+    cells: Vec<String>,
+    /// Path to a JSON file with the full request body, overriding the flags above.
+    #[arg(long)]
+    input: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -1018,6 +1092,19 @@ async fn run(cli: Cli) -> Result<()> {
                 AdminCompanyCommand::Create(args) => admin_company_create(args, cli.json).await,
                 AdminCompanyCommand::Update(args) => admin_company_update(args, cli.json).await,
             },
+            AdminCommand::Users { command } => match command {
+                AdminUsersCommand::List => {
+                    json_get_command("/api/admin/users", cli.json, "users").await
+                }
+                AdminUsersCommand::Get { id } => {
+                    json_get_by_id_command("/api/admin/users", &id, cli.json, "user").await
+                }
+                AdminUsersCommand::Create(args) => admin_user_create(args, cli.json).await,
+                AdminUsersCommand::Update(args) => admin_user_update(args, cli.json).await,
+                AdminUsersCommand::Delete(args) => {
+                    delete_command("/api/admin/users", args, cli.json, "user").await
+                }
+            },
         },
         Command::Company { command } => match command {
             CompanyCommand::List => company_list(cli.json).await,
@@ -1168,6 +1255,7 @@ async fn run(cli: Cli) -> Result<()> {
                         .await
                 }
                 SatConfigsCommand::Create(args) => sat_config_create(args, cli.json).await,
+                SatConfigsCommand::Upload(args) => sat_config_upload(args, cli.json).await,
                 SatConfigsCommand::Update(args) => sat_config_update(args, cli.json).await,
                 SatConfigsCommand::Delete(args) => {
                     delete_command("/api/admin/sat-configs", args, cli.json, "SAT config").await
@@ -1296,6 +1384,7 @@ async fn run(cli: Cli) -> Result<()> {
                     )
                     .await
                 }
+                ResourceUsagesCommand::Grid(args) => resource_usages_grid(args, cli.json).await,
                 ResourceUsagesCommand::Allocations { command } => match command {
                     ResourceUsageAllocationsCommand::List { usage_id } => {
                         resource_usage_allocations_list(&usage_id, cli.json).await
@@ -1499,6 +1588,129 @@ fn company_payload(args: CompanyWriteArgs) -> Result<Value> {
         "is_active": !args.inactive,
         "notes": args.notes,
     }))
+}
+
+async fn admin_user_create(args: UserCreateArgs, json_output: bool) -> Result<()> {
+    let payload = user_payload(&args)?;
+    let mut state = load_state()?;
+    let value = authenticated_post_json(&mut state, "/api/admin/users", &payload).await?;
+    save_state(&state)?;
+    print_created_output(&value, json_output, "user")
+}
+
+async fn admin_user_update(args: UserUpdateArgs, json_output: bool) -> Result<()> {
+    validate_object_id(&args.id, "id")?;
+    let payload = user_payload(&args.fields)?;
+    let path = format!("/api/admin/users/{}/update", args.id);
+    let mut state = load_state()?;
+    let value = authenticated_post_json(&mut state, &path, &payload).await?;
+    save_state(&state)?;
+    print_ok_output(&value, json_output, "user updated")
+}
+
+fn user_payload(args: &UserCreateArgs) -> Result<Value> {
+    if let Some(path) = &args.input {
+        let raw = std::fs::read_to_string(path)
+            .with_context(|| format!("cannot read --input file {path}"))?;
+        return serde_json::from_str(&raw).context("invalid JSON in --input file");
+    }
+    validate_non_empty(&args.email, "email")?;
+    let company_id = args
+        .company_id
+        .as_ref()
+        .context("--company-id is required (or pass --input with a full JSON body)")?;
+    validate_object_id(company_id, "company-id")?;
+    let mut body = json!({
+        "email": args.email,
+        "memberships": [{
+            "company_id": company_id,
+            "role": args.role,
+            "permissions": args.permissions,
+        }],
+    });
+    if let Some(env_name) = &args.secret_env {
+        validate_non_empty(env_name, "secret-env")?;
+        let secret = std::env::var(env_name)
+            .with_context(|| format!("environment variable {env_name} is required"))?;
+        body["secret"] = json!(secret);
+    }
+    Ok(body)
+}
+
+async fn sat_config_upload(args: SatConfigUploadArgs, json_output: bool) -> Result<()> {
+    validate_non_empty(&args.rfc, "rfc")?;
+    validate_non_empty(&args.key_password_env, "key-password-env")?;
+    let key_password = std::env::var(&args.key_password_env).with_context(|| {
+        format!("environment variable {} is required", args.key_password_env)
+    })?;
+    let cer_bytes = std::fs::read(&args.cer_file)
+        .with_context(|| format!("cannot read --cer-file {}", args.cer_file))?;
+    let key_bytes = std::fs::read(&args.key_file)
+        .with_context(|| format!("cannot read --key-file {}", args.key_file))?;
+    let cer_name = upload_file_name(&args.cer_file, "cert.cer");
+    let key_name = upload_file_name(&args.key_file, "private.key");
+
+    let mut state = load_state()?;
+    let value = authenticated_post_multipart(
+        &mut state,
+        "/api/admin/sat-configs/upload",
+        &args.rfc,
+        args.label.as_deref(),
+        &key_password,
+        &cer_name,
+        cer_bytes,
+        &key_name,
+        key_bytes,
+    )
+    .await?;
+    save_state(&state)?;
+    print_created_output(&value, json_output, "SAT config")
+}
+
+fn upload_file_name(path: &str, fallback: &str) -> String {
+    std::path::Path::new(path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| name.to_string())
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| fallback.to_string())
+}
+
+async fn resource_usages_grid(args: ResourceUsageGridArgs, json_output: bool) -> Result<()> {
+    let payload = if let Some(path) = &args.input {
+        let raw = std::fs::read_to_string(path)
+            .with_context(|| format!("cannot read --input file {path}"))?;
+        serde_json::from_str::<Value>(&raw).context("invalid JSON in --input file")?
+    } else {
+        validate_non_empty(&args.date, "date")?;
+        let mut selections = Vec::new();
+        for cell in &args.cells {
+            let parts: Vec<&str> = cell.split(':').collect();
+            if parts.len() != 3 {
+                bail!("--cell must be concept_id:hour:resource_id, got `{cell}`");
+            }
+            validate_object_id(parts[0], "cell concept_id")?;
+            let hour: i32 = parts[1]
+                .parse()
+                .with_context(|| format!("invalid hour in --cell `{cell}`"))?;
+            validate_object_id(parts[2], "cell resource_id")?;
+            selections.push(json!({
+                "concept_id": parts[0],
+                "hour": hour,
+                "resource_id": parts[2],
+            }));
+        }
+        json!({
+            "date": args.date,
+            "status_id": args.status_id,
+            "selections": selections,
+        })
+    };
+    let mut state = load_state()?;
+    let value =
+        authenticated_post_json(&mut state, "/api/admin/resource_usages/grid", &payload).await?;
+    save_state(&state)?;
+    print_ok_output(&value, json_output, "resource usage grid saved")
 }
 
 async fn json_get_command(path: &str, json_output: bool, label: &str) -> Result<()> {
@@ -2472,6 +2684,11 @@ fn print_manifest(json_output: bool) -> Result<()> {
             { "name": "admin companies get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "company" },
             { "name": "admin companies create", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--name", "--slug", "--default-currency", "--inactive", "--notes"], "output_schema": "created_id" },
             { "name": "admin companies update", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id", "--name", "--slug", "--default-currency", "--inactive", "--notes"], "output_schema": "ok" },
+            { "name": "admin users list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "users" },
+            { "name": "admin users get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "user" },
+            { "name": "admin users create", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--email", "--secret-env", "--company-id", "--role", "--permission", "--input"], "output_schema": "created_id" },
+            { "name": "admin users update", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id", "--email", "--secret-env", "--company-id", "--role", "--permission", "--input"], "output_schema": "ok" },
+            { "name": "admin users delete", "auth_required": true, "company_required": true, "destructive": true, "confirmation_flag": "--yes", "arguments": ["id"], "output_schema": "ok" },
             { "name": "company list", "auth_required": true, "company_required": false, "destructive": false },
             { "name": "company use", "auth_required": true, "company_required": false, "destructive": false },
             { "name": "finance accounts list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "accounts" },
@@ -2519,6 +2736,7 @@ fn print_manifest(json_output: bool) -> Result<()> {
             { "name": "sat configs list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "sat_configs" },
             { "name": "sat configs get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "sat_config" },
             { "name": "sat configs create", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--rfc", "--cer-path", "--key-path", "--key-password-env", "--label"], "output_schema": "created_id" },
+            { "name": "sat configs upload", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--rfc", "--cer-file", "--key-file", "--key-password-env", "--label"], "output_schema": "created_id" },
             { "name": "sat configs update", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id", "--rfc", "--cer-path", "--key-path", "--key-password-env", "--label"], "output_schema": "ok" },
             { "name": "sat configs delete", "auth_required": true, "company_required": true, "destructive": true, "confirmation_flag": "--yes", "arguments": ["id"], "output_schema": "ok" },
             { "name": "projects list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "projects" },
@@ -2559,6 +2777,7 @@ fn print_manifest(json_output: bool) -> Result<()> {
             { "name": "resources usages create", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--resource-id", "--started-at", "--ended-at", "--operator-name", "--notes"], "output_schema": "created_id" },
             { "name": "resources usages update", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id", "--started-at", "--ended-at", "--hourly-cost-snapshot", "--operator-name", "--notes"], "output_schema": "ok" },
             { "name": "resources usages delete", "auth_required": true, "company_required": true, "destructive": true, "confirmation_flag": "--yes", "arguments": ["id"], "output_schema": "ok" },
+            { "name": "resources usages grid", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--date", "--status-id", "--cell", "--input"], "output_schema": "ok" },
             { "name": "resources usages allocations list", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["usage-id"], "output_schema": "resource_usage_allocations" },
             { "name": "resources usages allocations replace", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["usage-id", "--concept-id", "--allocation"], "output_schema": "allocation_ids" },
             { "name": "time timeline", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--mode", "--from", "--to"], "output_schema": "timeline_buckets" },
@@ -2602,6 +2821,64 @@ async fn authenticated_post_json<T: Serialize>(
         return parse_json_response(retry).await;
     }
     parse_json_response(response).await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn authenticated_post_multipart(
+    state: &mut CredentialState,
+    path: &str,
+    rfc: &str,
+    label: Option<&str>,
+    key_password: &str,
+    cer_name: &str,
+    cer_bytes: Vec<u8>,
+    key_name: &str,
+    key_bytes: Vec<u8>,
+) -> Result<Value> {
+    // reqwest multipart forms are not Clone, so rebuild the form for the retry.
+    let build_form = || {
+        let mut form = reqwest::multipart::Form::new()
+            .text("rfc", rfc.to_string())
+            .text("key_password", key_password.to_string())
+            .part(
+                "cer_file",
+                reqwest::multipart::Part::bytes(cer_bytes.clone()).file_name(cer_name.to_string()),
+            )
+            .part(
+                "key_file",
+                reqwest::multipart::Part::bytes(key_bytes.clone()).file_name(key_name.to_string()),
+            );
+        if let Some(label) = label {
+            form = form.text("label", label.to_string());
+        }
+        form
+    };
+
+    ensure_session(state).await?;
+    let response = post_multipart_with_session(state, path, build_form()).await?;
+    if response.status() == StatusCode::UNAUTHORIZED {
+        refresh_login(state).await?;
+        let retry = post_multipart_with_session(state, path, build_form()).await?;
+        return parse_json_response(retry).await;
+    }
+    parse_json_response(response).await
+}
+
+async fn post_multipart_with_session(
+    state: &CredentialState,
+    path: &str,
+    form: reqwest::multipart::Form,
+) -> Result<reqwest::Response> {
+    let client = Client::new();
+    let url = endpoint(&request_base_url(state)?, path)?;
+    let mut request = client
+        .post(url)
+        .header(header::COOKIE, session_cookie_header(state)?)
+        .multipart(form);
+    if let Some(host) = request_host(state) {
+        request = request.header(header::HOST, host);
+    }
+    request.send().await.context("request failed")
 }
 
 async fn ensure_session(state: &mut CredentialState) -> Result<()> {

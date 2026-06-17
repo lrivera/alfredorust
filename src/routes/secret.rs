@@ -15,6 +15,17 @@ pub struct SecretQuery {
 }
 
 /// Only generates and returns a Base32 secret (NOPAD). No I/O or persistence.
+#[utoipa::path(
+    get,
+    path = "/secret",
+    tag = "auth",
+    responses(
+        (status = 200, description = "Returns a freshly generated Base32 secret"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden")
+    ),
+    security(("session" = []))
+)]
 pub async fn secret_generate(
     SessionUser { .. }: SessionUser,
     Query(q): Query<SecretQuery>,

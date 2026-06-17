@@ -63,7 +63,7 @@ pub struct CompanyData {
     is_current: bool,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct CompanyPayload {
     name: String,
     #[serde(default)]
@@ -179,6 +179,17 @@ async fn slug_conflicts(
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/companies",
+    tag = "admin",
+    responses(
+        (status = 200, description = "List of companies"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden")
+    ),
+    security(("session" = []))
+)]
 pub async fn companies_data_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -195,6 +206,19 @@ pub async fn companies_data_api(
     Ok(Json(companies))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/companies/{id}",
+    tag = "admin",
+    params(("id" = String, Path, description = "Record id")),
+    responses(
+        (status = 200, description = "Company detail"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found")
+    ),
+    security(("session" = []))
+)]
 pub async fn company_data_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -213,6 +237,19 @@ pub async fn company_data_api(
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/companies",
+    tag = "admin",
+    request_body = CompanyPayload,
+    responses(
+        (status = 201, description = "Company created"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 400, description = "Invalid input")
+    ),
+    security(("session" = []))
+)]
 pub async fn company_create_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -247,6 +284,21 @@ pub async fn company_create_api(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/companies/{id}/update",
+    tag = "admin",
+    params(("id" = String, Path, description = "Record id")),
+    request_body = CompanyPayload,
+    responses(
+        (status = 200, description = "Company updated"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found"),
+        (status = 400, description = "Invalid input")
+    ),
+    security(("session" = []))
+)]
 pub async fn company_update_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,

@@ -74,7 +74,7 @@ pub struct OrderData {
     pub notes: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct OrderPayload {
     pub title: String,
     pub contact_id: Option<String>,
@@ -160,6 +160,17 @@ pub async fn orders_index(
     render(OrdersIndexTemplate { orders: rows })
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/orders",
+    tag = "operations",
+    responses(
+        (status = 200, description = "List orders"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden")
+    ),
+    security(("session" = []))
+)]
 pub async fn orders_data_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -171,6 +182,19 @@ pub async fn orders_data_api(
     Ok(Json(orders.into_iter().filter_map(order_data).collect()))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/orders/{id}",
+    tag = "operations",
+    params(("id" = String, Path, description = "Record id")),
+    responses(
+        (status = 200, description = "Order detail"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found")
+    ),
+    security(("session" = []))
+)]
 pub async fn order_data_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -371,6 +395,18 @@ pub async fn orders_create(
     Redirect::to("/admin/orders").into_response()
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/orders",
+    tag = "operations",
+    responses(
+        (status = 201, description = "Order created"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 400, description = "Invalid input")
+    ),
+    security(("session" = []))
+)]
 pub async fn orders_create_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -554,6 +590,20 @@ pub async fn orders_update(
     Redirect::to("/admin/orders").into_response()
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/orders/{id}/update",
+    tag = "operations",
+    params(("id" = String, Path, description = "Record id")),
+    responses(
+        (status = 200, description = "Order updated"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found"),
+        (status = 400, description = "Invalid input")
+    ),
+    security(("session" = []))
+)]
 pub async fn order_update_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -653,6 +703,19 @@ pub async fn orders_delete(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/orders/{id}/delete",
+    tag = "operations",
+    params(("id" = String, Path, description = "Record id")),
+    responses(
+        (status = 200, description = "Order deleted"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found")
+    ),
+    security(("session" = []))
+)]
 pub async fn order_delete_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -714,6 +777,19 @@ pub async fn orders_complete(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/orders/{id}/complete",
+    tag = "operations",
+    params(("id" = String, Path, description = "Record id")),
+    responses(
+        (status = 200, description = "Order completed"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found")
+    ),
+    security(("session" = []))
+)]
 pub async fn order_complete_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,

@@ -73,7 +73,7 @@ pub struct SatConfigData {
     pub created_at: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct SatConfigPayload {
     pub rfc: String,
     pub cer_path: String,
@@ -93,6 +93,17 @@ fn sat_config_data(config: SatConfig) -> Option<SatConfigData> {
     })
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/sat-configs",
+    tag = "admin",
+    responses(
+        (status = 200, description = "List of SAT configs"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden")
+    ),
+    security(("session" = []))
+)]
 pub async fn sat_configs_data_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -107,6 +118,19 @@ pub async fn sat_configs_data_api(
     ))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/sat-configs/{id}",
+    tag = "admin",
+    params(("id" = String, Path, description = "SAT config id")),
+    responses(
+        (status = 200, description = "SAT config detail"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found")
+    ),
+    security(("session" = []))
+)]
 pub async fn sat_config_data_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -124,6 +148,19 @@ pub async fn sat_config_data_api(
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/sat-configs",
+    tag = "admin",
+    request_body = SatConfigPayload,
+    responses(
+        (status = 201, description = "SAT config created"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 400, description = "Invalid input")
+    ),
+    security(("session" = []))
+)]
 pub async fn sat_config_create_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -159,6 +196,145 @@ pub async fn sat_config_create_api(
     }
 }
 
+/// Multipart twin of `sat_config_create_api` that accepts the actual `.cer` and
+/// `.key` file uploads (instead of pre-existing server paths), so a SPA/spcli
+/// client can provision a SAT config end-to-end. Scoped to the active company.
+#[utoipa::path(
+    post,
+    path = "/api/admin/sat-configs/upload",
+    tag = "admin",
+    responses(
+        (status = 201, description = "SAT config created from multipart/form-data file upload (.cer + .key)"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 400, description = "Invalid input")
+    ),
+    security(("session" = []))
+)]
+pub async fn sat_config_upload_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    mut multipart: Multipart,
+) -> impl IntoResponse {
+    let company_id = match require_admin_active(&session_user) {
+        Ok(id) => id,
+        Err(status) => return status.into_response(),
+    };
+
+    let mut rfc = String::new();
+    let mut label = None::<String>;
+    let mut key_password = String::new();
+    let mut cer_bytes: Option<(String, Vec<u8>)> = None;
+    let mut key_bytes: Option<(String, Vec<u8>)> = None;
+
+    while let Ok(Some(field)) = multipart.next_field().await {
+        let field_name = field.name().unwrap_or("").to_string();
+        match field_name.as_str() {
+            "rfc" => {
+                rfc = field.text().await.unwrap_or_default().trim().to_uppercase();
+            }
+            "label" => {
+                let value = field.text().await.unwrap_or_default();
+                let value = value.trim();
+                if !value.is_empty() {
+                    label = Some(value.to_string());
+                }
+            }
+            "key_password" => {
+                key_password = field.text().await.unwrap_or_default();
+            }
+            "cer_file" => {
+                let filename = safe_upload_filename(field.file_name(), "cert.cer");
+                let data = field.bytes().await.unwrap_or_default().to_vec();
+                if data.len() > MAX_SAT_FILE_BYTES {
+                    return StatusCode::PAYLOAD_TOO_LARGE.into_response();
+                }
+                if !data.is_empty() {
+                    cer_bytes = Some((filename, data));
+                }
+            }
+            "key_file" => {
+                let filename = safe_upload_filename(field.file_name(), "private.key");
+                let data = field.bytes().await.unwrap_or_default().to_vec();
+                if data.len() > MAX_SAT_FILE_BYTES {
+                    return StatusCode::PAYLOAD_TOO_LARGE.into_response();
+                }
+                if !data.is_empty() {
+                    key_bytes = Some((filename, data));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    if rfc.is_empty() || cer_bytes.is_none() || key_bytes.is_none() || key_password.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": "rfc, key_password, cer_file and key_file are required"
+            })),
+        )
+            .into_response();
+    }
+
+    let config_id = ObjectId::new();
+    let upload_dir = PathBuf::from("uploads")
+        .join("sat")
+        .join(company_id.to_hex())
+        .join(config_id.to_hex());
+
+    if fs::create_dir_all(&upload_dir).await.is_err() {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+
+    let (cer_filename, cer_data) = cer_bytes.unwrap();
+    let (key_filename, key_data) = key_bytes.unwrap();
+    let cer_path = upload_dir.join(&cer_filename);
+    let key_path = upload_dir.join(&key_filename);
+
+    if fs::write(&cer_path, &cer_data).await.is_err() {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+    if fs::write(&key_path, &key_data).await.is_err() {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+
+    match create_sat_config(
+        &state,
+        config_id,
+        company_id,
+        rfc,
+        cer_path.to_string_lossy().to_string(),
+        key_path.to_string_lossy().to_string(),
+        key_password,
+        label,
+    )
+    .await
+    {
+        Ok(id) => (
+            StatusCode::CREATED,
+            Json(serde_json::json!({ "id": id.to_hex() })),
+        )
+            .into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/admin/sat-configs/{id}/update",
+    tag = "admin",
+    params(("id" = String, Path, description = "SAT config id")),
+    request_body = SatConfigPayload,
+    responses(
+        (status = 200, description = "SAT config updated"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found"),
+        (status = 400, description = "Invalid input")
+    ),
+    security(("session" = []))
+)]
 pub async fn sat_config_update_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -204,6 +380,19 @@ pub async fn sat_config_update_api(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/sat-configs/{id}/delete",
+    tag = "admin",
+    params(("id" = String, Path, description = "SAT config id")),
+    responses(
+        (status = 200, description = "SAT config deleted"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found")
+    ),
+    security(("session" = []))
+)]
 pub async fn sat_config_delete_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,

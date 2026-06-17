@@ -46,7 +46,7 @@ pub struct AccountData {
     email: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct AccountPayload {
     email: String,
     secret: String,
@@ -79,6 +79,17 @@ pub async fn account_edit(
     })
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/account",
+    tag = "auth",
+    responses(
+        (status = 200, description = "Returns the current account profile"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden")
+    ),
+    security(("session" = []))
+)]
 pub async fn account_profile_data_api(SessionUser(session): SessionUser) -> Json<AccountData> {
     Json(AccountData {
         id: session.user.id.to_hex(),
@@ -86,6 +97,19 @@ pub async fn account_profile_data_api(SessionUser(session): SessionUser) -> Json
     })
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/account",
+    tag = "auth",
+    request_body = AccountPayload,
+    responses(
+        (status = 200, description = "Account profile updated"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 400, description = "Invalid input")
+    ),
+    security(("session" = []))
+)]
 pub async fn account_profile_update_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,

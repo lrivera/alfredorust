@@ -13,13 +13,25 @@ use crate::session::SESSION_COOKIE_NAME;
 use crate::state::{AppState, SESSION_TTL_SECONDS, create_session, find_user};
 use crate::totp::build_totp;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct LoginRequest {
     pub email: String,
     pub code: String,
 }
 
 /// Verifies the current TOTP code with a small skew (±1 step) defined in TOTP::new().
+#[utoipa::path(
+    post,
+    path = "/login",
+    tag = "auth",
+    request_body = LoginRequest,
+    responses(
+        (status = 200, description = "Login successful"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden")
+    ),
+    security(("session" = []))
+)]
 pub async fn login(
     State(st): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -198,11 +210,9 @@ fn compute_redirect_url(host: &str, slug: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Mutex, OnceLock};
 
     fn env_lock() -> std::sync::MutexGuard<'static, ()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+        crate::session::test_env_lock()
     }
 
     #[test]

@@ -50,7 +50,7 @@ pub struct CategoryDetail {
     pub notes: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct CategoryCreatePayload {
     pub name: String,
     pub flow_type: String,
@@ -58,7 +58,7 @@ pub struct CategoryCreatePayload {
     pub notes: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct CategoryUpdatePayload {
     pub name: String,
     pub flow_type: String,
@@ -66,6 +66,17 @@ pub struct CategoryUpdatePayload {
     pub notes: Option<String>,
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/categories",
+    tag = "finance",
+    responses(
+        (status = 200, description = "List of categories"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden")
+    ),
+    security(("session" = []))
+)]
 pub async fn categories_data_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -104,6 +115,19 @@ pub async fn categories_data_api(
     Ok(Json(rows))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/categories",
+    tag = "finance",
+    request_body = CategoryCreatePayload,
+    responses(
+        (status = 201, description = "Category created"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 400, description = "Invalid input")
+    ),
+    security(("session" = []))
+)]
 pub async fn categories_create_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -175,6 +199,19 @@ pub async fn categories_create_api(
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/categories/{id}",
+    tag = "finance",
+    params(("id" = String, Path, description = "Record id")),
+    responses(
+        (status = 200, description = "Category detail"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found")
+    ),
+    security(("session" = []))
+)]
 pub async fn category_data_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -209,6 +246,21 @@ pub async fn category_data_api(
     }))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/categories/{id}/update",
+    tag = "finance",
+    params(("id" = String, Path, description = "Record id")),
+    request_body = CategoryUpdatePayload,
+    responses(
+        (status = 200, description = "Category updated"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found"),
+        (status = 400, description = "Invalid input")
+    ),
+    security(("session" = []))
+)]
 pub async fn category_update_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -298,6 +350,19 @@ pub async fn category_update_api(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/categories/{id}/delete",
+    tag = "finance",
+    params(("id" = String, Path, description = "Record id")),
+    responses(
+        (status = 200, description = "Category deleted"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found")
+    ),
+    security(("session" = []))
+)]
 pub async fn category_delete_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,

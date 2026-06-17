@@ -62,7 +62,7 @@ pub struct ForecastDetail {
     pub notes: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct ForecastPayload {
     pub generated_at: String,
     pub generated_by_user_id: Option<String>,
@@ -156,6 +156,17 @@ pub async fn forecasts_index(
     render(ForecastsIndexTemplate { forecasts: rows })
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/forecasts",
+    tag = "finance",
+    responses(
+        (status = 200, description = "List forecasts"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden")
+    ),
+    security(("session" = []))
+)]
 pub async fn forecasts_data_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -185,6 +196,19 @@ pub async fn forecasts_data_api(
     Ok(Json(rows))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/forecasts/{id}",
+    tag = "finance",
+    params(("id" = String, Path, description = "Record id")),
+    responses(
+        (status = 200, description = "Forecast detail"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found")
+    ),
+    security(("session" = []))
+)]
 pub async fn forecast_data_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -205,6 +229,19 @@ pub async fn forecast_data_api(
     )))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/forecasts",
+    tag = "finance",
+    request_body = ForecastPayload,
+    responses(
+        (status = 201, description = "Forecast created"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 400, description = "Invalid input")
+    ),
+    security(("session" = []))
+)]
 pub async fn forecasts_create_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -247,6 +284,21 @@ pub async fn forecasts_create_api(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/forecasts/{id}/update",
+    tag = "finance",
+    params(("id" = String, Path, description = "Record id")),
+    request_body = ForecastPayload,
+    responses(
+        (status = 200, description = "Forecast updated"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found"),
+        (status = 400, description = "Invalid input")
+    ),
+    security(("session" = []))
+)]
 pub async fn forecast_update_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -298,6 +350,19 @@ pub async fn forecast_update_api(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/forecasts/{id}/delete",
+    tag = "finance",
+    params(("id" = String, Path, description = "Record id")),
+    responses(
+        (status = 200, description = "Forecast deleted"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found")
+    ),
+    security(("session" = []))
+)]
 pub async fn forecast_delete_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,

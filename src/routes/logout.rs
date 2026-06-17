@@ -13,6 +13,17 @@ use crate::routes::login::compute_cookie_domain;
 use crate::session::SessionUser;
 use crate::state::{AppState, delete_session};
 
+#[utoipa::path(
+    post,
+    path = "/logout",
+    tag = "auth",
+    responses(
+        (status = 200, description = "Logout successful"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden")
+    ),
+    security(("session" = []))
+)]
 pub async fn logout(
     State(st): State<Arc<AppState>>,
     headers: HeaderMap,

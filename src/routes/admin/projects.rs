@@ -74,7 +74,7 @@ pub struct ProjectData {
     pub notes: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct ProjectPayload {
     pub title: String,
     pub contact_id: Option<String>,
@@ -183,6 +183,17 @@ pub async fn projects_index(
     })
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/projects",
+    tag = "operations",
+    responses(
+        (status = 200, description = "List of projects"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden")
+    ),
+    security(("session" = []))
+)]
 pub async fn projects_data_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -204,6 +215,19 @@ pub async fn projects_data_api(
     ))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/projects/{id}",
+    tag = "operations",
+    params(("id" = String, Path, description = "Project id")),
+    responses(
+        (status = 200, description = "Project detail"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found")
+    ),
+    security(("session" = []))
+)]
 pub async fn project_data_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -398,6 +422,19 @@ pub async fn projects_create(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/projects",
+    tag = "operations",
+    request_body = ProjectPayload,
+    responses(
+        (status = 201, description = "Project created"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 400, description = "Invalid input")
+    ),
+    security(("session" = []))
+)]
 pub async fn projects_create_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -574,6 +611,21 @@ pub async fn projects_update(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/projects/{id}/update",
+    tag = "operations",
+    params(("id" = String, Path, description = "Project id")),
+    request_body = ProjectPayload,
+    responses(
+        (status = 200, description = "Project updated"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found"),
+        (status = 400, description = "Invalid input")
+    ),
+    security(("session" = []))
+)]
 pub async fn project_update_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -633,6 +685,19 @@ pub async fn projects_delete(
     Ok(Redirect::to("/admin/projects").into_response())
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/projects/{id}/delete",
+    tag = "operations",
+    params(("id" = String, Path, description = "Project id")),
+    responses(
+        (status = 200, description = "Project deleted"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found")
+    ),
+    security(("session" = []))
+)]
 pub async fn project_delete_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -667,6 +732,20 @@ pub async fn projects_advance(
     Ok(Redirect::to("/admin/projects").into_response())
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/projects/{id}/advance",
+    tag = "operations",
+    params(("id" = String, Path, description = "Project id")),
+    responses(
+        (status = 200, description = "Project phase advanced"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found"),
+        (status = 400, description = "Invalid input")
+    ),
+    security(("session" = []))
+)]
 pub async fn project_advance_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,

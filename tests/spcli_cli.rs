@@ -130,6 +130,84 @@ fn manifest_json_is_machine_readable() {
             && command["company_required"].as_bool() == Some(true)
             && command["destructive"].as_bool() == Some(false)
     }));
+    assert!(commands.iter().any(|command| {
+        command["name"].as_str() == Some("admin users create")
+            && command["auth_required"].as_bool() == Some(true)
+            && command["company_required"].as_bool() == Some(true)
+            && command["destructive"].as_bool() == Some(false)
+    }));
+    assert!(commands.iter().any(|command| {
+        command["name"].as_str() == Some("admin users delete")
+            && command["destructive"].as_bool() == Some(true)
+            && command["confirmation_flag"].as_str() == Some("--yes")
+    }));
+    assert!(commands.iter().any(|command| {
+        command["name"].as_str() == Some("sat configs upload")
+            && command["auth_required"].as_bool() == Some(true)
+            && command["company_required"].as_bool() == Some(true)
+            && command["destructive"].as_bool() == Some(false)
+    }));
+    assert!(commands.iter().any(|command| {
+        command["name"].as_str() == Some("resources usages grid")
+            && command["auth_required"].as_bool() == Some(true)
+            && command["company_required"].as_bool() == Some(true)
+            && command["destructive"].as_bool() == Some(false)
+    }));
+}
+
+#[test]
+fn admin_users_delete_requires_confirmation_before_auth() {
+    let (code, stdout, stderr) = run_spcli(&[
+        "--json",
+        "admin",
+        "users",
+        "delete",
+        "64f000000000000000000000",
+    ]);
+
+    assert_eq!(code, 2);
+    assert!(stdout.trim().is_empty());
+    let error: Value = serde_json::from_str(&stderr).expect("stderr must be JSON");
+    assert_eq!(error["code"], "confirmation_required");
+}
+
+#[test]
+fn admin_users_create_requires_company_or_input() {
+    // No --company-id and no --input: must fail validation locally, before any
+    // network/auth, so the agent gets an immediate structured error.
+    let (code, stdout, stderr) =
+        run_spcli(&["--json", "admin", "users", "create", "--email", "new@example.com"]);
+
+    assert_eq!(code, 2);
+    assert!(stdout.trim().is_empty());
+    let error: Value = serde_json::from_str(&stderr).expect("stderr must be JSON");
+    assert_eq!(error["code"], "validation_error");
+    assert!(
+        error["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("company-id")
+    );
+}
+
+#[test]
+fn resources_usages_grid_rejects_malformed_cell() {
+    // A bad --cell must be rejected locally with a clear validation error.
+    let (code, stdout, stderr) = run_spcli(&[
+        "--json",
+        "resources",
+        "usages",
+        "grid",
+        "--date",
+        "2026-06-17",
+        "--cell",
+        "only-one-part",
+    ]);
+
+    assert_eq!(code, 2);
+    assert!(stdout.trim().is_empty());
+    let error: Value = serde_json::from_str(&stderr).expect("stderr must be JSON");
+    assert_eq!(error["code"], "validation_error");
 }
 
 #[test]

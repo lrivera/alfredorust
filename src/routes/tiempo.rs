@@ -99,6 +99,17 @@ impl Mode {
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/tiempo",
+    tag = "auth",
+    responses(
+        (status = 200, description = "Returns timeline buckets"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden")
+    ),
+    security(("session" = []))
+)]
 pub async fn tiempo_data(
     SessionUser(session): SessionUser,
     State(state): State<Arc<AppState>>,

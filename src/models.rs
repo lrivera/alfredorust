@@ -568,7 +568,7 @@ impl OrderStatus {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct OrderItem {
     pub description: String,
     pub quantity: f64,

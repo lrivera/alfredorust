@@ -85,7 +85,7 @@ pub struct TransactionFormData {
     notes: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct TransactionPayload {
     pub date: String,
     pub description: String,
@@ -559,6 +559,19 @@ pub async fn transactions_delete(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/transactions",
+    tag = "finance",
+    request_body = TransactionPayload,
+    responses(
+        (status = 201, description = "Transaction created"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 400, description = "Invalid input")
+    ),
+    security(("session" = []))
+)]
 pub async fn transactions_create_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -611,6 +624,21 @@ pub async fn transactions_create_api(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/transactions/{id}/update",
+    tag = "finance",
+    params(("id" = String, Path, description = "Record id")),
+    request_body = TransactionPayload,
+    responses(
+        (status = 200, description = "Transaction updated"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found"),
+        (status = 400, description = "Invalid input")
+    ),
+    security(("session" = []))
+)]
 pub async fn transaction_update_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -674,6 +702,19 @@ pub async fn transaction_update_api(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/transactions/{id}/delete",
+    tag = "finance",
+    params(("id" = String, Path, description = "Record id")),
+    responses(
+        (status = 200, description = "Transaction deleted"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found")
+    ),
+    security(("session" = []))
+)]
 pub async fn transaction_delete_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -816,6 +857,19 @@ pub struct TransactionData {
     pub notes: Option<String>,
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/transactions/{id}",
+    tag = "finance",
+    params(("id" = String, Path, description = "Record id")),
+    responses(
+        (status = 200, description = "Transaction detail"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found")
+    ),
+    security(("session" = []))
+)]
 pub async fn transaction_data_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -834,6 +888,17 @@ pub async fn transaction_data_api(
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/transactions/data",
+    tag = "finance",
+    responses(
+        (status = 200, description = "List transactions"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden")
+    ),
+    security(("session" = []))
+)]
 pub async fn transactions_data_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,

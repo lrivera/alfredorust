@@ -15,10 +15,15 @@ use axum::{
 use dotenvy::dotenv;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::net::TcpListener;
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
+
+use crate::openapi::ApiDoc;
 
 mod cfdi;
 pub mod filters;
 mod models;
+mod openapi;
 mod routes;
 mod sat;
 mod session;
@@ -36,6 +41,11 @@ async fn main() {
     );
 
     let protected = Router::new()
+        // Swagger UI + OpenAPI JSON, gated by the session middleware below so the
+        // API docs are only reachable once logged in.
+        .merge(
+            SwaggerUi::new("/docs").url("/api-docs/openapi.json", ApiDoc::openapi()),
+        )
         .route("/setup", get(routes::setup))
         .route("/qrcode", get(routes::qrcode))
         .route("/secret", get(routes::secret_generate))
@@ -53,6 +63,19 @@ async fn main() {
         .route(
             "/admin/users",
             get(routes::users_index).post(routes::users_create),
+        )
+        .route(
+            "/api/admin/users",
+            get(routes::api_users_index).post(routes::api_users_create),
+        )
+        .route("/api/admin/users/{id}", get(routes::api_user_detail))
+        .route(
+            "/api/admin/users/{id}/update",
+            post(routes::api_users_update),
+        )
+        .route(
+            "/api/admin/users/{id}/delete",
+            post(routes::api_users_delete),
         )
         .route("/admin/users/new", get(routes::users_new))
         .route("/admin/users/{id}/edit", get(routes::users_edit))
@@ -112,6 +135,10 @@ async fn main() {
         .route(
             "/api/admin/sat-configs",
             get(routes::sat_configs_data_api).post(routes::sat_config_create_api),
+        )
+        .route(
+            "/api/admin/sat-configs/upload",
+            post(routes::sat_config_upload_api),
         )
         .route(
             "/api/admin/sat-configs/{id}",
@@ -593,6 +620,10 @@ async fn main() {
         .route(
             "/api/admin/resource_usages",
             get(routes::api_resource_usages_index).post(routes::api_resource_usages_create),
+        )
+        .route(
+            "/api/admin/resource_usages/grid",
+            post(routes::api_resource_usages_grid_save),
         )
         .route(
             "/api/admin/resource_usages/{id}",

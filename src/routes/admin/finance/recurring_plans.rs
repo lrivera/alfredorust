@@ -106,7 +106,7 @@ pub struct RecurringPlanFormData {
     notes: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct RecurringPlanPayload {
     pub name: String,
     pub flow_type: String,
@@ -180,6 +180,17 @@ pub async fn recurring_plans_index(
     render(RecurringPlansIndexTemplate { plans: rows })
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/recurring-plans",
+    tag = "finance",
+    responses(
+        (status = 200, description = "List recurring plans"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden")
+    ),
+    security(("session" = []))
+)]
 pub async fn recurring_plans_data_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -199,6 +210,19 @@ pub async fn recurring_plans_data_api(
     Ok(Json(rows))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/recurring-plans/{id}",
+    tag = "finance",
+    params(("id" = String, Path, description = "Record id")),
+    responses(
+        (status = 200, description = "Get recurring plan"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found")
+    ),
+    security(("session" = []))
+)]
 pub async fn recurring_plan_data_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -217,6 +241,19 @@ pub async fn recurring_plan_data_api(
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/recurring-plans",
+    tag = "finance",
+    request_body = RecurringPlanPayload,
+    responses(
+        (status = 201, description = "Create recurring plan"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 400, description = "Invalid input")
+    ),
+    security(("session" = []))
+)]
 pub async fn recurring_plans_create_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -264,6 +301,21 @@ pub async fn recurring_plans_create_api(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/recurring-plans/{id}/update",
+    tag = "finance",
+    params(("id" = String, Path, description = "Record id")),
+    request_body = RecurringPlanPayload,
+    responses(
+        (status = 200, description = "Update recurring plan"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found"),
+        (status = 400, description = "Invalid input")
+    ),
+    security(("session" = []))
+)]
 pub async fn recurring_plan_update_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -330,6 +382,19 @@ pub async fn recurring_plan_update_api(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/recurring-plans/{id}/delete",
+    tag = "finance",
+    params(("id" = String, Path, description = "Record id")),
+    responses(
+        (status = 200, description = "Delete recurring plan"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found")
+    ),
+    security(("session" = []))
+)]
 pub async fn recurring_plan_delete_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -368,6 +433,19 @@ pub async fn recurring_plan_delete_api(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/recurring-plans/{id}/generate",
+    tag = "finance",
+    params(("id" = String, Path, description = "Record id")),
+    responses(
+        (status = 200, description = "Generate planned entries"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found")
+    ),
+    security(("session" = []))
+)]
 pub async fn recurring_plan_generate_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,

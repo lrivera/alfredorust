@@ -131,7 +131,7 @@ fn parse_user_form(body: &str) -> Result<UserFormData, String> {
     })
 }
 
-fn admin_company_ids(session_user: &SessionUser) -> Vec<ObjectId> {
+pub(crate) fn admin_company_ids(session_user: &SessionUser) -> Vec<ObjectId> {
     session_user
         .user()
         .company_ids
@@ -142,7 +142,10 @@ fn admin_company_ids(session_user: &SessionUser) -> Vec<ObjectId> {
         .collect()
 }
 
-fn user_shares_admin_company(user_company_ids: &[ObjectId], admin_companies: &[ObjectId]) -> bool {
+pub(crate) fn user_shares_admin_company(
+    user_company_ids: &[ObjectId],
+    admin_companies: &[ObjectId],
+) -> bool {
     user_company_ids
         .iter()
         .any(|cid| admin_companies.contains(cid))

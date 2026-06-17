@@ -46,7 +46,7 @@ enum PlannedOutcome {
     Updated,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct CfdiDownloadForm {
     pub sat_config_id: String,
     pub start: String,
@@ -74,6 +74,20 @@ pub struct StartedJobs {
 
 // ── POST: start download (one job per monthly chunk) ───────────────────────
 
+#[utoipa::path(
+    post,
+    path = "/admin/companies/{id}/cfdi/download",
+    tag = "cfdi",
+    params(("id" = String, Path, description = "Company id")),
+    responses(
+        (status = 201, description = "Download jobs started"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found"),
+        (status = 400, description = "Invalid input")
+    ),
+    security(("session" = []))
+)]
 pub async fn company_cfdi_download(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -229,6 +243,19 @@ pub async fn company_cfdi_download(
 
 // ── GET: list all jobs for a company ───────────────────────────────────────
 
+#[utoipa::path(
+    get,
+    path = "/admin/companies/{id}/cfdi/jobs",
+    tag = "cfdi",
+    params(("id" = String, Path, description = "Company id")),
+    responses(
+        (status = 200, description = "List of CFDI download jobs"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found")
+    ),
+    security(("session" = []))
+)]
 pub async fn company_cfdi_jobs_list(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -253,6 +280,22 @@ pub async fn company_cfdi_jobs_list(
 
 // ── GET: single job status ─────────────────────────────────────────────────
 
+#[utoipa::path(
+    get,
+    path = "/admin/companies/{id}/cfdi/jobs/{job_id}",
+    tag = "cfdi",
+    params(
+        ("id" = String, Path, description = "Company id"),
+        ("job_id" = String, Path, description = "Job id")
+    ),
+    responses(
+        (status = 200, description = "CFDI download job status"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found")
+    ),
+    security(("session" = []))
+)]
 pub async fn company_cfdi_job_status(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,

@@ -65,7 +65,7 @@ pub struct ResourceData {
     pub updated_at: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct ResourcePayload {
     pub name: String,
     #[serde(default = "default_resource_type")]
@@ -144,6 +144,17 @@ pub async fn resources_index(
     render(ResourcesIndexTemplate { resources: rows })
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/resources",
+    tag = "resources",
+    responses(
+        (status = 200, description = "List resources"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden")
+    ),
+    security(("session" = []))
+)]
 pub async fn resources_data_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -158,6 +169,19 @@ pub async fn resources_data_api(
     ))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/resources/{id}",
+    tag = "resources",
+    params(("id" = String, Path, description = "Record id")),
+    responses(
+        (status = 200, description = "Get resource"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found")
+    ),
+    security(("session" = []))
+)]
 pub async fn resource_data_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -408,6 +432,19 @@ pub async fn resources_create(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/resources",
+    tag = "resources",
+    request_body = ResourcePayload,
+    responses(
+        (status = 201, description = "Create resource"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 400, description = "Invalid input")
+    ),
+    security(("session" = []))
+)]
 pub async fn resources_create_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -567,6 +604,21 @@ pub async fn resources_update(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/resources/{id}/update",
+    tag = "resources",
+    params(("id" = String, Path, description = "Record id")),
+    request_body = ResourcePayload,
+    responses(
+        (status = 200, description = "Update resource"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found"),
+        (status = 400, description = "Invalid input")
+    ),
+    security(("session" = []))
+)]
 pub async fn resource_update_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -693,6 +745,19 @@ pub async fn resources_delete(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/resources/{id}/delete",
+    tag = "resources",
+    params(("id" = String, Path, description = "Record id")),
+    responses(
+        (status = 200, description = "Delete resource"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found")
+    ),
+    security(("session" = []))
+)]
 pub async fn resource_delete_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,

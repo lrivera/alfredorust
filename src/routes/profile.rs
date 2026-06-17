@@ -16,6 +16,17 @@ pub struct CompanySummary {
     pub active: bool,
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/me/companies",
+    tag = "auth",
+    responses(
+        (status = 200, description = "Returns the companies the user belongs to"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden")
+    ),
+    security(("session" = []))
+)]
 pub async fn me_companies(
     session: SessionUser,
     State(state): State<Arc<AppState>>,

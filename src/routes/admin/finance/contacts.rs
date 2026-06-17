@@ -50,7 +50,7 @@ pub struct ContactDetail {
     pub notes: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct ContactCreatePayload {
     pub name: String,
     pub contact_type: String,
@@ -60,7 +60,7 @@ pub struct ContactCreatePayload {
     pub notes: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct ContactUpdatePayload {
     pub name: String,
     pub contact_type: String,
@@ -70,6 +70,17 @@ pub struct ContactUpdatePayload {
     pub notes: Option<String>,
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/contacts",
+    tag = "finance",
+    responses(
+        (status = 200, description = "List of contacts"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden")
+    ),
+    security(("session" = []))
+)]
 pub async fn contacts_data_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -97,6 +108,19 @@ pub async fn contacts_data_api(
     Ok(Json(rows))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/contacts",
+    tag = "finance",
+    request_body = ContactCreatePayload,
+    responses(
+        (status = 201, description = "Contact created"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 400, description = "Invalid input")
+    ),
+    security(("session" = []))
+)]
 pub async fn contacts_create_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -146,6 +170,19 @@ pub async fn contacts_create_api(
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/contacts/{id}",
+    tag = "finance",
+    params(("id" = String, Path, description = "Record id")),
+    responses(
+        (status = 200, description = "Contact detail"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found")
+    ),
+    security(("session" = []))
+)]
 pub async fn contact_data_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -172,6 +209,21 @@ pub async fn contact_data_api(
     }))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/contacts/{id}/update",
+    tag = "finance",
+    params(("id" = String, Path, description = "Record id")),
+    request_body = ContactUpdatePayload,
+    responses(
+        (status = 200, description = "Contact updated"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found"),
+        (status = 400, description = "Invalid input")
+    ),
+    security(("session" = []))
+)]
 pub async fn contact_update_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -232,6 +284,19 @@ pub async fn contact_update_api(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/contacts/{id}/delete",
+    tag = "finance",
+    params(("id" = String, Path, description = "Record id")),
+    responses(
+        (status = 200, description = "Contact deleted"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found")
+    ),
+    security(("session" = []))
+)]
 pub async fn contact_delete_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,

@@ -193,6 +193,17 @@ fn parse_f64(s: &str) -> f64 {
     s.trim().parse().unwrap_or(0.0)
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/cfdis/data",
+    tag = "cfdi",
+    responses(
+        (status = 200, description = "CFDI list for the dashboard"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden")
+    ),
+    security(("session" = []))
+)]
 pub async fn cfdis_data_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -314,6 +325,19 @@ pub async fn cfdis_data_api(
     }))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/cfdis/{uuid}",
+    tag = "cfdi",
+    params(("uuid" = String, Path, description = "CFDI UUID")),
+    responses(
+        (status = 200, description = "CFDI detail"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found")
+    ),
+    security(("session" = []))
+)]
 pub async fn cfdi_data_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,

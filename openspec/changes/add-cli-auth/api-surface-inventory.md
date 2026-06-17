@@ -71,9 +71,9 @@ These routes originally rendered Askama templates or consumed browser form submi
 | Area | Existing routes | Current status |
 | --- | --- | --- |
 | Account | `GET/POST /account` | Covered by `GET/POST /api/account`; reads redact TOTP secret and setup URLs. |
-| Users | `/admin/users`, `/admin/users/new`, `/admin/users/{id}/edit`, `/update`, `/delete`, `/qrcode` | Pending. Blocked on safe TOTP provisioning for create; list/get/update/delete can proceed after JSON admin APIs are added. |
+| Users | `/admin/users`, `/admin/users/new`, `/admin/users/{id}/edit`, `/update`, `/delete`, `/qrcode` | Covered by `/api/admin/users*` (list/get/create/update/delete), admin-only and tenant-scoped. Secret never returned in JSON; new-user QR/secret read via the existing `/admin/users/{id}/qrcode`. `spcli admin users` CLI commands still pending. |
 | Companies | `/admin/companies`, `/new`, `/{id}/edit`, `/update`, `/delete`, `/cfdis/delete_all`, `/transactions/delete_all` | Metadata list/get/create/update covered by `/api/admin/companies*`; delete and delete-all maintenance remain intentionally unsupported. |
-| SAT configs | `/admin/companies/{id}/sat_configs`, `/new`, `/{config_id}/delete` | Covered by `/api/admin/sat-configs*`; output redacts secret-bearing fields. |
+| SAT configs | `/admin/companies/{id}/sat_configs`, `/new`, `/{config_id}/delete` | Covered by `/api/admin/sat-configs*`; output redacts secret-bearing fields. File upload (`.cer`/`.key`) now covered by `POST /api/admin/sat-configs/upload` (multipart). |
 | Finance accounts | `/admin/accounts`, `/new`, `/{id}/edit`, `/update`, `/delete` | Covered by `/api/admin/accounts*`. |
 | Finance categories | `/admin/categories`, `/new`, `/{id}/edit`, `/update`, `/delete` | Covered by `/api/admin/categories*`. |
 | Finance contacts | `/admin/contacts`, `/new`, `/{id}/edit`, `/update`, `/delete` | Covered by `/api/admin/contacts*`. |
@@ -87,7 +87,7 @@ These routes originally rendered Askama templates or consumed browser form submi
 | Concept status forms | `/admin/concept_statuses`, `/new`, `/{id}/edit`, form update/delete routes | Covered through `/api/admin/concept_statuses*`. |
 | Resources | `/admin/resources`, `/new`, `/{id}/edit`, `/update`, `/delete` | Covered by `/api/admin/resources*`. |
 | Resource logs | `/admin/resource_logs`, `/new`, `/{id}/edit`, `/update`, `/delete`, `/{id}/end` | Covered by `/api/admin/resource_logs*`. |
-| Resource usage forms/grid | `/admin/resource_usages`, `/create`, `/new`, `/{id}/edit`, `/update`, `/delete` | Individual usages and allocations are covered; bulk grid save remains web-only unless a future spec adds it. |
+| Resource usage forms/grid | `/admin/resource_usages`, `/create`, `/new`, `/{id}/edit`, `/update`, `/delete` | Individual usages and allocations are covered; bulk grid save now covered by `POST /api/admin/resource_usages/grid` (honors the staff "today window" permission). |
 | CFDI HTML list | `GET /admin/cfdis` | List/detail reads covered; CLI-safe import/download remains pending. |
 | PDF editor | `GET /pdf` | Human editor only; CLI uses `POST /pdf/preview`. |
 | Time page | `GET /tiempo` | Human page only; CLI uses `GET /api/tiempo`. |
@@ -99,7 +99,7 @@ These routes originally rendered Askama templates or consumed browser form submi
 3. Done: `spcli manifest` entries for implemented commands with arguments, auth requirements, company requirements, destructive flags, and output schemas.
 4. Done: JSON backend endpoints and CLI commands for finance master data, forecasts, transactions, planned entries, recurring plans, service orders, projects, resources, resource logs, resource usages, SAT configs, company metadata, and account profile.
 5. Done: representative harness coverage for JSON APIs, redaction, tenant isolation, forbidden cases, side effects, CLI manifest output, structured errors, and destructive confirmation checks.
-6. Next: add users admin APIs/CLI after deciding the safe TOTP provisioning contract for create.
+6. Done (backend): users admin JSON APIs (`/api/admin/users*`), the resource usage grid bulk-save JSON API, and SAT config file upload. The full JSON API is now documented via OpenAPI/Swagger at `/docs` + `/api-docs/openapi.json`, gated behind the session middleware. Next: the `spcli admin users` CLI commands.
 7. Next: add CLI-safe CFDI import/download commands after documenting secret handling, in-memory job limits, and operational side effects.
 8. Later: add optional OS keyring support, stronger local key derivation, richer machine-readable API metadata, and any higher-risk maintenance operations only after a future spec adds audit/recovery requirements.
 

@@ -87,7 +87,7 @@ pub struct ResourceLogData {
     pub created_at: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct ResourceLogPayload {
     pub project_id: Option<String>,
     pub phase: Option<String>,
@@ -98,7 +98,7 @@ pub struct ResourceLogPayload {
     pub notes: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct ResourceLogEndPayload {
     pub ended_at: Option<String>,
 }
@@ -167,6 +167,17 @@ pub async fn resource_logs_index(
     })
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/resource_logs",
+    tag = "resources",
+    responses(
+        (status = 200, description = "List resource logs"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden")
+    ),
+    security(("session" = []))
+)]
 pub async fn resource_logs_data_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -189,6 +200,19 @@ pub async fn resource_logs_data_api(
     ))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/resource_logs/{id}",
+    tag = "resources",
+    params(("id" = String, Path, description = "Record id")),
+    responses(
+        (status = 200, description = "Get resource log"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found")
+    ),
+    security(("session" = []))
+)]
 pub async fn resource_log_data_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -345,6 +369,19 @@ pub async fn resource_logs_create(
     Ok(Redirect::to("/admin/resource_logs"))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/resource_logs",
+    tag = "resources",
+    request_body = ResourceLogPayload,
+    responses(
+        (status = 201, description = "Create resource log"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 400, description = "Invalid input")
+    ),
+    security(("session" = []))
+)]
 pub async fn resource_logs_create_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -532,6 +569,21 @@ pub async fn resource_logs_update(
     Ok(Redirect::to("/admin/resource_logs"))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/resource_logs/{id}/update",
+    tag = "resources",
+    params(("id" = String, Path, description = "Record id")),
+    request_body = ResourceLogPayload,
+    responses(
+        (status = 200, description = "Update resource log"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found"),
+        (status = 400, description = "Invalid input")
+    ),
+    security(("session" = []))
+)]
 pub async fn resource_log_update_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -593,6 +645,20 @@ pub async fn resource_logs_end(
     Ok(Redirect::to("/admin/resource_logs"))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/resource_logs/{id}/end",
+    tag = "resources",
+    params(("id" = String, Path, description = "Record id")),
+    request_body = ResourceLogEndPayload,
+    responses(
+        (status = 200, description = "End resource log"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found")
+    ),
+    security(("session" = []))
+)]
 pub async fn resource_log_end_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,
@@ -634,6 +700,19 @@ pub async fn resource_logs_delete(
     Ok(Redirect::to("/admin/resource_logs"))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/resource_logs/{id}/delete",
+    tag = "resources",
+    params(("id" = String, Path, description = "Record id")),
+    responses(
+        (status = 200, description = "Delete resource log"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found")
+    ),
+    security(("session" = []))
+)]
 pub async fn resource_log_delete_api(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,

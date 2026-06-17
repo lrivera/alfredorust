@@ -9,6 +9,7 @@ pub mod resource_logs;
 pub mod resources;
 pub mod sat_configs;
 pub mod users;
+pub mod users_api;
 
 pub use account::*;
 pub use cfdi_download::{company_cfdi_download, company_cfdi_job_status, company_cfdi_jobs_list};
@@ -21,6 +22,10 @@ pub use resource_logs::*;
 pub use resources::*;
 pub use sat_configs::{
     sat_config_create_api, sat_config_data_api, sat_config_delete_api, sat_config_update_api,
-    sat_configs_create, sat_configs_data_api, sat_configs_delete, sat_configs_new,
+    sat_config_upload_api, sat_configs_create, sat_configs_data_api, sat_configs_delete,
+    sat_configs_new,
 };
 pub use users::*;
+pub use users_api::{
+    api_user_detail, api_users_create, api_users_delete, api_users_index, api_users_update,
+};

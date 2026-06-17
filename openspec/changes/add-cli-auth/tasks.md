@@ -99,6 +99,7 @@
 - [x] 10.3 Add resource usage list/get/create/update/delete commands.
 - [x] 10.3.1 Add resource usage get JSON API and CLI command.
 - [x] 10.3.2 Add resource usage create/update/delete and allocation CLI commands over existing JSON APIs.
+- [x] 10.3.3 Add resource usage hourly grid bulk-save JSON API (`POST /api/admin/resource_usages/grid`) honoring the staff "today window" permission.
 - [x] 10.4 Add timeline query commands equivalent to `/tiempo` API data access.
 
 ## 11. SAT, CFDI, And PDF Commands
@@ -106,6 +107,7 @@
 - [x] 11.1 Add SAT config list/get/create/update/delete commands where server APIs support them.
 - [x] 11.1.1 Add redacted SAT config list/get JSON APIs and CLI commands.
 - [x] 11.1.2 Add SAT config create/update/delete JSON APIs and CLI commands with redacted responses.
+- [x] 11.1.3 Add SAT config file-upload JSON API (`POST /api/admin/sat-configs/upload`, multipart `.cer`/`.key`).
 - [x] 11.2 Add CFDI list/detail commands.
 - [ ] 11.3 Add CFDI import/download/job list/job status commands.
 - [x] 11.3.1 Add CFDI job list/status CLI commands over existing company-scoped job endpoints.
@@ -113,19 +115,21 @@
 
 ## 12. Admin And Setup Commands
 
-- [ ] 12.1 Add user list/get/create/update/delete commands for company admins.
+- [x] 12.1 Add user list/get/create/update/delete commands for company admins (`spcli admin users ...`), with `--secret-env` and `--input` for provisioning.
+- [x] 12.1.1 Add user list/get/create/update/delete JSON APIs (`/api/admin/users*`), admin-only and tenant-scoped, with the TOTP secret never returned in JSON.
 - [x] 12.2 Add setup/profile/status commands that expose current user, role, permissions, and companies.
 - [x] 12.3 Add company admin commands for company metadata endpoints while keeping maintenance deletes unsupported.
-- [ ] 12.4 Decide the safe TOTP provisioning contract before exposing `spcli admin users create`.
+- [x] 12.4 Decide the safe TOTP provisioning contract before exposing `spcli admin users create`. Resolved: the server generates the secret when none is supplied, never returns it in JSON, and exposes provisioning material only via the existing protected QR endpoint.
 
 ## 13. Documentation
 
 - [x] 13.1 Add CLI README documentation with installation, TOTP secret setup, company selection, automatic re-login, and logout examples.
-- [ ] 13.2 Document every implemented CLI command with required permissions and underlying API capability.
+- [x] 13.2 Document every implemented CLI command and its underlying API capability in `docs/spcli.md`, with permission notes where they matter (admin-only users, staff today-window grid); the `spcli manifest` carries the machine-readable auth/company/destructive metadata.
 - [x] 13.3 Document JSON output contracts and common error responses.
-- [ ] 13.4 Add examples for scripting common finance, project, resource, SAT/CFDI, and admin workflows.
-- [ ] 13.5 Add machine-readable command metadata covering arguments, auth requirements, company context, permissions, output schemas, and destructive flags.
+- [x] 13.4 Add examples for scripting common finance, project, resource, SAT/CFDI, and admin workflows (including `admin users`, `sat configs upload`, and `resources usages grid`).
+- [x] 13.5 Add machine-readable command metadata covering arguments, auth requirements, company context, output schemas, and destructive flags (static `spcli manifest`, 109 commands).
 - [x] 13.6 Add a short note explaining that the CLI is designed to support a future AI skill, while the skill itself is out of scope for this change.
+- [x] 13.7 Add OpenAPI/Swagger documentation (utoipa) for the full JSON API surface, served at `/docs` + `/api-docs/openapi.json` behind the session middleware (login required).
 
 ## 14. Verification
 

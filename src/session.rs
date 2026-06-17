@@ -212,14 +212,26 @@ fn extract_cookies(headers: &HeaderMap, name: &str) -> Vec<String> {
         .collect()
 }
 
+/// Process-wide lock for tests that mutate global environment variables
+/// (notably `BASE_DOMAIN`). Tests live in several modules but touch the same
+/// process env, so they must all serialize on this single mutex — per-module
+/// mutexes do not prevent the cross-module data race. Poisoning is recovered
+/// from so one panicking test does not cascade failures into the rest.
+#[cfg(test)]
+pub(crate) fn test_env_lock() -> std::sync::MutexGuard<'static, ()> {
+    use std::sync::{Mutex, OnceLock};
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 #[cfg(test)]
 mod tests {
     use super::tenant_subdomain_from_host;
-    use std::sync::{Mutex, OnceLock};
 
     fn env_lock() -> std::sync::MutexGuard<'static, ()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+        super::test_env_lock()
     }
 
     #[test]
