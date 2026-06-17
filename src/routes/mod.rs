@@ -18,7 +18,7 @@ pub use home::home;
 pub use login::login;
 pub use logout::logout;
 pub use pdf::*;
-pub use profile::me_companies;
+pub use profile::{me, me_companies};
 pub use qrcode::qrcode;
 pub use sat::sat_cfdi_download;
 pub use secret::secret_generate;

@@ -8,7 +8,7 @@ use slug::slugify;
 
 use crate::{session::SessionUser, state::AppState};
 
-#[derive(Serialize)]
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct CompanySummary {
     pub id: String,
     pub name: String,
@@ -16,28 +16,29 @@ pub struct CompanySummary {
     pub active: bool,
 }
 
-#[utoipa::path(
-    get,
-    path = "/api/me/companies",
-    tag = "auth",
-    responses(
-        (status = 200, description = "Returns the companies the user belongs to"),
-        (status = 401, description = "Not authenticated"),
-        (status = 403, description = "Forbidden")
-    ),
-    security(("session" = []))
-)]
-pub async fn me_companies(
-    session: SessionUser,
-    State(state): State<Arc<AppState>>,
-) -> Result<Json<Vec<CompanySummary>>, StatusCode> {
+/// Consolidated bootstrap payload: profile + active-tenant role/permissions +
+/// the companies the user belongs to. Never includes the TOTP secret.
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct MeResponse {
+    pub email: String,
+    pub company: String,
+    pub company_slug: String,
+    pub role: String,
+    pub permissions: Vec<String>,
+    pub companies: Vec<CompanySummary>,
+}
+
+/// Collects the companies the session user belongs to, marking the active one
+/// (resolved from the request host by the session middleware). Shared by
+/// `GET /api/me/companies` and `GET /api/me`.
+async fn collect_companies(
+    session: &SessionUser,
+    state: &AppState,
+) -> Result<Vec<CompanySummary>, StatusCode> {
     let active_company = session.active_company_id().clone();
 
     // Always fetch fresh memberships to reflect changes done after login.
     let mut company_ids: HashSet<ObjectId> = session.user().company_ids.iter().cloned().collect();
-
-    // print user_id
-    println!("User ID: {}", session.user_id());
 
     if let Ok(mut memberships) = state
         .user_companies
@@ -50,7 +51,6 @@ pub async fn me_companies(
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         {
             company_ids.insert(m.company_id);
-            println!("Found membership for company ID: {}", m.company_id);
         }
     }
 
@@ -60,7 +60,7 @@ pub async fn me_companies(
 
     let ids: Vec<ObjectId> = company_ids.into_iter().collect();
     if ids.is_empty() {
-        return Ok(Json(vec![]));
+        return Ok(vec![]);
     }
 
     let mut cursor = state
@@ -96,5 +96,59 @@ pub async fn me_companies(
     // Sort by name for stable UX
     companies.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
 
+    Ok(companies)
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/me/companies",
+    tag = "auth",
+    responses(
+        (status = 200, description = "Returns the companies the user belongs to"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden")
+    ),
+    security(("session" = []))
+)]
+pub async fn me_companies(
+    session: SessionUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<CompanySummary>>, StatusCode> {
+    let companies = collect_companies(&session, &state).await?;
     Ok(Json(companies))
+}
+
+/// Single bootstrap call for the SPA: current profile, active-tenant role and
+/// permissions, and company memberships. The TOTP secret is never returned.
+#[utoipa::path(
+    get,
+    path = "/api/me",
+    tag = "auth",
+    responses(
+        (status = 200, description = "Returns the current user's profile, permissions, and companies", body = MeResponse),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden")
+    ),
+    security(("session" = []))
+)]
+pub async fn me(
+    session: SessionUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<MeResponse>, StatusCode> {
+    let companies = collect_companies(&session, &state).await?;
+    let current = session.user();
+    let permissions = current
+        .permissions
+        .iter()
+        .map(|permission| permission.as_str().to_string())
+        .collect::<Vec<_>>();
+
+    Ok(Json(MeResponse {
+        email: current.email.clone(),
+        company: current.company_name.clone(),
+        company_slug: current.company_slug.clone(),
+        role: current.role.as_str().to_string(),
+        permissions,
+        companies,
+    }))
 }

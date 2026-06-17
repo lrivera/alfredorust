@@ -260,7 +260,7 @@ async fn companies_crud_and_deletion_rules_work() {
     assert!(!soft.is_active);
 
     // Remove dependency then hard-delete
-    delete_account(&state, &acc).await.unwrap();
+    delete_account(&state, &acc, &company_id).await.unwrap();
     delete_company(&state, &company_id).await.unwrap();
     assert!(
         get_company_by_id(&state, &company_id)

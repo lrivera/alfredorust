@@ -2,7 +2,7 @@ use std::time::SystemTime;
 
 use alfredodev::models::{AccountType, ContactType, FlowType, PlannedStatus, TransactionType};
 use alfredodev::state::{
-    create_account, create_category, create_contact, create_forecast,
+    create_account, create_category, create_company, create_contact, create_forecast,
     create_or_update_planned_entry_from_cfdi, create_planned_entry, create_recurring_plan,
     create_transaction, delete_account, delete_category, delete_contact, delete_forecast,
     delete_planned_entry, delete_recurring_plan, delete_transaction, get_account_by_id,
@@ -48,7 +48,7 @@ async fn accounts_crud_works() {
     let fetched = get_account_by_id(&state, &acc_id).await.unwrap().unwrap();
     assert_eq!(fetched.name, "Test Account");
 
-    delete_account(&state, &acc_id).await.unwrap();
+    delete_account(&state, &acc_id, &company_id).await.unwrap();
     assert!(get_account_by_id(&state, &acc_id).await.unwrap().is_none());
 
     common::teardown(Some(ctx)).await;
@@ -499,6 +499,57 @@ async fn pay_planned_entry_succeeds_when_category_flow_type_mismatches_entry() {
         list_transactions(&state).await.unwrap().len(),
         initial_txs + 1,
         "exactly one transaction must be created"
+    );
+
+    common::teardown(Some(ctx)).await;
+}
+
+#[tokio::test]
+async fn delete_account_integrity_check_is_company_scoped() {
+    let ctx = match common::setup_state().await {
+        Some(s) => s,
+        None => return,
+    };
+    let state = ctx.state.clone();
+
+    let company_a = create_company(&state, "Scope A", "scope-a", "MXN", true, None)
+        .await
+        .unwrap();
+    let company_b = create_company(&state, "Scope B", "scope-b", "MXN", true, None)
+        .await
+        .unwrap();
+
+    let acc_a = create_account(&state, &company_a, "A acc", AccountType::Bank, "MXN", true, None)
+        .await
+        .unwrap();
+    let acc_a2 = create_account(&state, &company_a, "A acc 2", AccountType::Bank, "MXN", true, None)
+        .await
+        .unwrap();
+
+    // Raw-insert references (the API validates company membership, so an
+    // out-of-tenant reference can only exist as orphaned/inconsistent data).
+    let raw = state
+        .transactions
+        .clone_with_type::<mongodb::bson::Document>();
+    // (1) a transaction in ANOTHER company that points at the company-A account
+    raw.insert_one(mongodb::bson::doc! { "company_id": &company_b, "account_from_id": &acc_a })
+        .await
+        .unwrap();
+    // (2) a transaction in the SAME company that points at acc_a2
+    raw.insert_one(mongodb::bson::doc! { "company_id": &company_a, "account_from_id": &acc_a2 })
+        .await
+        .unwrap();
+
+    // The out-of-tenant reference must NOT block deletion (scoped check).
+    delete_account(&state, &acc_a, &company_a)
+        .await
+        .expect("an out-of-tenant reference must not block account deletion");
+    assert!(get_account_by_id(&state, &acc_a).await.unwrap().is_none());
+
+    // The in-company reference must STILL block deletion (integrity preserved).
+    assert!(
+        delete_account(&state, &acc_a2, &company_a).await.is_err(),
+        "an in-company reference must still block account deletion"
     );
 
     common::teardown(Some(ctx)).await;

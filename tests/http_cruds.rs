@@ -71,6 +71,7 @@ fn build_app(state: Arc<AppState>) -> Router {
         .route("/pdf", get(routes::pdf_editor))
         .route("/pdf/preview", post(routes::pdf_preview))
         .route("/tiempo", get(routes::tiempo_page))
+        .route("/api/me", get(routes::me))
         .route("/api/me/companies", get(routes::me_companies))
         .route("/admin/companies", get(routes::companies_index))
         .route(
@@ -5619,6 +5620,111 @@ async fn pdf_preview_renders_for_authenticated_user() {
             "decoded preview must be a real PDF document"
         );
     }
+
+    common::teardown(Some(ctx)).await;
+}
+
+#[tokio::test]
+async fn me_endpoint_bootstraps_active_tenant_profile_and_companies() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let shared = Arc::new(state.clone());
+
+    let company_a = create_company(&state, "Me Bootstrap A", "me-boot-a", "MXN", true, None)
+        .await
+        .unwrap();
+    let company_b = create_company(&state, "Me Bootstrap B", "me-boot-b", "MXN", true, None)
+        .await
+        .unwrap();
+
+    // Admin on A (with a permission), Staff on B (different permission), so we
+    // can prove the active-tenant role/permissions follow the request host.
+    let user_id = create_user_with_permissions(
+        &state,
+        "me-boot@example.com",
+        "TOTPSECRET",
+        &[
+            (
+                company_a.clone(),
+                UserRole::Admin,
+                vec![UserPermission::ViewProjects],
+            ),
+            (
+                company_b.clone(),
+                UserRole::Staff,
+                vec![UserPermission::ViewTimeline],
+            ),
+        ],
+    )
+    .await
+    .unwrap();
+    let user = get_user_by_id(&state, &user_id).await.unwrap().unwrap();
+    let token = create_session(&state, &user.email).await.unwrap();
+
+    // Bootstrap on tenant A's subdomain.
+    let (status, body) = get_with_cookie(
+        build_app(shared.clone()),
+        "me-boot-a.miapp.local",
+        "/api/me",
+        &token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "authenticated /api/me must succeed");
+
+    let json: serde_json::Value = serde_json::from_str(&body).expect("valid JSON");
+    assert_eq!(json["email"], "me-boot@example.com");
+    assert_eq!(json["company"], "Me Bootstrap A");
+    assert_eq!(json["company_slug"], "me-boot-a");
+    assert_eq!(json["role"], "admin");
+    let perms: Vec<String> = json["permissions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p.as_str().unwrap().to_string())
+        .collect();
+    assert!(
+        perms.contains(&UserPermission::ViewProjects.as_str().to_string()),
+        "active-tenant (A) permissions must be returned, got {perms:?}"
+    );
+
+    // Both memberships are listed, with A flagged active.
+    let companies = json["companies"].as_array().unwrap();
+    assert_eq!(companies.len(), 2, "both memberships must be listed");
+    let a = companies
+        .iter()
+        .find(|c| c["slug"] == "me-boot-a")
+        .expect("company A present");
+    let b = companies
+        .iter()
+        .find(|c| c["slug"] == "me-boot-b")
+        .expect("company B present");
+    assert_eq!(a["active"], true, "host-resolved company A is active");
+    assert_eq!(b["active"], false, "company B is not active on host A");
+
+    // The TOTP secret must never leak through the bootstrap payload.
+    assert!(
+        !body.contains("TOTPSECRET"),
+        "/api/me must not expose the TOTP secret"
+    );
+
+    // Without a session cookie the endpoint is unauthorized.
+    let req = Request::builder()
+        .uri("/api/me")
+        .header("host", "me-boot-a.miapp.local")
+        .body(Body::empty())
+        .unwrap();
+    let res = build_app(shared.clone())
+        .oneshot(req)
+        .await
+        .expect("request failed");
+    assert_eq!(
+        res.status(),
+        StatusCode::UNAUTHORIZED,
+        "/api/me without a session must be 401"
+    );
 
     common::teardown(Some(ctx)).await;
 }

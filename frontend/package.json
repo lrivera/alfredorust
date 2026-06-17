@@ -1,0 +1,9 @@
+{
+  "name": "alfredodev-frontend-tooling",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tailwind toolchain for the Leptos SPA (run via Trunk pre_build hook).",
+  "devDependencies": {
+    "tailwindcss": "^3.4.0"
+  }
+}

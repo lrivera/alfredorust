@@ -129,10 +129,17 @@ pub async fn update_account(
     Ok(())
 }
 
-pub async fn delete_account(state: &AppState, id: &ObjectId) -> Result<()> {
+pub async fn delete_account(
+    state: &AppState,
+    id: &ObjectId,
+    company_id: &ObjectId,
+) -> Result<()> {
+    // Integrity checks are scoped to the account's own company, matching the
+    // multi-tenant model: an account must only be blocked by records that live
+    // in the same tenant, never by another tenant's (or orphaned) data.
     let has_transactions = state
         .transactions
-        .find_one(doc! { "$or": [
+        .find_one(doc! { "company_id": company_id, "$or": [
             { "account_from_id": id },
             { "account_to_id": id }
         ]})
@@ -140,12 +147,12 @@ pub async fn delete_account(state: &AppState, id: &ObjectId) -> Result<()> {
         .is_some();
     let has_plans = state
         .recurring_plans
-        .find_one(doc! { "account_expected_id": id })
+        .find_one(doc! { "company_id": company_id, "account_expected_id": id })
         .await?
         .is_some();
     let has_planned_entries = state
         .planned_entries
-        .find_one(doc! { "account_expected_id": id })
+        .find_one(doc! { "company_id": company_id, "account_expected_id": id })
         .await?
         .is_some();
 

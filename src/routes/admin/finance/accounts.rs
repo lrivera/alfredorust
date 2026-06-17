@@ -335,7 +335,7 @@ pub async fn account_delete_api(
         Ok(None) => return StatusCode::NOT_FOUND.into_response(),
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
-    match delete_account(&state, &object_id).await {
+    match delete_account(&state, &object_id, &company_id).await {
         Ok(_) => Json(serde_json::json!({ "ok": true })).into_response(),
         Err(err) => (
             StatusCode::BAD_REQUEST,
@@ -612,7 +612,7 @@ pub async fn accounts_delete(
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 
-    match delete_account(&state, &object_id).await {
+    match delete_account(&state, &object_id, &company_id).await {
         Ok(_) => Redirect::to("/admin/accounts").into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }

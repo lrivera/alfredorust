@@ -385,13 +385,10 @@ del "projects statuses delete"  projects statuses delete "$STATUS_ID"
 del "projects delete"           projects delete "$PROJECT_ID"
 del "forecasts delete"          finance forecasts delete "$FC_ID"
 del "contacts delete"           finance contacts delete "$CONTACT_ID"
-# The working account accumulates server-protected references (transactions,
-# plans, planned entries, the order-completion planned entry), so it cannot be
-# hard-deleted by design. Test the `delete` command on a fresh unreferenced
-# account, and deactivate the working one (the server-sanctioned teardown).
-cap "accounts create (delete-test)" finance accounts create --name "smoke-acc-del" --account-type cash; ACC_DEL="$LAST_ID"
-del "accounts delete (clean account)" finance accounts delete "$ACC_DEL"
-[ -n "$ACC_ID" ] && ok "accounts deactivate (has protected references)" finance accounts update "$ACC_ID" --name "smoke-acc" --account-type bank --currency MXN --inactive
+# The account's in-tenant references (transactions, plans, planned entries) were
+# all swept above, so the (now company-scoped) integrity check lets it be hard-
+# deleted — the smoke leaves no inactive-account residue behind.
+del "accounts delete"           finance accounts delete "$ACC_ID"
 del "categories delete"         finance categories delete "$CAT_ID"
 
 # clear captured ids so the EXIT trap does not re-attempt deletes

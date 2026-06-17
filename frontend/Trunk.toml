@@ -1,0 +1,31 @@
+[build]
+target = "index.html"
+dist = "dist"
+
+# Compile Tailwind before each build. Uses the local tailwindcss (npm) via npx.
+[[hooks]]
+stage = "pre_build"
+command = "npx"
+command_arguments = [
+    "tailwindcss",
+    "-i",
+    "style/input.css",
+    "-o",
+    "style/output.css",
+    "--minify",
+]
+
+# Dev server proxies API/auth calls to the running Axum backend on :8090 so the
+# SPA runs same-origin-ish during development (cookies still need a real host;
+# see the dev notes in the OpenSpec change).
+[serve]
+port = 8091
+
+[[proxy]]
+backend = "http://127.0.0.1:8090/api"
+
+[[proxy]]
+backend = "http://127.0.0.1:8090/login"
+
+[[proxy]]
+backend = "http://127.0.0.1:8090/logout"
