@@ -243,6 +243,18 @@ cargo run --bin spcli -- --json cfdi jobs list
 
 Errors are written as structured JSON to stderr with a stable `code` and `message` field.
 
+## Smoke-testing a live server
+
+`scripts/smoke-test-server.sh` drives the real `spcli` client against a running deployment and exercises every command group end to end (auth, finance, operations, resources, SAT/CFDI, admin users, time, PDF). It creates a dependency-ordered chain of test data, runs each create/get/update/list/action/delete, prints a coloured pass/fail report, and cleans up after itself so the tenant returns to baseline.
+
+```bash
+SPCLI_TOTP_SECRET=YOUR_BASE32_SECRET ./scripts/smoke-test-server.sh
+```
+
+Configuration via environment variables: `SPCLI_BASE_URL` (default `https://app.alfredorivera.dev`), `SPCLI_EMAIL` (default `test@email.com`), `SPCLI_TENANT` (default `test`), `SPCLI_TOTP_SECRET` (required — never hard-coded in the repo), `SPCLI_BIN` (path to a prebuilt binary; otherwise a debug build is compiled), and `SPCLI_RUN_SAT_UPLOAD=1` to also test `sat configs upload`.
+
+It exits `0` when every check passes and `1` otherwise, so it can gate a deploy or run on a schedule. **It is destructive on the target tenant** (creates/deletes records and sweeps planned entries and transactions in the active company), so point it only at a dedicated test tenant — not production data.
+
 ## Security Notes
 
 The stored TOTP secret can generate valid login codes. If the credential file is stolen and decrypted, rotate the user's TOTP secret server-side and run:

@@ -3681,6 +3681,13 @@ async fn resource_usage_json_get_scopes_to_active_tenant_and_admins() {
         "Usage JSON visible resource"
     );
     assert_eq!(usage["operator_name"], "Operator A");
+    // Flat, SPA-friendly shape: a plain `id` string and ISO dates, never raw
+    // MongoDB extended JSON (`_id` / `$oid` / `$date`).
+    assert_eq!(usage["id"], usage_a.to_hex());
+    assert!(usage.get("_id").is_none());
+    assert!(!body.contains("$oid"));
+    assert!(!body.contains("$date"));
+    assert!(usage["started_at"].as_str().unwrap().contains('T'));
 
     let app = build_app(shared.clone());
     let (status, _body) = get_with_cookie(

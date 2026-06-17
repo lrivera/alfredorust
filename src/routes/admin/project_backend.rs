@@ -11,10 +11,13 @@ use axum::{
     response::{Html, IntoResponse, Redirect, Response},
 };
 use bson::{DateTime, oid::ObjectId};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
-    models::{UserPermission, UserRole},
+    models::{
+        ConceptStatus, ProjectConcept, ResourceUsage, ResourceUsageAllocation, UserPermission,
+        UserRole,
+    },
     session::SessionUser,
     state::{
         AppState, advance_project_concept_status, create_concept_status, create_project_concept,
@@ -66,6 +69,148 @@ fn default_true() -> bool {
     true
 }
 
+// Flat JSON DTOs so these endpoints return clean `id`/ISO-8601 fields like every
+// other API, instead of raw MongoDB extended JSON (`_id.$oid`, `$date`).
+fn iso(dt: DateTime) -> String {
+    dt.to_chrono().to_rfc3339()
+}
+
+#[derive(Serialize)]
+pub struct ConceptStatusData {
+    pub id: String,
+    pub company_id: String,
+    pub name: String,
+    pub position: i32,
+    pub color: Option<String>,
+    pub is_initial: bool,
+    pub is_terminal: bool,
+    pub is_cancelled: bool,
+    pub is_active: bool,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+fn concept_status_data(s: ConceptStatus) -> Option<ConceptStatusData> {
+    Some(ConceptStatusData {
+        id: s.id?.to_hex(),
+        company_id: s.company_id.to_hex(),
+        name: s.name,
+        position: s.position,
+        color: s.color,
+        is_initial: s.is_initial,
+        is_terminal: s.is_terminal,
+        is_cancelled: s.is_cancelled,
+        is_active: s.is_active,
+        created_at: s.created_at.map(iso),
+        updated_at: s.updated_at.map(iso),
+    })
+}
+
+#[derive(Serialize)]
+pub struct ProjectConceptData {
+    pub id: String,
+    pub company_id: String,
+    pub project_id: String,
+    pub status_id: String,
+    pub name: String,
+    pub quantity: f64,
+    pub unit: Option<String>,
+    pub description: Option<String>,
+    pub estimated_hours: Option<f64>,
+    pub estimated_cost: Option<f64>,
+    pub notes: Option<String>,
+    pub position: i32,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+fn project_concept_data(c: ProjectConcept) -> Option<ProjectConceptData> {
+    Some(ProjectConceptData {
+        id: c.id?.to_hex(),
+        company_id: c.company_id.to_hex(),
+        project_id: c.project_id.to_hex(),
+        status_id: c.status_id.to_hex(),
+        name: c.name,
+        quantity: c.quantity,
+        unit: c.unit,
+        description: c.description,
+        estimated_hours: c.estimated_hours,
+        estimated_cost: c.estimated_cost,
+        notes: c.notes,
+        position: c.position,
+        created_at: c.created_at.map(iso),
+        updated_at: c.updated_at.map(iso),
+    })
+}
+
+#[derive(Serialize)]
+pub struct ResourceUsageData {
+    pub id: String,
+    pub company_id: String,
+    pub resource_id: String,
+    pub resource_name_snapshot: String,
+    pub started_at: String,
+    pub ended_at: Option<String>,
+    pub duration_hours: Option<f64>,
+    pub hourly_cost_snapshot: f64,
+    pub total_cost: Option<f64>,
+    pub currency: String,
+    pub operator_name: Option<String>,
+    pub notes: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+fn resource_usage_data(u: ResourceUsage) -> Option<ResourceUsageData> {
+    Some(ResourceUsageData {
+        id: u.id?.to_hex(),
+        company_id: u.company_id.to_hex(),
+        resource_id: u.resource_id.to_hex(),
+        resource_name_snapshot: u.resource_name_snapshot,
+        started_at: iso(u.started_at),
+        ended_at: u.ended_at.map(iso),
+        duration_hours: u.duration_hours,
+        hourly_cost_snapshot: u.hourly_cost_snapshot,
+        total_cost: u.total_cost,
+        currency: u.currency,
+        operator_name: u.operator_name,
+        notes: u.notes,
+        created_at: u.created_at.map(iso),
+        updated_at: u.updated_at.map(iso),
+    })
+}
+
+#[derive(Serialize)]
+pub struct ResourceUsageAllocationData {
+    pub id: String,
+    pub company_id: String,
+    pub usage_id: String,
+    pub project_id: String,
+    pub concept_id: String,
+    pub allocation_ratio: f64,
+    pub allocated_hours: Option<f64>,
+    pub allocated_cost: Option<f64>,
+    pub notes: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+fn resource_usage_allocation_data(a: ResourceUsageAllocation) -> Option<ResourceUsageAllocationData> {
+    Some(ResourceUsageAllocationData {
+        id: a.id?.to_hex(),
+        company_id: a.company_id.to_hex(),
+        usage_id: a.usage_id.to_hex(),
+        project_id: a.project_id.to_hex(),
+        concept_id: a.concept_id.to_hex(),
+        allocation_ratio: a.allocation_ratio,
+        allocated_hours: a.allocated_hours,
+        allocated_cost: a.allocated_cost,
+        notes: a.notes,
+        created_at: a.created_at.map(iso),
+        updated_at: a.updated_at.map(iso),
+    })
+}
+
 #[utoipa::path(
     get,
     path = "/api/admin/concept_statuses",
@@ -86,7 +231,13 @@ pub async fn api_concept_statuses_index(
         Err(status) => return status.into_response(),
     };
     match list_concept_statuses(&state, &company_id).await {
-        Ok(items) => Json(items).into_response(),
+        Ok(items) => Json(
+            items
+                .into_iter()
+                .filter_map(concept_status_data)
+                .collect::<Vec<_>>(),
+        )
+        .into_response(),
         Err(_) => json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not list statuses"),
     }
 }
@@ -256,7 +407,13 @@ pub async fn api_project_concepts_index(
         Err(resp) => return resp,
     };
     match list_project_concepts(&state, &company_id, &project_id).await {
-        Ok(items) => Json(items).into_response(),
+        Ok(items) => Json(
+            items
+                .into_iter()
+                .filter_map(project_concept_data)
+                .collect::<Vec<_>>(),
+        )
+        .into_response(),
         Err(_) => json_error(StatusCode::INTERNAL_SERVER_ERROR, "could not list concepts"),
     }
 }
@@ -519,7 +676,13 @@ pub async fn api_resource_usages_index(
         Err(status) => return status.into_response(),
     };
     match list_resource_usages(&state, &company_id).await {
-        Ok(items) => Json(items).into_response(),
+        Ok(items) => Json(
+            items
+                .into_iter()
+                .filter_map(resource_usage_data)
+                .collect::<Vec<_>>(),
+        )
+        .into_response(),
         Err(_) => json_error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "could not list resource usages",
@@ -554,7 +717,10 @@ pub async fn api_resource_usage_detail(
         Err(resp) => return resp,
     };
     match get_resource_usage_by_id_for_company(&state, &id, &company_id).await {
-        Ok(Some(item)) => Json(item).into_response(),
+        Ok(Some(item)) => match resource_usage_data(item) {
+            Some(data) => Json(data).into_response(),
+            None => json_error(StatusCode::INTERNAL_SERVER_ERROR, "invalid resource usage"),
+        },
         Ok(None) => json_error(StatusCode::NOT_FOUND, "resource usage not found"),
         Err(_) => json_error(
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -726,7 +892,13 @@ pub async fn api_resource_usage_allocations_index(
         Err(resp) => return resp,
     };
     match list_resource_usage_allocations(&state, &company_id, &id).await {
-        Ok(items) => Json(items).into_response(),
+        Ok(items) => Json(
+            items
+                .into_iter()
+                .filter_map(resource_usage_allocation_data)
+                .collect::<Vec<_>>(),
+        )
+        .into_response(),
         Err(_) => json_error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "could not list allocations",

@@ -1419,16 +1419,38 @@ async fn login(args: LoginArgs, json_output: bool) -> Result<()> {
     refresh_login(&mut state).await?;
     save_state(&state)?;
 
+    // Login can succeed against a tenant host, but tenant-scoped commands derive
+    // the tenant host from this base URL and would then double the subdomain.
+    // Surface that early so the operator can re-login against the app host.
+    let login_warning = reqwest::Url::parse(&state.base_url)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_string))
+        .and_then(|host| {
+            suggest_login_host(&host).map(|login_host| {
+                format!(
+                    "base URL host `{host}` looks like a tenant host; tenant commands need the \
+                     app login host. Consider `spcli login --base-url https://{login_host} ...`."
+                )
+            })
+        });
+
     if json_output {
-        print_json(&json!({
+        let mut output = json!({
             "ok": true,
             "email": state.email,
             "base_url": state.base_url,
             "credential_path": credential_path()?.display().to_string()
-        }))?;
+        });
+        if let Some(warning) = &login_warning {
+            output["warning"] = json!(warning);
+        }
+        print_json(&output)?;
     } else {
         println!("Logged in as {}", state.email);
         println!("Credential file: {}", credential_path()?.display());
+        if let Some(warning) = &login_warning {
+            eprintln!("warning: {warning}");
+        }
     }
     Ok(())
 }
@@ -3099,11 +3121,41 @@ fn base_host(base_url: &str) -> Result<String> {
     })
 }
 
+/// If `host` looks like a tenant host rather than the app/login host, return the
+/// app login host that should have been used. A multi-label public host whose
+/// first label is not `app` (and which is not a local dev host) is treated as a
+/// tenant URL — logging in there would make tenant selection prepend the slug a
+/// second time (e.g. `test.test.example.com`).
+fn suggest_login_host(host: &str) -> Option<String> {
+    let host_no_port = host.split(':').next().unwrap_or(host);
+    if host_no_port.parse::<std::net::IpAddr>().is_ok()
+        || host_no_port == "localhost"
+        || host_no_port.ends_with(".localhost")
+        || host_no_port.ends_with(".local")
+    {
+        return None;
+    }
+    let labels: Vec<&str> = host_no_port.split('.').collect();
+    if labels.len() >= 3 && labels[0] != "app" {
+        Some(format!("app.{}", labels[1..].join(".")))
+    } else {
+        None
+    }
+}
+
 fn derive_tenant_host(base_url: &str, slug: &str) -> Result<String> {
     let url = reqwest::Url::parse(base_url).context("base URL is invalid")?;
     let host = url
         .host_str()
         .ok_or_else(|| anyhow!("base URL has no host"))?;
+    if let Some(login_host) = suggest_login_host(host) {
+        bail!(
+            "base URL host `{host}` looks like a tenant host, not the login host, so selecting \
+             tenant `{slug}` would target `{slug}.{host}` (an invalid double subdomain). Re-run \
+             `spcli login` against the app login host instead, e.g. https://{login_host}, then \
+             `spcli company use {slug}`."
+        );
+    }
     let root_host = host.strip_prefix("app.").unwrap_or(host);
     let tenant_host = format!("{slug}.{root_host}");
     Ok(match url.port() {
@@ -3385,4 +3437,59 @@ fn set_private_dir_permissions(path: &std::path::Path) -> Result<()> {
 #[cfg(not(unix))]
 fn set_private_dir_permissions(_path: &std::path::Path) -> Result<()> {
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{derive_tenant_host, suggest_login_host};
+
+    #[test]
+    fn derive_tenant_host_from_app_login_host() {
+        assert_eq!(
+            derive_tenant_host("https://app.alfredorivera.dev", "test").unwrap(),
+            "test.alfredorivera.dev"
+        );
+    }
+
+    #[test]
+    fn derive_tenant_host_from_apex_and_localhost() {
+        assert_eq!(
+            derive_tenant_host("https://alfredorivera.dev", "test").unwrap(),
+            "test.alfredorivera.dev"
+        );
+        assert_eq!(
+            derive_tenant_host("http://localhost:8090", "acme").unwrap(),
+            "acme.localhost:8090"
+        );
+    }
+
+    #[test]
+    fn derive_tenant_host_rejects_tenant_url_with_guidance() {
+        let err = derive_tenant_host("https://test.alfredorivera.dev", "test")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("looks like a tenant host"), "{err}");
+        assert!(err.contains("https://app.alfredorivera.dev"), "{err}");
+    }
+
+    #[test]
+    fn derive_tenant_host_rejects_any_non_app_subdomain() {
+        // A leftover non-app subdomain is also caught rather than silently producing
+        // a broken double-subdomain host.
+        assert!(derive_tenant_host("https://foo.alfredorivera.dev", "test").is_err());
+    }
+
+    #[test]
+    fn suggest_login_host_ignores_dev_and_app_hosts() {
+        assert!(suggest_login_host("localhost").is_none());
+        assert!(suggest_login_host("acme.localhost").is_none());
+        assert!(suggest_login_host("dev.miapp.local").is_none());
+        assert!(suggest_login_host("127.0.0.1").is_none());
+        assert!(suggest_login_host("alfredorivera.dev").is_none());
+        assert!(suggest_login_host("app.alfredorivera.dev").is_none());
+        assert_eq!(
+            suggest_login_host("test.alfredorivera.dev"),
+            Some("app.alfredorivera.dev".to_string())
+        );
+    }
 }
