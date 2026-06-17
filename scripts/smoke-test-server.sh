@@ -38,6 +38,10 @@ RUN_SAT_UPLOAD="${SPCLI_RUN_SAT_UPLOAD:-0}"
 # account anyway, so the run stays green. Set SPCLI_RUN_PAYMENTS=0 to skip them
 # (slightly less residue in the tenant).
 RUN_PAYMENTS="${SPCLI_RUN_PAYMENTS:-1}"
+# Structured reports (set to empty to disable). JSON is machine-readable; the
+# HTML is a self-contained, colour-coded viewer grouped by category/subcategory.
+REPORT_JSON="${SPCLI_REPORT_JSON:-smoke-report.json}"
+REPORT_HTML="${SPCLI_REPORT_HTML:-smoke-report.html}"
 
 # ---- colours (only when stdout is a TTY) -----------------------------------
 if [ -t 1 ]; then
@@ -71,6 +75,17 @@ fi
 CFG="$(mktemp -d)"
 spc() { HOME="$CFG" XDG_CONFIG_HOME="$CFG" "$SPCLI_BIN" --json "$@"; }
 
+# Structured result log: one US-separated record per check (category, status,
+# name, detail). Assembled into JSON/HTML at the end.
+REPORT_TMP="$CFG/records.tsv"
+: > "$REPORT_TMP"
+CURRENT_SECTION="General"
+record() {  # status  name  detail
+  local det
+  det="$(printf '%s' "${3:-}" | tr '\n\r\t' '   ')"
+  printf '%s\x1f%s\x1f%s\x1f%s\n' "$CURRENT_SECTION" "$1" "$2" "$det" >> "$REPORT_TMP"
+}
+
 # best-effort teardown if the script exits early
 cleanup_trap() {
   for spec in \
@@ -99,14 +114,15 @@ cleanup_trap() {
 trap cleanup_trap EXIT
 
 # ---- reporting helpers -----------------------------------------------------
-section() { printf "\n${BOLD}${BLUE}══ %s ══${RESET}\n" "$1"; }
-pass() { PASS=$((PASS + 1)); printf "  ${GREEN}✓${RESET} %s\n" "$1"; }
+section() { CURRENT_SECTION="$1"; printf "\n${BOLD}${BLUE}══ %s ══${RESET}\n" "$1"; }
+pass() { PASS=$((PASS + 1)); record pass "$1" ""; printf "  ${GREEN}✓${RESET} %s\n" "$1"; }
 fail() {
   FAIL=$((FAIL + 1)); FAILED_NAMES+=("$1")
+  record fail "$1" "${2:-}"
   printf "  ${RED}✗${RESET} %s\n" "$1"
   [ -n "${2:-}" ] && printf "      ${DIM}%s${RESET}\n" "$(printf '%s' "$2" | tr '\n' ' ' | cut -c1-280)"
 }
-skip() { printf "  ${YELLOW}∅${RESET} %s\n" "$1"; }
+skip() { record skip "$1" ""; printf "  ${YELLOW}∅${RESET} %s\n" "$1"; }
 
 jid() {
   python3 -c 'import sys, json
@@ -383,10 +399,123 @@ USER_ID=""; SAT_ID=""; PLAN_ID=""; USAGE_ID=""; LOG_ID=""; RES_ID=""
 ORDER_ID=""; CONCEPT_ID=""; STATUS_ID=""; PROJECT_ID=""; FC_ID=""
 CONTACT_ID=""; ACC_ID=""; CAT_ID=""
 
+# Assemble the structured JSON report and a self-contained colour-coded HTML
+# viewer (categories → subcategories → checks), like a Cypress/mochawesome report.
+build_report() {
+  [ -z "$REPORT_JSON$REPORT_HTML" ] && return 0
+  R_TMP="$REPORT_TMP" R_JSON="$REPORT_JSON" R_HTML="$REPORT_HTML" \
+  R_URL="$BASE_URL" R_TENANT="$TENANT" R_EMAIL="$EMAIL" python3 <<'PY'
+import os, json, html, re, datetime
+
+tmp = os.environ["R_TMP"]
+out_json = os.environ.get("R_JSON", "")
+out_html = os.environ.get("R_HTML", "")
+url = os.environ.get("R_URL", ""); tenant = os.environ.get("R_TENANT", ""); email = os.environ.get("R_EMAIL", "")
+
+ACTIONS = {"create", "list", "get", "update", "delete", "advance", "complete",
+           "generate", "pay", "bulk-pay", "end", "replace", "grid",
+           "status-summary", "deactivate", "use"}
+
+def subcat(name):
+    clean = re.sub(r"\s*\(.*?\)", "", name)        # drop "(for bulk-pay)" etc.
+    clean = re.sub(r"\s*→.*$", "", clean).strip()  # drop "→ <created id>"
+    toks = clean.split()
+    for i, t in enumerate(toks):
+        if t in ACTIONS:
+            return " ".join(toks[:i]) or clean
+    return clean
+
+cats, order = {}, []
+summary = {"passed": 0, "failed": 0, "skipped": 0}
+with open(tmp, encoding="utf-8") as fh:
+    for line in fh:
+        line = line.rstrip("\n")
+        if not line:
+            continue
+        p = line.split("\x1f")
+        p += [""] * (4 - len(p))
+        cat, status, name, detail = p[0], p[1], p[2], p[3]
+        key = "passed" if status == "pass" else "failed" if status == "fail" else "skipped"
+        summary[key] += 1
+        if cat not in cats:
+            cats[cat] = {}; order.append(cat)
+        cats[cat].setdefault(subcat(name), []).append(
+            {"name": name, "status": status, "detail": detail})
+
+total = sum(summary.values())
+report = {
+    "generated_at": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
+    "target": {"base_url": url, "tenant": tenant, "email": email},
+    "summary": {**summary, "total": total, "ok": summary["failed"] == 0},
+    "categories": [
+        {"name": c, "subcategories": [
+            {"name": sc, "checks": cats[c][sc]} for sc in cats[c]]}
+        for c in order],
+}
+if out_json:
+    with open(out_json, "w", encoding="utf-8") as f:
+        json.dump(report, f, indent=2, ensure_ascii=False)
+
+if out_html:
+    ICON = {"pass": "✓", "fail": "✗", "skip": "∅"}
+    badge = lambda p, f, s: f'<span class="b ok">{p}</span><span class="b bad">{f}</span><span class="b skip">{s}</span>'
+    cat_html = []
+    for c in order:
+        cp = cf = cs = 0; subs = []
+        for sc in cats[c]:
+            checks = cats[c][sc]
+            sp = sum(x["status"] == "pass" for x in checks)
+            sf = sum(x["status"] == "fail" for x in checks)
+            ss = sum(x["status"] == "skip" for x in checks)
+            cp += sp; cf += sf; cs += ss
+            rows = []
+            for x in checks:
+                det = f'<div class="det">{html.escape(x["detail"])}</div>' if x["detail"] else ""
+                rows.append(f'<li class="r {x["status"]}"><span class="i">{ICON[x["status"]]}</span><span class="n">{html.escape(x["name"])}</span>{det}</li>')
+            subs.append(f'<details class="sub"{" open" if sf else ""}><summary>{html.escape(sc)} {badge(sp, sf, ss)}</summary><ul>{"".join(rows)}</ul></details>')
+        cat_html.append(f'<details class="cat"{" open" if cf else ""}><summary>{html.escape(c)} {badge(cp, cf, cs)}</summary>{"".join(subs)}</details>')
+    scls = "ok" if summary["failed"] == 0 else "bad"
+    stxt = "ALL GREEN" if summary["failed"] == 0 else f'{summary["failed"]} FAILED'
+    doc = f"""<!doctype html><html><head><meta charset="utf-8"><title>spcli smoke report</title><style>
+:root{{--bg:#0f1115;--card:#171a21;--fg:#e6e6e6;--mut:#8b93a1;--ok:#3fb950;--bad:#f85149;--skip:#9aa0a6;--line:#2a2f3a}}
+*{{box-sizing:border-box}}body{{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;padding:24px}}
+.h{{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:8px}}.title{{font-size:20px;font-weight:700}}
+.meta{{color:var(--mut);font-size:12px}}.status{{font-weight:700;padding:4px 12px;border-radius:999px}}
+.status.ok{{background:rgba(63,185,80,.15);color:var(--ok)}}.status.bad{{background:rgba(248,81,73,.15);color:var(--bad)}}
+.cards{{display:flex;gap:10px;margin:14px 0 20px}}.card{{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 16px;min-width:88px}}
+.card .v{{font-size:22px;font-weight:700}}.card .k{{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.05em}}
+.card.ok .v{{color:var(--ok)}}.card.bad .v{{color:var(--bad)}}.card.skip .v{{color:var(--skip)}}
+details.cat{{background:var(--card);border:1px solid var(--line);border-radius:10px;margin:10px 0;overflow:hidden}}
+details.cat>summary{{padding:12px 16px;font-weight:700;cursor:pointer;font-size:15px}}
+details.sub{{margin:0 12px 10px}}details.sub>summary{{padding:8px 10px;cursor:pointer;border-radius:6px}}
+details.sub>summary:hover{{background:rgba(255,255,255,.03)}}summary{{list-style:none}}summary::-webkit-details-marker{{display:none}}
+ul{{list-style:none;margin:0 0 6px;padding:0 10px 0 14px}}
+li.r{{display:grid;grid-template-columns:18px 1fr;gap:8px;padding:4px 6px;border-top:1px solid var(--line)}}
+li.r .i{{font-weight:700}}li.r.pass .i{{color:var(--ok)}}li.r.fail .i{{color:var(--bad)}}li.r.skip .i{{color:var(--skip)}}li.r.skip .n{{color:var(--mut)}}
+.det{{grid-column:2;color:var(--bad);font-family:ui-monospace,Menlo,monospace;font-size:12px;white-space:pre-wrap;background:rgba(248,81,73,.08);padding:6px 8px;border-radius:6px;margin-top:4px}}
+.b{{display:inline-block;min-width:18px;text-align:center;font-size:11px;font-weight:700;padding:1px 6px;border-radius:6px;margin-left:4px}}
+.b.ok{{background:rgba(63,185,80,.15);color:var(--ok)}}.b.bad{{background:rgba(248,81,73,.15);color:var(--bad)}}.b.skip{{background:rgba(154,160,166,.15);color:var(--skip)}}
+</style></head><body>
+<div class="h"><span class="title">spcli smoke report</span><span class="status {scls}">{stxt}</span></div>
+<div class="meta">{html.escape(url)} &middot; tenant {html.escape(tenant)} &middot; {report["generated_at"]}</div>
+<div class="cards"><div class="card"><div class="v">{total}</div><div class="k">total</div></div>
+<div class="card ok"><div class="v">{summary["passed"]}</div><div class="k">passed</div></div>
+<div class="card bad"><div class="v">{summary["failed"]}</div><div class="k">failed</div></div>
+<div class="card skip"><div class="v">{summary["skipped"]}</div><div class="k">skipped</div></div></div>
+{"".join(cat_html)}
+</body></html>"""
+    with open(out_html, "w", encoding="utf-8") as f:
+        f.write(doc)
+PY
+}
+
 # ============================================================================
 section "Summary"
 # ============================================================================
 TOTAL=$((PASS + FAIL))
+build_report
+[ -n "$REPORT_JSON" ] && printf "${DIM}report: %s${RESET}\n" "$REPORT_JSON"
+[ -n "$REPORT_HTML" ] && printf "${DIM}report: %s${RESET}\n" "$REPORT_HTML"
 if [ "$FAIL" -eq 0 ]; then
   printf "${GREEN}${BOLD}ALL GREEN${RESET} — %s/%s checks passed against %s\n" "$PASS" "$TOTAL" "$BASE_URL"
   exit 0

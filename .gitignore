@@ -7,3 +7,7 @@
 /uploads/
 /cfdi_data/
 /graphify-out/
+
+# spcli smoke test reports
+smoke-report.json
+smoke-report.html
