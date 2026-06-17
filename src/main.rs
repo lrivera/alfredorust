@@ -47,6 +47,10 @@ async fn main() {
             get(routes::account_edit).post(routes::account_update),
         )
         .route(
+            "/api/account",
+            get(routes::account_profile_data_api).post(routes::account_profile_update_api),
+        )
+        .route(
             "/admin/users",
             get(routes::users_index).post(routes::users_create),
         )
@@ -62,6 +66,15 @@ async fn main() {
         .route(
             "/admin/companies",
             get(routes::companies_index).post(routes::companies_create),
+        )
+        .route(
+            "/api/admin/companies",
+            get(routes::companies_data_api).post(routes::company_create_api),
+        )
+        .route("/api/admin/companies/{id}", get(routes::company_data_api))
+        .route(
+            "/api/admin/companies/{id}/update",
+            post(routes::company_update_api),
         )
         .route("/admin/companies/new", get(routes::companies_new))
         .route("/admin/companies/{id}/edit", get(routes::companies_edit))

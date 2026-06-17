@@ -37,6 +37,14 @@ enum Command {
     Status,
     Logout,
     ResetAuth(ResetAuthArgs),
+    Account {
+        #[command(subcommand)]
+        command: AccountProfileCommand,
+    },
+    Admin {
+        #[command(subcommand)]
+        command: AdminCommand,
+    },
     Company {
         #[command(subcommand)]
         command: CompanyCommand,
@@ -90,6 +98,57 @@ struct LoginArgs {
 struct ResetAuthArgs {
     #[arg(long)]
     yes: bool,
+}
+
+#[derive(Subcommand)]
+enum AccountProfileCommand {
+    Get,
+    Update(AccountProfileUpdateArgs),
+}
+
+#[derive(Args)]
+struct AccountProfileUpdateArgs {
+    #[arg(long)]
+    email: String,
+    #[arg(long)]
+    totp_secret_env: String,
+}
+
+#[derive(Subcommand)]
+enum AdminCommand {
+    Companies {
+        #[command(subcommand)]
+        command: AdminCompanyCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum AdminCompanyCommand {
+    List,
+    Get { id: String },
+    Create(CompanyWriteArgs),
+    Update(CompanyUpdateArgs),
+}
+
+#[derive(Args)]
+struct CompanyWriteArgs {
+    #[arg(long)]
+    name: String,
+    #[arg(long)]
+    slug: Option<String>,
+    #[arg(long)]
+    default_currency: Option<String>,
+    #[arg(long, default_value_t = false)]
+    inactive: bool,
+    #[arg(long)]
+    notes: Option<String>,
+}
+
+#[derive(Args)]
+struct CompanyUpdateArgs {
+    id: String,
+    #[command(flatten)]
+    data: CompanyWriteArgs,
 }
 
 #[derive(Subcommand)]
@@ -942,6 +1001,24 @@ async fn run(cli: Cli) -> Result<()> {
         Command::Status => status(cli.json).await,
         Command::Logout => logout(cli.json).await,
         Command::ResetAuth(args) => reset_auth(args, cli.json),
+        Command::Account { command } => match command {
+            AccountProfileCommand::Get => {
+                json_get_command("/api/account", cli.json, "account").await
+            }
+            AccountProfileCommand::Update(args) => account_profile_update(args, cli.json).await,
+        },
+        Command::Admin { command } => match command {
+            AdminCommand::Companies { command } => match command {
+                AdminCompanyCommand::List => {
+                    json_get_command("/api/admin/companies", cli.json, "companies").await
+                }
+                AdminCompanyCommand::Get { id } => {
+                    json_get_by_id_command("/api/admin/companies", &id, cli.json, "company").await
+                }
+                AdminCompanyCommand::Create(args) => admin_company_create(args, cli.json).await,
+                AdminCompanyCommand::Update(args) => admin_company_update(args, cli.json).await,
+            },
+        },
         Command::Company { command } => match command {
             CompanyCommand::List => company_list(cli.json).await,
             CompanyCommand::Use { slug } => company_use(&slug, cli.json).await,
@@ -1374,6 +1451,54 @@ async fn company_use(slug: &str, json_output: bool) -> Result<()> {
         println!("Using company {} ({})", selected.slug, selected.name);
     }
     Ok(())
+}
+
+async fn account_profile_update(args: AccountProfileUpdateArgs, json_output: bool) -> Result<()> {
+    validate_non_empty(&args.email, "email")?;
+    validate_non_empty(&args.totp_secret_env, "totp-secret-env")?;
+    let secret = std::env::var(&args.totp_secret_env)
+        .with_context(|| format!("environment variable {} is required", args.totp_secret_env))?;
+    validate_non_empty(&secret, "totp-secret-env value")?;
+    let mut state = load_state()?;
+    let value = authenticated_post_json(
+        &mut state,
+        "/api/account",
+        &json!({ "email": args.email, "secret": secret }),
+    )
+    .await?;
+    state.email = args.email;
+    state.totp_secret = secret;
+    save_state(&state)?;
+    print_ok_output(&value, json_output, "account updated")
+}
+
+async fn admin_company_create(args: CompanyWriteArgs, json_output: bool) -> Result<()> {
+    let payload = company_payload(args)?;
+    let mut state = load_state()?;
+    let value = authenticated_post_json(&mut state, "/api/admin/companies", &payload).await?;
+    save_state(&state)?;
+    print_created_output(&value, json_output, "company")
+}
+
+async fn admin_company_update(args: CompanyUpdateArgs, json_output: bool) -> Result<()> {
+    validate_object_id(&args.id, "id")?;
+    let payload = company_payload(args.data)?;
+    let path = format!("/api/admin/companies/{}/update", args.id);
+    let mut state = load_state()?;
+    let value = authenticated_post_json(&mut state, &path, &payload).await?;
+    save_state(&state)?;
+    print_ok_output(&value, json_output, "company updated")
+}
+
+fn company_payload(args: CompanyWriteArgs) -> Result<Value> {
+    validate_non_empty(&args.name, "name")?;
+    Ok(json!({
+        "name": args.name,
+        "slug": args.slug,
+        "default_currency": args.default_currency,
+        "is_active": !args.inactive,
+        "notes": args.notes,
+    }))
 }
 
 async fn json_get_command(path: &str, json_output: bool, label: &str) -> Result<()> {
@@ -2341,6 +2466,12 @@ fn print_manifest(json_output: bool) -> Result<()> {
             { "name": "status", "auth_required": true, "company_required": false, "destructive": false },
             { "name": "logout", "auth_required": false, "company_required": false, "destructive": false },
             { "name": "reset-auth", "auth_required": false, "company_required": false, "destructive": true, "confirmation_flag": "--yes" },
+            { "name": "account get", "auth_required": true, "company_required": false, "destructive": false, "output_schema": "account" },
+            { "name": "account update", "auth_required": true, "company_required": false, "destructive": false, "arguments": ["--email", "--totp-secret-env"], "output_schema": "ok" },
+            { "name": "admin companies list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "companies" },
+            { "name": "admin companies get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "company" },
+            { "name": "admin companies create", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--name", "--slug", "--default-currency", "--inactive", "--notes"], "output_schema": "created_id" },
+            { "name": "admin companies update", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id", "--name", "--slug", "--default-currency", "--inactive", "--notes"], "output_schema": "ok" },
             { "name": "company list", "auth_required": true, "company_required": false, "destructive": false },
             { "name": "company use", "auth_required": true, "company_required": false, "destructive": false },
             { "name": "finance accounts list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "accounts" },
@@ -2440,7 +2571,7 @@ fn print_manifest(json_output: bool) -> Result<()> {
         print_json(&manifest)?;
     } else {
         println!(
-            "spcli commands: login, status, logout, reset-auth, company, finance, cfdi, sat, projects, resources, time, pdf, manifest"
+            "spcli commands: login, status, logout, reset-auth, account, admin, company, finance, cfdi, sat, projects, resources, time, pdf, manifest"
         );
         println!("Use --json for machine-readable output.");
     }

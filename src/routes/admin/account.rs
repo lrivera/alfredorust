@@ -2,11 +2,12 @@ use std::sync::Arc;
 
 use askama::Template;
 use axum::{
+    Json,
     extract::{Form, Query, State},
     http::StatusCode,
     response::{Html, IntoResponse, Redirect},
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     session::SessionUser,
@@ -39,6 +40,18 @@ pub(crate) struct AccountFormData {
     secret: String,
 }
 
+#[derive(Serialize)]
+pub struct AccountData {
+    id: String,
+    email: String,
+}
+
+#[derive(Deserialize)]
+pub struct AccountPayload {
+    email: String,
+    secret: String,
+}
+
 #[derive(Deserialize, Default)]
 pub(crate) struct AccountQuery {
     saved: Option<bool>,
@@ -64,6 +77,44 @@ pub async fn account_edit(
         message,
         errors: None,
     })
+}
+
+pub async fn account_profile_data_api(SessionUser(session): SessionUser) -> Json<AccountData> {
+    Json(AccountData {
+        id: session.user.id.to_hex(),
+        email: session.user.email,
+    })
+}
+
+pub async fn account_profile_update_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<AccountPayload>,
+) -> impl IntoResponse {
+    let email = payload.email.trim().to_string();
+    let secret = payload.secret.trim().to_string();
+    if email.is_empty() || secret.is_empty() {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    let user = session_user.user();
+    let company_roles: Vec<_> = user
+        .company_ids
+        .iter()
+        .zip(user.company_roles.iter())
+        .map(|(id, role)| (id.clone(), role.clone()))
+        .collect();
+    match update_user(
+        &state,
+        session_user.user_id(),
+        &email,
+        &secret,
+        &company_roles,
+    )
+    .await
+    {
+        Ok(_) => Json(serde_json::json!({ "ok": true })).into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
 }
 
 pub async fn account_update(

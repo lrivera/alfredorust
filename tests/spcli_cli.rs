@@ -113,6 +113,18 @@ fn manifest_json_is_machine_readable() {
             && command["destructive"].as_bool() == Some(false)
     }));
     assert!(commands.iter().any(|command| {
+        command["name"].as_str() == Some("account update")
+            && command["auth_required"].as_bool() == Some(true)
+            && command["company_required"].as_bool() == Some(false)
+            && command["destructive"].as_bool() == Some(false)
+    }));
+    assert!(commands.iter().any(|command| {
+        command["name"].as_str() == Some("admin companies update")
+            && command["auth_required"].as_bool() == Some(true)
+            && command["company_required"].as_bool() == Some(true)
+            && command["destructive"].as_bool() == Some(false)
+    }));
+    assert!(commands.iter().any(|command| {
         command["name"].as_str() == Some("orders complete")
             && command["auth_required"].as_bool() == Some(true)
             && command["company_required"].as_bool() == Some(true)

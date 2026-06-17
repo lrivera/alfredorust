@@ -41,6 +41,10 @@ fn build_app(state: Arc<AppState>) -> Router {
         .route("/api/tiempo", get(routes::tiempo_data))
         .route("/logout", post(routes::logout))
         .route(
+            "/api/account",
+            get(routes::account_profile_data_api).post(routes::account_profile_update_api),
+        )
+        .route(
             "/admin/users",
             get(routes::users_index).post(routes::users_create),
         )
@@ -53,6 +57,15 @@ fn build_app(state: Arc<AppState>) -> Router {
         .route("/tiempo", get(routes::tiempo_page))
         .route("/api/me/companies", get(routes::me_companies))
         .route("/admin/companies", get(routes::companies_index))
+        .route(
+            "/api/admin/companies",
+            get(routes::companies_data_api).post(routes::company_create_api),
+        )
+        .route("/api/admin/companies/{id}", get(routes::company_data_api))
+        .route(
+            "/api/admin/companies/{id}/update",
+            post(routes::company_update_api),
+        )
         .route("/admin/companies/new", get(routes::companies_new))
         .route("/admin/companies/{id}/edit", get(routes::companies_edit))
         .route("/admin/cfdis", get(routes::cfdis_index))
@@ -505,6 +518,212 @@ async fn post_json_with_cookie(
         .expect("body read failed");
     let body = String::from_utf8_lossy(&body_bytes).to_string();
     (status, body)
+}
+
+#[tokio::test]
+async fn account_json_profile_redacts_secret_and_updates_from_payload() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let shared = Arc::new(state.clone());
+
+    let company = create_company(
+        &state,
+        "Account JSON Co",
+        "account-json-co",
+        "MXN",
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+    let user_id = create_user_with_permissions(
+        &state,
+        "account-json@example.com",
+        "OLDSECRET",
+        &[(company.clone(), UserRole::Admin, vec![])],
+    )
+    .await
+    .unwrap();
+    let token = create_session(&state, "account-json@example.com")
+        .await
+        .unwrap();
+    let host = "account-json-co.miapp.local";
+
+    let (status, body) =
+        get_with_cookie(build_app(shared.clone()), host, "/api/account", &token).await;
+    assert_eq!(status, StatusCode::OK);
+    let profile: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(profile["email"], "account-json@example.com");
+    assert!(profile.get("secret").is_none());
+    assert!(profile.get("otpauth_url").is_none());
+
+    let (status, body) = post_json_with_cookie(
+        build_app(shared.clone()),
+        host,
+        "/api/account",
+        &token,
+        serde_json::json!({
+            "email": "account-json-updated@example.com",
+            "secret": "NEWSECRET"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let updated = get_user_by_id(&state, &user_id).await.unwrap().unwrap();
+    assert_eq!(updated.email, "account-json-updated@example.com");
+    assert_eq!(updated.secret, "NEWSECRET");
+
+    common::teardown(Some(ctx)).await;
+}
+
+#[tokio::test]
+async fn company_admin_json_endpoints_enforce_admin_and_update_metadata() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let shared = Arc::new(state.clone());
+
+    let company_a = create_company(
+        &state,
+        "Admin Company JSON A",
+        "admin-company-json-a",
+        "MXN",
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+    let company_b = create_company(
+        &state,
+        "Admin Company JSON B",
+        "admin-company-json-b",
+        "USD",
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+    create_user_with_permissions(
+        &state,
+        "company-admin-json@example.com",
+        "SECRET",
+        &[
+            (company_a.clone(), UserRole::Admin, vec![]),
+            (company_b.clone(), UserRole::Admin, vec![]),
+        ],
+    )
+    .await
+    .unwrap();
+    create_user_with_permissions(
+        &state,
+        "company-staff-json@example.com",
+        "SECRET",
+        &[(company_a.clone(), UserRole::Staff, vec![])],
+    )
+    .await
+    .unwrap();
+    let admin_token = create_session(&state, "company-admin-json@example.com")
+        .await
+        .unwrap();
+    let staff_token = create_session(&state, "company-staff-json@example.com")
+        .await
+        .unwrap();
+    let host = "admin-company-json-a.miapp.local";
+
+    let (status, body) = get_with_cookie(
+        build_app(shared.clone()),
+        host,
+        "/api/admin/companies",
+        &admin_token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let companies: Vec<serde_json::Value> = serde_json::from_str(&body).unwrap();
+    assert!(
+        companies
+            .iter()
+            .any(|company| company["slug"] == "admin-company-json-a")
+    );
+    assert!(
+        companies
+            .iter()
+            .any(|company| company["slug"] == "admin-company-json-b")
+    );
+
+    let (status, body) = post_json_with_cookie(
+        build_app(shared.clone()),
+        host,
+        "/api/admin/companies",
+        &admin_token,
+        serde_json::json!({
+            "name": "Admin Company JSON C",
+            "slug": "admin-company-json-c",
+            "default_currency": "MXN",
+            "is_active": true,
+            "notes": "Created through JSON"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let created: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert!(created["id"].as_str().is_some());
+
+    let path = format!("/api/admin/companies/{}/update", company_a.to_hex());
+    let (status, body) = post_json_with_cookie(
+        build_app(shared.clone()),
+        host,
+        &path,
+        &admin_token,
+        serde_json::json!({
+            "name": "Admin Company JSON A Updated",
+            "slug": "admin-company-json-a-updated",
+            "default_currency": "USD",
+            "is_active": false,
+            "notes": "Updated through JSON"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let updated = list_companies(&state)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|company| company.id.as_ref() == Some(&company_a))
+        .unwrap();
+    assert_eq!(updated.name, "Admin Company JSON A Updated");
+    assert_eq!(updated.slug, "admin-company-json-a-updated");
+    assert_eq!(updated.default_currency, "USD");
+    assert!(!updated.is_active);
+
+    let (status, _) = get_with_cookie(
+        build_app(shared.clone()),
+        host,
+        "/api/admin/companies",
+        &staff_token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _) = post_json_with_cookie(
+        build_app(shared.clone()),
+        host,
+        &format!("/api/admin/companies/{}/update", company_b.to_hex()),
+        &staff_token,
+        serde_json::json!({
+            "name": "Forbidden",
+            "slug": "forbidden",
+            "default_currency": "MXN"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    common::teardown(Some(ctx)).await;
 }
 
 #[tokio::test]

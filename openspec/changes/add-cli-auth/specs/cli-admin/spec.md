@@ -16,6 +16,20 @@ The system SHALL provide admin CLI commands for users, companies, account profil
 - **THEN** the CLI consumes a JSON company update endpoint
 - **AND** the server enforces admin authorization and tenant constraints
 
+#### Scenario: Company metadata is listed or created
+
+- **WHEN** the user runs `spcli admin companies list`, `get`, or `create`
+- **THEN** the CLI consumes JSON company endpoints
+- **AND** the server returns only companies visible to the authenticated user
+- **AND** create adds the authenticated user as admin for the new company
+
+#### Scenario: Account profile is read or updated
+
+- **WHEN** the user runs `spcli account get` or `spcli account update`
+- **THEN** the CLI consumes a JSON account profile endpoint
+- **AND** profile reads omit the TOTP secret
+- **AND** updates read the replacement TOTP secret from `--totp-secret-env`
+
 ### Requirement: CLI admin commands avoid leaking sensitive setup data
 
 The system SHALL redact sensitive setup and SAT config fields from CLI output.
@@ -24,6 +38,11 @@ The system SHALL redact sensitive setup and SAT config fields from CLI output.
 
 - **WHEN** the CLI returns user setup or QR-related data
 - **THEN** it omits TOTP secrets, generated TOTP codes, cookies, and `otpauth_url` unless a future spec explicitly adds a one-time secret provisioning command
+
+#### Scenario: Account profile data is returned
+
+- **WHEN** the CLI returns current account profile data
+- **THEN** it omits TOTP secrets, generated TOTP codes, cookies, and `otpauth_url`
 
 #### Scenario: SAT config is returned
 

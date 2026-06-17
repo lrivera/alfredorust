@@ -2,6 +2,7 @@ use std::{collections::HashSet, str::FromStr, sync::Arc};
 
 use askama::Template;
 use axum::{
+    Json,
     extract::{Form, Path, State},
     http::StatusCode,
     response::{Html, IntoResponse, Redirect},
@@ -23,6 +24,8 @@ use crate::{
         list_companies, update_company,
     },
 };
+
+use super::finance::helpers::require_admin_active;
 
 fn render<T: Template>(tpl: T) -> Result<Html<String>, StatusCode> {
     tpl.render()
@@ -47,6 +50,30 @@ struct CompanyRow {
 #[derive(Serialize)]
 struct CompanyUpdateResponse {
     slug: String,
+}
+
+#[derive(Serialize)]
+pub struct CompanyData {
+    id: String,
+    name: String,
+    slug: String,
+    default_currency: String,
+    is_active: bool,
+    notes: Option<String>,
+    is_current: bool,
+}
+
+#[derive(Deserialize)]
+pub struct CompanyPayload {
+    name: String,
+    #[serde(default)]
+    slug: Option<String>,
+    #[serde(default)]
+    default_currency: Option<String>,
+    #[serde(default)]
+    is_active: Option<bool>,
+    #[serde(default)]
+    notes: Option<String>,
 }
 
 #[derive(Template)]
@@ -84,6 +111,186 @@ fn has_admin_role_for(session_user: &SessionUser, company_id: &ObjectId) -> bool
         .iter()
         .zip(session_user.user().company_roles.iter())
         .any(|(cid, role)| cid == company_id && role.is_admin())
+}
+
+fn company_data(
+    session_user: &SessionUser,
+    company: crate::models::Company,
+) -> Option<CompanyData> {
+    let id = company.id?;
+    Some(CompanyData {
+        id: id.to_hex(),
+        name: company.name,
+        slug: company.slug,
+        default_currency: company.default_currency,
+        is_active: company.is_active,
+        notes: company.notes,
+        is_current: &id == session_user.active_company_id(),
+    })
+}
+
+fn parse_company_payload(
+    payload: CompanyPayload,
+) -> Result<(String, String, String, bool, Option<String>), StatusCode> {
+    let name = payload.name.trim().to_string();
+    if name.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let slug_raw = payload.slug.unwrap_or_default();
+    let slug = slug_raw.trim().to_string();
+    validate_slug(&slug).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let final_slug = if slug.is_empty() {
+        slugify(&name)
+    } else {
+        slug
+    };
+    let default_currency = payload
+        .default_currency
+        .as_deref()
+        .map(str::trim)
+        .filter(|currency| !currency.is_empty())
+        .unwrap_or("MXN")
+        .to_string();
+    let is_active = payload.is_active.unwrap_or(true);
+    let notes = payload.notes.and_then(|notes| {
+        let trimmed = notes.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    });
+    Ok((name, final_slug, default_currency, is_active, notes))
+}
+
+async fn slug_conflicts(
+    state: &AppState,
+    slug: &str,
+    current_id: Option<&ObjectId>,
+) -> Result<bool, StatusCode> {
+    match state
+        .companies
+        .find_one(doc! { "slug": slug })
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    {
+        Some(existing) => Ok(existing.id.as_ref() != current_id),
+        None => Ok(false),
+    }
+}
+
+pub async fn companies_data_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<CompanyData>>, StatusCode> {
+    require_admin_active(&session_user)?;
+    let allowed: HashSet<_> = session_user.user().company_ids.iter().cloned().collect();
+    let companies = list_companies(&state)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .into_iter()
+        .filter(|company| company.id.as_ref().is_some_and(|id| allowed.contains(id)))
+        .filter_map(|company| company_data(&session_user, company))
+        .collect();
+    Ok(Json(companies))
+}
+
+pub async fn company_data_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<CompanyData>, StatusCode> {
+    let object_id = ObjectId::from_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    if !has_admin_role_for(&session_user, &object_id) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    let company = get_company_by_id(&state, &object_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    company_data(&session_user, company)
+        .map(Json)
+        .ok_or(StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+pub async fn company_create_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<CompanyPayload>,
+) -> impl IntoResponse {
+    if let Err(status) = require_admin_active(&session_user) {
+        return status.into_response();
+    }
+    let (name, slug, default_currency, is_active, notes) = match parse_company_payload(payload) {
+        Ok(parsed) => parsed,
+        Err(status) => return status.into_response(),
+    };
+    match slug_conflicts(&state, &slug, None).await {
+        Ok(true) => return StatusCode::CONFLICT.into_response(),
+        Ok(false) => {}
+        Err(status) => return status.into_response(),
+    }
+    match create_company(&state, &name, &slug, &default_currency, is_active, notes).await {
+        Ok(company_id) => {
+            match add_user_to_company(&state, session_user.user_id(), &company_id, UserRole::Admin)
+                .await
+            {
+                Ok(_) => (
+                    StatusCode::CREATED,
+                    Json(serde_json::json!({ "id": company_id.to_hex() })),
+                )
+                    .into_response(),
+                Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+            }
+        }
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+pub async fn company_update_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(payload): Json<CompanyPayload>,
+) -> impl IntoResponse {
+    let object_id = match ObjectId::from_str(&id) {
+        Ok(id) => id,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    if !has_admin_role_for(&session_user, &object_id) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    if get_company_by_id(&state, &object_id)
+        .await
+        .ok()
+        .flatten()
+        .is_none()
+    {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let (name, slug, default_currency, is_active, notes) = match parse_company_payload(payload) {
+        Ok(parsed) => parsed,
+        Err(status) => return status.into_response(),
+    };
+    match slug_conflicts(&state, &slug, Some(&object_id)).await {
+        Ok(true) => return StatusCode::CONFLICT.into_response(),
+        Ok(false) => {}
+        Err(status) => return status.into_response(),
+    }
+    match update_company(
+        &state,
+        &object_id,
+        &name,
+        &slug,
+        &default_currency,
+        is_active,
+        notes,
+    )
+    .await
+    {
+        Ok(_) => Json(serde_json::json!({ "ok": true, "slug": slug })).into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
 }
 
 pub async fn companies_index(

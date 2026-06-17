@@ -114,8 +114,8 @@
 ## 12. Admin And Setup Commands
 
 - [ ] 12.1 Add user list/get/create/update/delete commands for company admins.
-- [ ] 12.2 Add setup/profile/status commands that expose current user, role, permissions, and companies.
-- [ ] 12.3 Add company admin commands for company metadata and maintenance endpoints.
+- [x] 12.2 Add setup/profile/status commands that expose current user, role, permissions, and companies.
+- [x] 12.3 Add company admin commands for company metadata endpoints while keeping maintenance deletes unsupported.
 
 ## 13. Documentation
 

@@ -31,11 +31,29 @@ Check the current session:
 cargo run --bin spcli -- status
 ```
 
+Read or update the current account profile. Profile output omits the TOTP secret; updates read a replacement secret from the environment:
+
+```bash
+cargo run --bin spcli -- account get
+SPCLI_TOTP_SECRET=YOUR_BASE32_TOTP_SECRET cargo run --bin spcli -- account update --email operator@example.com --totp-secret-env SPCLI_TOTP_SECRET
+```
+
 List companies available to the user:
 
 ```bash
 cargo run --bin spcli -- company list
 ```
+
+Manage company metadata through admin JSON APIs:
+
+```bash
+cargo run --bin spcli -- admin companies list
+cargo run --bin spcli -- admin companies get 64f000000000000000000000
+cargo run --bin spcli -- admin companies create --name "Acme" --slug acme --default-currency MXN
+cargo run --bin spcli -- admin companies update 64f000000000000000000000 --name "Acme" --slug acme --default-currency MXN
+```
+
+Company delete and company-wide maintenance deletes are intentionally unsupported in `spcli`.
 
 Select active company context:
 
