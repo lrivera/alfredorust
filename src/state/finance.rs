@@ -145,9 +145,11 @@ pub async fn delete_account(
         ]})
         .await?
         .is_some();
+    // Recurring plans are soft-deleted (is_active: false); a deleted plan must
+    // not keep blocking the account, so only active plans count as a reference.
     let has_plans = state
         .recurring_plans
-        .find_one(doc! { "company_id": company_id, "account_expected_id": id })
+        .find_one(doc! { "company_id": company_id, "account_expected_id": id, "is_active": true })
         .await?
         .is_some();
     let has_planned_entries = state

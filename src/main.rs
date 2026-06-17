@@ -15,6 +15,7 @@ use axum::{
 use dotenvy::dotenv;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::net::TcpListener;
+use tower_http::services::{ServeDir, ServeFile};
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
@@ -648,10 +649,19 @@ async fn main() {
             session::require_session,
         ));
 
+    // SPA static assets (Leptos CSR build). Unmatched, non-API paths fall back
+    // to index.html so client-side routing owns the path space. The explicit
+    // routes above and the `protected` router take precedence, so /api/*,
+    // /login, /logout, /setup, etc. are never shadowed by the fallback.
+    let spa_dir = std::env::var("SPA_DIST").unwrap_or_else(|_| "frontend/dist".to_string());
+    let spa_index = format!("{spa_dir}/index.html");
+    let spa_service = ServeDir::new(&spa_dir).fallback(ServeFile::new(spa_index));
+
     let app = Router::new()
         .route("/", get(routes::home))
         .route("/login", post(routes::login))
         .merge(protected)
+        .fallback_service(spa_service)
         .with_state(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 8090));

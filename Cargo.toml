@@ -39,6 +39,7 @@ zip = "2"
 uuid = { version = "1", features = ["v4"] }
 utoipa = { version = "5", features = ["axum_extras", "chrono"] }
 utoipa-swagger-ui = { version = "9", features = ["axum"] }
+tower-http = { version = "0.6", features = ["fs"] }
 
 [dev-dependencies]
 tokio = { version = "1.48.0", features = ["full"] }

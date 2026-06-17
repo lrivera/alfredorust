@@ -552,5 +552,28 @@ async fn delete_account_integrity_check_is_company_scoped() {
         "an in-company reference must still block account deletion"
     );
 
+    // A soft-deleted (inactive) recurring plan must NOT block account deletion.
+    let cat_a = create_category(&state, &company_a, "A cat", FlowType::Expense, None, None)
+        .await
+        .unwrap();
+    let acc_a3 = create_account(&state, &company_a, "A acc 3", AccountType::Bank, "MXN", true, None)
+        .await
+        .unwrap();
+    let plan = create_recurring_plan(
+        &state, &company_a, "soft", FlowType::Expense, &cat_a, &acc_a3, None, 10.0,
+        "monthly", Some(1), now(), None, true, 1, None,
+    )
+    .await
+    .unwrap();
+    assert!(
+        delete_account(&state, &acc_a3, &company_a).await.is_err(),
+        "an active recurring plan must block account deletion"
+    );
+    delete_recurring_plan(&state, &plan).await.unwrap(); // soft-delete (is_active=false)
+    delete_account(&state, &acc_a3, &company_a)
+        .await
+        .expect("a soft-deleted recurring plan must not block account deletion");
+    assert!(get_account_by_id(&state, &acc_a3).await.unwrap().is_none());
+
     common::teardown(Some(ctx)).await;
 }
