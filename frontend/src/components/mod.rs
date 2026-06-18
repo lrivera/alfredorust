@@ -6,11 +6,13 @@
 
 mod button;
 mod card;
+mod checkbox;
 mod input;
 mod select;
 
 pub use button::{Button, ButtonVariant};
 pub use card::{Card, CardContent, CardHeader, CardTitle};
+pub use checkbox::Checkbox;
 pub use input::Input;
 pub use select::Select;
 

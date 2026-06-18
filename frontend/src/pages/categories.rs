@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
-use super::flow_label;
+use super::{flow_label, load_category_options, Options};
 use crate::api::{self, ApiError, Category, CategoryPayload, Me};
 use crate::components::{Button, ButtonVariant, Card, CardContent, CardHeader, CardTitle, Input, Select};
 
@@ -19,10 +19,14 @@ pub fn CategoriesPage() -> impl IntoView {
     };
     reload();
 
+    // Options for the parent-category picker.
+    let cat_opts = RwSignal::new(Options::new());
+    load_category_options(cat_opts);
+
     let editing = RwSignal::new(None::<String>);
     let name = RwSignal::new(String::new());
     let flow = RwSignal::new("expense".to_string());
-    let parent_id = RwSignal::new(None::<String>);
+    let parent = RwSignal::new(String::new());
     let notes = RwSignal::new(String::new());
     let form_error = RwSignal::new(None::<String>);
 
@@ -30,17 +34,18 @@ pub fn CategoriesPage() -> impl IntoView {
         editing.set(None);
         name.set(String::new());
         flow.set("expense".to_string());
-        parent_id.set(None);
+        parent.set(String::new());
         notes.set(String::new());
         form_error.set(None);
     };
 
     let save = Action::new_local(move |_: &()| {
         let notes_val = notes.get_untracked();
+        let parent_val = parent.get_untracked();
         let payload = CategoryPayload {
             name: name.get_untracked().trim().to_string(),
             flow_type: flow.get_untracked(),
-            parent_id: parent_id.get_untracked(),
+            parent_id: (!parent_val.is_empty()).then_some(parent_val),
             notes: (!notes_val.trim().is_empty()).then_some(notes_val),
         };
         let editing = editing.get_untracked();
@@ -84,7 +89,7 @@ pub fn CategoriesPage() -> impl IntoView {
             {
                 name.set(d.name);
                 flow.set(d.flow_type);
-                parent_id.set(d.parent_id);
+                parent.set(d.parent_id.unwrap_or_default());
                 notes.set(d.notes.unwrap_or_default());
                 editing.set(Some(id));
                 form_error.set(None);
@@ -138,6 +143,23 @@ pub fn CategoriesPage() -> impl IntoView {
                                         <Select value=flow>
                                             <option value="income">"Ingreso"</option>
                                             <option value="expense">"Egreso"</option>
+                                        </Select>
+                                    </div>
+                                    <div class="space-y-1 sm:col-span-2">
+                                        <label class="block text-sm font-medium text-slate-700">
+                                            "Categoría padre (opcional)"
+                                        </label>
+                                        <Select value=parent>
+                                            <option value="">"— Ninguna —"</option>
+                                            {move || {
+                                                cat_opts
+                                                    .get()
+                                                    .into_iter()
+                                                    .map(|(id, label)| {
+                                                        view! { <option value=id>{label}</option> }
+                                                    })
+                                                    .collect::<Vec<_>>()
+                                            }}
                                         </Select>
                                     </div>
                                     <div class="flex items-end gap-2">

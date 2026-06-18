@@ -2,11 +2,13 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 
 use super::{
-    date_to_rfc3339, flow_label, load_account_options, load_category_options, money,
-    rfc3339_to_date, Options,
+    date_to_rfc3339, flow_label, load_account_options, load_category_options, load_contact_options,
+    money, rfc3339_to_date, Options,
 };
 use crate::api::{self, ApiError, Me, RecurringPlan, RecurringPlanPayload};
-use crate::components::{Button, ButtonVariant, Card, CardContent, CardHeader, CardTitle, Input, Select};
+use crate::components::{
+    Button, ButtonVariant, Card, CardContent, CardHeader, CardTitle, Checkbox, Input, Select,
+};
 
 #[component]
 pub fn RecurringPlansPage() -> impl IntoView {
@@ -28,22 +30,24 @@ pub fn RecurringPlansPage() -> impl IntoView {
     let accounts = RwSignal::new(Options::new());
     load_category_options(categories);
     load_account_options(accounts);
+    let contacts = RwSignal::new(Options::new());
+    load_contact_options(contacts);
 
     let editing = RwSignal::new(None::<String>);
     let name = RwSignal::new(String::new());
     let flow = RwSignal::new("expense".to_string());
     let category = RwSignal::new(String::new());
     let account = RwSignal::new(String::new());
+    let contact = RwSignal::new(String::new());
     let amount = RwSignal::new(String::new());
     let frequency = RwSignal::new("monthly".to_string());
     let start = RwSignal::new(String::new());
-    // Hidden fields preserved across edits.
-    let contact_id = RwSignal::new(None::<String>);
-    let day_of_month = RwSignal::new(None::<i32>);
-    let end_date = RwSignal::new(None::<String>);
+    let end = RwSignal::new(String::new());
+    let dom = RwSignal::new(String::new());
     let is_active = RwSignal::new(true);
+    let notes = RwSignal::new(String::new());
+    // Preserved hidden across edits.
     let version = RwSignal::new(1i32);
-    let notes = RwSignal::new(None::<String>);
     let form_error = RwSignal::new(None::<String>);
 
     let reset_form = move || {
@@ -52,33 +56,37 @@ pub fn RecurringPlansPage() -> impl IntoView {
         flow.set("expense".to_string());
         category.set(String::new());
         account.set(String::new());
+        contact.set(String::new());
         amount.set(String::new());
         frequency.set("monthly".to_string());
         start.set(String::new());
-        contact_id.set(None);
-        day_of_month.set(None);
-        end_date.set(None);
+        end.set(String::new());
+        dom.set(String::new());
         is_active.set(true);
+        notes.set(String::new());
         version.set(1);
-        notes.set(None);
         form_error.set(None);
     };
 
     let save = Action::new_local(move |_: &()| {
+        let contact_val = contact.get_untracked();
+        let end_val = end.get_untracked();
+        let dom_val = dom.get_untracked();
+        let notes_val = notes.get_untracked();
         let payload = RecurringPlanPayload {
             name: name.get_untracked().trim().to_string(),
             flow_type: flow.get_untracked(),
             category_id: category.get_untracked(),
             account_expected_id: account.get_untracked(),
-            contact_id: contact_id.get_untracked(),
+            contact_id: (!contact_val.is_empty()).then_some(contact_val),
             amount_estimated: amount.get_untracked().trim().parse().unwrap_or(0.0),
             frequency: frequency.get_untracked(),
-            day_of_month: day_of_month.get_untracked(),
+            day_of_month: dom_val.trim().parse::<i32>().ok(),
             start_date: date_to_rfc3339(&start.get_untracked()),
-            end_date: end_date.get_untracked(),
+            end_date: (!end_val.trim().is_empty()).then(|| date_to_rfc3339(&end_val)),
             is_active: is_active.get_untracked(),
             version: version.get_untracked(),
-            notes: notes.get_untracked(),
+            notes: (!notes_val.trim().is_empty()).then_some(notes_val),
         };
         let editing = editing.get_untracked();
         async move {
@@ -133,12 +141,12 @@ pub fn RecurringPlansPage() -> impl IntoView {
                 amount.set(format!("{}", d.amount_estimated));
                 frequency.set(d.frequency);
                 start.set(rfc3339_to_date(&d.start_date));
-                contact_id.set(d.contact_id);
-                day_of_month.set(d.day_of_month);
-                end_date.set(d.end_date);
+                contact.set(d.contact_id.unwrap_or_default());
+                dom.set(d.day_of_month.map(|v| v.to_string()).unwrap_or_default());
+                end.set(d.end_date.as_deref().map(rfc3339_to_date).unwrap_or_default());
                 is_active.set(d.is_active);
                 version.set(d.version);
-                notes.set(d.notes);
+                notes.set(d.notes.unwrap_or_default());
                 editing.set(Some(id));
                 form_error.set(None);
             }
@@ -256,6 +264,55 @@ pub fn RecurringPlansPage() -> impl IntoView {
                                             r#type="date"
                                             required=true
                                         />
+                                    </div>
+                                    <div class="space-y-1">
+                                        <label class="block text-sm font-medium text-slate-700">
+                                            "Término (opcional)"
+                                        </label>
+                                        <Input
+                                            value=end
+                                            on_input=Callback::new(move |v| end.set(v))
+                                            r#type="date"
+                                        />
+                                    </div>
+                                    <div class="space-y-1">
+                                        <label class="block text-sm font-medium text-slate-700">
+                                            "Día del mes (opcional)"
+                                        </label>
+                                        <Input
+                                            value=dom
+                                            on_input=Callback::new(move |v| dom.set(v))
+                                            inputmode="numeric"
+                                        />
+                                    </div>
+                                    <div class="space-y-1">
+                                        <label class="block text-sm font-medium text-slate-700">
+                                            "Contacto (opcional)"
+                                        </label>
+                                        <Select value=contact>
+                                            <option value="">"— Ninguno —"</option>
+                                            {move || {
+                                                contacts
+                                                    .get()
+                                                    .into_iter()
+                                                    .map(|(id, label)| {
+                                                        view! { <option value=id>{label}</option> }
+                                                    })
+                                                    .collect::<Vec<_>>()
+                                            }}
+                                        </Select>
+                                    </div>
+                                    <div class="space-y-1 sm:col-span-2">
+                                        <label class="block text-sm font-medium text-slate-700">
+                                            "Notas"
+                                        </label>
+                                        <Input
+                                            value=notes
+                                            on_input=Callback::new(move |v| notes.set(v))
+                                        />
+                                    </div>
+                                    <div class="sm:col-span-1">
+                                        <Checkbox checked=is_active label="Activo" />
                                     </div>
                                     <div class="flex items-end gap-2">
                                         <Button disabled=pending>

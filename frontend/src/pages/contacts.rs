@@ -33,9 +33,9 @@ pub fn ContactsPage() -> impl IntoView {
     let name = RwSignal::new(String::new());
     let kind = RwSignal::new("customer".to_string());
     let email = RwSignal::new(String::new());
-    let rfc = RwSignal::new(None::<String>);
-    let phone = RwSignal::new(None::<String>);
-    let notes = RwSignal::new(None::<String>);
+    let rfc = RwSignal::new(String::new());
+    let phone = RwSignal::new(String::new());
+    let notes = RwSignal::new(String::new());
     let form_error = RwSignal::new(None::<String>);
 
     let reset_form = move || {
@@ -43,9 +43,9 @@ pub fn ContactsPage() -> impl IntoView {
         name.set(String::new());
         kind.set("customer".to_string());
         email.set(String::new());
-        rfc.set(None);
-        phone.set(None);
-        notes.set(None);
+        rfc.set(String::new());
+        phone.set(String::new());
+        notes.set(String::new());
         form_error.set(None);
     };
 
@@ -53,10 +53,10 @@ pub fn ContactsPage() -> impl IntoView {
         let payload = ContactPayload {
             name: name.get_untracked().trim().to_string(),
             contact_type: kind.get_untracked(),
-            rfc: rfc.get_untracked(),
+            rfc: opt(Some(rfc.get_untracked())),
             email: opt(Some(email.get_untracked())),
-            phone: phone.get_untracked(),
-            notes: notes.get_untracked(),
+            phone: opt(Some(phone.get_untracked())),
+            notes: opt(Some(notes.get_untracked())),
         };
         let editing = editing.get_untracked();
         async move {
@@ -100,9 +100,9 @@ pub fn ContactsPage() -> impl IntoView {
                 name.set(d.name);
                 kind.set(d.contact_type);
                 email.set(d.email.unwrap_or_default());
-                rfc.set(d.rfc);
-                phone.set(d.phone);
-                notes.set(d.notes);
+                rfc.set(d.rfc.unwrap_or_default());
+                phone.set(d.phone.unwrap_or_default());
+                notes.set(d.notes.unwrap_or_default());
                 editing.set(Some(id));
                 form_error.set(None);
             }
@@ -168,6 +168,30 @@ pub fn ContactsPage() -> impl IntoView {
                                             on_input=Callback::new(move |v| email.set(v))
                                             r#type="email"
                                             placeholder="contacto@acme.com"
+                                        />
+                                    </div>
+                                    <div class="space-y-1">
+                                        <label class="block text-sm font-medium text-slate-700">
+                                            "RFC"
+                                        </label>
+                                        <Input value=rfc on_input=Callback::new(move |v| rfc.set(v)) />
+                                    </div>
+                                    <div class="space-y-1">
+                                        <label class="block text-sm font-medium text-slate-700">
+                                            "Teléfono"
+                                        </label>
+                                        <Input
+                                            value=phone
+                                            on_input=Callback::new(move |v| phone.set(v))
+                                        />
+                                    </div>
+                                    <div class="space-y-1 sm:col-span-2">
+                                        <label class="block text-sm font-medium text-slate-700">
+                                            "Notas"
+                                        </label>
+                                        <Input
+                                            value=notes
+                                            on_input=Callback::new(move |v| notes.set(v))
                                         />
                                     </div>
                                     <div class="flex items-end gap-2">

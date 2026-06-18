@@ -9,6 +9,16 @@ fn num(s: &str) -> f64 {
     s.trim().parse::<f64>().unwrap_or(0.0)
 }
 
+/// Parse an optional money field: empty -> None.
+fn opt_num(s: &str) -> Option<f64> {
+    let t = s.trim();
+    if t.is_empty() {
+        None
+    } else {
+        t.parse::<f64>().ok()
+    }
+}
+
 #[component]
 pub fn ForecastsPage() -> impl IntoView {
     let me = use_context::<Me>().expect("Me context");
@@ -30,6 +40,9 @@ pub fn ForecastsPage() -> impl IntoView {
     let currency = RwSignal::new("MXN".to_string());
     let income = RwSignal::new(String::new());
     let expense = RwSignal::new(String::new());
+    let initial = RwSignal::new(String::new());
+    let final_b = RwSignal::new(String::new());
+    let details = RwSignal::new(String::new());
     let gen_at = RwSignal::new(None::<String>);
     let notes = RwSignal::new(None::<String>);
     let form_error = RwSignal::new(None::<String>);
@@ -42,6 +55,9 @@ pub fn ForecastsPage() -> impl IntoView {
         currency.set("MXN".to_string());
         income.set(String::new());
         expense.set(String::new());
+        initial.set(String::new());
+        final_b.set(String::new());
+        details.set(String::new());
         gen_at.set(None);
         notes.set(None);
         form_error.set(None);
@@ -52,6 +68,7 @@ pub fn ForecastsPage() -> impl IntoView {
         let exp = num(&expense.get_untracked());
         let start_iso = date_to_rfc3339(&start.get_untracked());
         let scenario_name = scenario.get_untracked();
+        let details_val = details.get_untracked();
         let payload = ForecastPayload {
             generated_at: gen_at.get_untracked().unwrap_or_else(|| start_iso.clone()),
             start_date: start_iso,
@@ -60,6 +77,9 @@ pub fn ForecastsPage() -> impl IntoView {
             projected_income_total: inc,
             projected_expense_total: exp,
             projected_net: inc - exp,
+            initial_balance: opt_num(&initial.get_untracked()),
+            final_balance: opt_num(&final_b.get_untracked()),
+            details: (!details_val.trim().is_empty()).then_some(details_val),
             scenario_name: (!scenario_name.trim().is_empty()).then_some(scenario_name),
             notes: notes.get_untracked(),
         };
@@ -108,6 +128,9 @@ pub fn ForecastsPage() -> impl IntoView {
                 currency.set(d.currency);
                 income.set(format!("{}", d.projected_income_total));
                 expense.set(format!("{}", d.projected_expense_total));
+                initial.set(d.initial_balance.map(|v| v.to_string()).unwrap_or_default());
+                final_b.set(d.final_balance.map(|v| v.to_string()).unwrap_or_default());
+                details.set(d.details.unwrap_or_default());
                 gen_at.set(Some(d.generated_at));
                 notes.set(d.notes);
                 editing.set(Some(id));
@@ -205,6 +228,35 @@ pub fn ForecastsPage() -> impl IntoView {
                                             on_input=Callback::new(move |v| expense.set(v))
                                             inputmode="decimal"
                                             placeholder="0.00"
+                                        />
+                                    </div>
+                                    <div class="space-y-1">
+                                        <label class="block text-sm font-medium text-slate-700">
+                                            "Saldo inicial (opcional)"
+                                        </label>
+                                        <Input
+                                            value=initial
+                                            on_input=Callback::new(move |v| initial.set(v))
+                                            inputmode="decimal"
+                                        />
+                                    </div>
+                                    <div class="space-y-1">
+                                        <label class="block text-sm font-medium text-slate-700">
+                                            "Saldo final (opcional)"
+                                        </label>
+                                        <Input
+                                            value=final_b
+                                            on_input=Callback::new(move |v| final_b.set(v))
+                                            inputmode="decimal"
+                                        />
+                                    </div>
+                                    <div class="space-y-1 sm:col-span-3">
+                                        <label class="block text-sm font-medium text-slate-700">
+                                            "Detalles (opcional)"
+                                        </label>
+                                        <Input
+                                            value=details
+                                            on_input=Callback::new(move |v| details.set(v))
                                         />
                                     </div>
                                     <div class="flex items-end gap-2">

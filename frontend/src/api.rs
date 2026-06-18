@@ -305,6 +305,9 @@ pub struct ForecastPayload {
     pub projected_income_total: f64,
     pub projected_expense_total: f64,
     pub projected_net: f64,
+    pub initial_balance: Option<f64>,
+    pub final_balance: Option<f64>,
+    pub details: Option<String>,
     pub scenario_name: Option<String>,
     pub notes: Option<String>,
 }
@@ -363,6 +366,15 @@ pub struct PlannedEntryPayload {
     pub amount_estimated: f64,
     pub due_date: String,
     pub status: String,
+    pub notes: Option<String>,
+}
+
+/// Payload for paying a planned entry. Mirrors `PlannedEntryPayPayload`.
+#[derive(Clone, Debug, Serialize)]
+pub struct PlannedEntryPayPayload {
+    pub paid_at: String,
+    pub amount: f64,
+    pub account_id: String,
     pub notes: Option<String>,
 }
 
@@ -435,6 +447,9 @@ pub struct ForecastDetail {
     pub currency: String,
     pub projected_income_total: f64,
     pub projected_expense_total: f64,
+    pub initial_balance: Option<f64>,
+    pub final_balance: Option<f64>,
+    pub details: Option<String>,
     pub scenario_name: Option<String>,
     pub notes: Option<String>,
 }

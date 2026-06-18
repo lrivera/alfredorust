@@ -5,7 +5,9 @@ use super::{
     date_to_rfc3339, load_account_options, load_category_options, money, rfc3339_to_date, Options,
 };
 use crate::api::{self, ApiError, Me, Transaction, TransactionPayload};
-use crate::components::{Button, ButtonVariant, Card, CardContent, CardHeader, CardTitle, Input, Select};
+use crate::components::{
+    Button, ButtonVariant, Card, CardContent, CardHeader, CardTitle, Checkbox, Input, Select,
+};
 
 const TX_TYPES: &[(&str, &str)] = &[
     ("income", "Ingreso"),
@@ -51,7 +53,7 @@ pub fn TransactionsPage() -> impl IntoView {
     let account_to = RwSignal::new(String::new());
     let amount = RwSignal::new(String::new());
     let is_confirmed = RwSignal::new(true);
-    let notes = RwSignal::new(None::<String>);
+    let notes = RwSignal::new(String::new());
     let form_error = RwSignal::new(None::<String>);
 
     let reset_form = move || {
@@ -64,11 +66,12 @@ pub fn TransactionsPage() -> impl IntoView {
         account_to.set(String::new());
         amount.set(String::new());
         is_confirmed.set(true);
-        notes.set(None);
+        notes.set(String::new());
         form_error.set(None);
     };
 
     let save = Action::new_local(move |_: &()| {
+        let notes_val = notes.get_untracked();
         let payload = TransactionPayload {
             date: date_to_rfc3339(&date.get_untracked()),
             description: description.get_untracked().trim().to_string(),
@@ -78,7 +81,7 @@ pub fn TransactionsPage() -> impl IntoView {
             account_to_id: opt_id(account_to.get_untracked()),
             amount: amount.get_untracked().trim().parse().unwrap_or(0.0),
             is_confirmed: is_confirmed.get_untracked(),
-            notes: notes.get_untracked(),
+            notes: (!notes_val.trim().is_empty()).then_some(notes_val),
         };
         let editing = editing.get_untracked();
         async move {
@@ -131,7 +134,7 @@ pub fn TransactionsPage() -> impl IntoView {
                 account_to.set(d.account_to_id.unwrap_or_default());
                 amount.set(format!("{}", d.amount));
                 is_confirmed.set(d.is_confirmed);
-                notes.set(d.notes);
+                notes.set(d.notes.unwrap_or_default());
                 editing.set(Some(id));
                 form_error.set(None);
             }
@@ -259,6 +262,18 @@ pub fn TransactionsPage() -> impl IntoView {
                                                     .collect::<Vec<_>>()
                                             }}
                                         </Select>
+                                    </div>
+                                    <div class="space-y-1 sm:col-span-2">
+                                        <label class="block text-sm font-medium text-slate-700">
+                                            "Notas"
+                                        </label>
+                                        <Input
+                                            value=notes
+                                            on_input=Callback::new(move |v| notes.set(v))
+                                        />
+                                    </div>
+                                    <div class="flex items-end">
+                                        <Checkbox checked=is_confirmed label="Confirmado" />
                                     </div>
                                     <div class="flex items-end gap-2">
                                         <Button disabled=pending>

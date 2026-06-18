@@ -45,6 +45,15 @@ pub(crate) fn load_category_options(target: RwSignal<Options>) {
     });
 }
 
+/// Load contact options (id → name) into `target` on mount.
+pub(crate) fn load_contact_options(target: RwSignal<Options>) {
+    spawn_local(async move {
+        if let Ok(v) = api::get_json::<Vec<api::Contact>>("/api/admin/contacts").await {
+            target.set(v.into_iter().map(|c| (c.id, c.name)).collect());
+        }
+    });
+}
+
 /// URL for another tenant: swap the leftmost host label for the company slug,
 /// preserving protocol and port. Company switching is a full navigation.
 pub(crate) fn switch_company_href(slug: &str) -> String {

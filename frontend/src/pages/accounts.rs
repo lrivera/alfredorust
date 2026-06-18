@@ -2,7 +2,9 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 
 use crate::api::{self, Account, AccountPayload, ApiError, Me};
-use crate::components::{Button, ButtonVariant, Card, CardContent, CardHeader, CardTitle, Input, Select};
+use crate::components::{
+    Button, ButtonVariant, Card, CardContent, CardHeader, CardTitle, Checkbox, Input, Select,
+};
 
 /// Account types and their Spanish labels. Values match the backend
 /// (`bank|cash|credit_card|investment|other`).
@@ -198,6 +200,18 @@ pub fn AccountsPage() -> impl IntoView {
                                             on_input=Callback::new(move |v| currency.set(v))
                                             placeholder="MXN"
                                         />
+                                    </div>
+                                    <div class="space-y-1 sm:col-span-2">
+                                        <label class="block text-sm font-medium text-slate-700">
+                                            "Notas"
+                                        </label>
+                                        <Input
+                                            value=notes
+                                            on_input=Callback::new(move |v| notes.set(v))
+                                        />
+                                    </div>
+                                    <div class="sm:col-span-2">
+                                        <Checkbox checked=is_active label="Activa" />
                                     </div>
                                     <div class="flex items-end gap-2">
                                         <Button disabled=pending>

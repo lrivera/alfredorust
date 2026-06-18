@@ -2,10 +2,10 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 
 use super::{
-    date_to_rfc3339, flow_label, load_account_options, load_category_options, money,
-    rfc3339_to_date, Options,
+    date_to_rfc3339, flow_label, load_account_options, load_category_options, load_contact_options,
+    money, rfc3339_to_date, Options,
 };
-use crate::api::{self, ApiError, Me, PlannedEntry, PlannedEntryPayload};
+use crate::api::{self, ApiError, Me, PlannedEntry, PlannedEntryPayPayload, PlannedEntryPayload};
 use crate::components::{Button, ButtonVariant, Card, CardContent, CardHeader, CardTitle, Input, Select};
 
 const STATUSES: &[(&str, &str)] = &[
@@ -34,19 +34,21 @@ pub fn PlannedEntriesPage() -> impl IntoView {
 
     let categories = RwSignal::new(Options::new());
     let accounts = RwSignal::new(Options::new());
+    let contacts = RwSignal::new(Options::new());
     load_category_options(categories);
     load_account_options(accounts);
+    load_contact_options(contacts);
 
     let editing = RwSignal::new(None::<String>);
     let name = RwSignal::new(String::new());
     let flow = RwSignal::new("expense".to_string());
     let category = RwSignal::new(String::new());
     let account = RwSignal::new(String::new());
+    let contact = RwSignal::new(String::new());
     let amount = RwSignal::new(String::new());
     let due = RwSignal::new(String::new());
     let status = RwSignal::new("planned".to_string());
-    let contact_id = RwSignal::new(None::<String>);
-    let notes = RwSignal::new(None::<String>);
+    let notes = RwSignal::new(String::new());
     let form_error = RwSignal::new(None::<String>);
 
     let reset_form = move || {
@@ -55,25 +57,27 @@ pub fn PlannedEntriesPage() -> impl IntoView {
         flow.set("expense".to_string());
         category.set(String::new());
         account.set(String::new());
+        contact.set(String::new());
         amount.set(String::new());
         due.set(String::new());
         status.set("planned".to_string());
-        contact_id.set(None);
-        notes.set(None);
+        notes.set(String::new());
         form_error.set(None);
     };
 
     let save = Action::new_local(move |_: &()| {
+        let contact_val = contact.get_untracked();
+        let notes_val = notes.get_untracked();
         let payload = PlannedEntryPayload {
             name: name.get_untracked().trim().to_string(),
             flow_type: flow.get_untracked(),
             category_id: category.get_untracked(),
             account_expected_id: account.get_untracked(),
-            contact_id: contact_id.get_untracked(),
+            contact_id: (!contact_val.is_empty()).then_some(contact_val),
             amount_estimated: amount.get_untracked().trim().parse().unwrap_or(0.0),
             due_date: date_to_rfc3339(&due.get_untracked()),
             status: status.get_untracked(),
-            notes: notes.get_untracked(),
+            notes: (!notes_val.trim().is_empty()).then_some(notes_val),
         };
         let editing = editing.get_untracked();
         async move {
@@ -128,8 +132,8 @@ pub fn PlannedEntriesPage() -> impl IntoView {
                 amount.set(format!("{}", d.amount_estimated));
                 due.set(rfc3339_to_date(&d.due_date));
                 status.set(d.status);
-                contact_id.set(d.contact_id);
-                notes.set(d.notes);
+                contact.set(d.contact_id.unwrap_or_default());
+                notes.set(d.notes.unwrap_or_default());
                 editing.set(Some(id));
                 form_error.set(None);
             }
@@ -141,6 +145,60 @@ pub fn PlannedEntriesPage() -> impl IntoView {
                 reload();
             }
         });
+    };
+
+    // --- pay flow: pay a single planned entry ----------------------------
+    let paying = RwSignal::new(None::<String>);
+    let pay_date = RwSignal::new(String::new());
+    let pay_amount = RwSignal::new(String::new());
+    let pay_account = RwSignal::new(String::new());
+    let pay_notes = RwSignal::new(String::new());
+    let pay_error = RwSignal::new(None::<String>);
+
+    let begin_pay = move |id: String| {
+        paying.set(Some(id));
+        pay_date.set(String::new());
+        pay_amount.set(String::new());
+        pay_account.set(String::new());
+        pay_notes.set(String::new());
+        pay_error.set(None);
+    };
+    let cancel_pay = move || paying.set(None);
+
+    let pay_action = Action::new_local(move |_: &()| {
+        let id = paying.get_untracked().unwrap_or_default();
+        let notes_val = pay_notes.get_untracked();
+        let payload = PlannedEntryPayPayload {
+            paid_at: date_to_rfc3339(&pay_date.get_untracked()),
+            amount: pay_amount.get_untracked().trim().parse().unwrap_or(0.0),
+            account_id: pay_account.get_untracked(),
+            notes: (!notes_val.trim().is_empty()).then_some(notes_val),
+        };
+        async move { api::post_json(&format!("/api/admin/planned-entries/{id}/pay"), &payload).await }
+    });
+
+    Effect::new(move |_| {
+        if let Some(r) = pay_action.value().get() {
+            match r {
+                Ok(()) => {
+                    paying.set(None);
+                    reload();
+                }
+                Err(ApiError::Forbidden) => pay_error.set(Some("No tienes permiso".into())),
+                Err(_) => pay_error.set(Some("No se pudo registrar el pago".into())),
+            }
+        }
+    });
+
+    let pay_pending = pay_action.pending();
+    let pay_submit = move |ev: web_sys::SubmitEvent| {
+        ev.prevent_default();
+        if pay_date.get().trim().is_empty() || pay_account.get().is_empty() {
+            pay_error.set(Some("Completa fecha y cuenta".into()));
+            return;
+        }
+        pay_error.set(None);
+        pay_action.dispatch(());
     };
 
     view! {
@@ -250,6 +308,32 @@ pub fn PlannedEntriesPage() -> impl IntoView {
                                             required=true
                                         />
                                     </div>
+                                    <div class="space-y-1">
+                                        <label class="block text-sm font-medium text-slate-700">
+                                            "Contacto (opcional)"
+                                        </label>
+                                        <Select value=contact>
+                                            <option value="">"— Ninguno —"</option>
+                                            {move || {
+                                                contacts
+                                                    .get()
+                                                    .into_iter()
+                                                    .map(|(id, label)| {
+                                                        view! { <option value=id>{label}</option> }
+                                                    })
+                                                    .collect::<Vec<_>>()
+                                            }}
+                                        </Select>
+                                    </div>
+                                    <div class="space-y-1 sm:col-span-2">
+                                        <label class="block text-sm font-medium text-slate-700">
+                                            "Notas"
+                                        </label>
+                                        <Input
+                                            value=notes
+                                            on_input=Callback::new(move |v| notes.set(v))
+                                        />
+                                    </div>
                                     <div class="flex items-end gap-2">
                                         <Button disabled=pending>
                                             {move || {
@@ -295,6 +379,91 @@ pub fn PlannedEntriesPage() -> impl IntoView {
                 } else {
                     ().into_any()
                 }
+            }}
+
+            // Pay form, shown when paying a specific entry.
+            {move || {
+                paying
+                    .get()
+                    .map(|_| {
+                        view! {
+                            <Card class="max-w-2xl border-emerald-300">
+                                <CardHeader>
+                                    <CardTitle>"Registrar pago"</CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <form on:submit=pay_submit class="grid gap-3 sm:grid-cols-2">
+                                        <div class="space-y-1">
+                                            <label class="block text-sm font-medium text-slate-700">
+                                                "Fecha de pago"
+                                            </label>
+                                            <Input
+                                                value=pay_date
+                                                on_input=Callback::new(move |v| pay_date.set(v))
+                                                r#type="date"
+                                                required=true
+                                            />
+                                        </div>
+                                        <div class="space-y-1">
+                                            <label class="block text-sm font-medium text-slate-700">
+                                                "Monto real pagado"
+                                            </label>
+                                            <Input
+                                                value=pay_amount
+                                                on_input=Callback::new(move |v| pay_amount.set(v))
+                                                inputmode="decimal"
+                                                placeholder="0.00"
+                                            />
+                                        </div>
+                                        <div class="space-y-1">
+                                            <label class="block text-sm font-medium text-slate-700">
+                                                "Cuenta"
+                                            </label>
+                                            <Select value=pay_account>
+                                                <option value="">"— Selecciona —"</option>
+                                                {move || {
+                                                    accounts
+                                                        .get()
+                                                        .into_iter()
+                                                        .map(|(id, label)| {
+                                                            view! { <option value=id>{label}</option> }
+                                                        })
+                                                        .collect::<Vec<_>>()
+                                                }}
+                                            </Select>
+                                        </div>
+                                        <div class="space-y-1">
+                                            <label class="block text-sm font-medium text-slate-700">
+                                                "Notas"
+                                            </label>
+                                            <Input
+                                                value=pay_notes
+                                                on_input=Callback::new(move |v| pay_notes.set(v))
+                                            />
+                                        </div>
+                                        <div class="flex items-end gap-2 sm:col-span-2">
+                                            <Button disabled=pay_pending>
+                                                {move || {
+                                                    if pay_pending.get() { "Pagando…" } else { "Confirmar pago" }
+                                                }}
+                                            </Button>
+                                            <Button
+                                                variant=ButtonVariant::Outline
+                                                on:click=move |_| cancel_pay()
+                                            >
+                                                "Cancelar"
+                                            </Button>
+                                            {move || {
+                                                pay_error
+                                                    .get()
+                                                    .map(|m| view! { <p class="text-sm text-red-600">{m}</p> })
+                                            }}
+                                        </div>
+                                    </form>
+                                </CardContent>
+                            </Card>
+                        }
+                    })
             }}
 
             {move || match items.get() {
@@ -344,7 +513,15 @@ pub fn PlannedEntriesPage() -> impl IntoView {
                                                             if is_admin {
                                                                 let eid = id.clone();
                                                                 let did = id.clone();
+                                                                let pid = id.clone();
                                                                 view! {
+                                                                    <Button
+                                                                        variant=ButtonVariant::Ghost
+                                                                        class="text-emerald-700 hover:bg-emerald-50"
+                                                                        on:click=move |_| begin_pay(pid.clone())
+                                                                    >
+                                                                        "Pagar"
+                                                                    </Button>
                                                                     <Button
                                                                         variant=ButtonVariant::Ghost
                                                                         on:click=move |_| begin_edit(eid.clone())
