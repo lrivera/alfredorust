@@ -3,6 +3,12 @@ name = "alfredodev"
 version = "0.1.0"
 edition = "2024"
 
+# spcli lives in its own workspace member so it builds with only light, pure-Rust
+# deps (rustls) and cross-compiles cleanly — it does not pull this crate's
+# openssl/mongodb/typst dependencies.
+[workspace]
+members = ["crates/spcli"]
+
 [dependencies]
 axum = { version = "0.8.6", features = ["macros", "multipart"] }
 axum-extra = { version = "0.9", features = ["typed-routing"] }

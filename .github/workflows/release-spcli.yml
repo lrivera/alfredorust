@@ -52,7 +52,7 @@ jobs:
           key: spcli-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}
 
       - name: Build spcli
-        run: cargo build --release --bin spcli --target ${{ matrix.target }}
+        run: cargo build --release -p spcli --target ${{ matrix.target }}
 
       - name: Resolve tag
         id: tag
