@@ -200,8 +200,7 @@ fn Sidebar() -> impl IntoView {
     let me = use_context::<Me>().expect("Me context");
     let is_admin = me.role == "admin";
     let link = "block rounded-md px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 \
-        aria-[current=page]:bg-blue-50 aria-[current=page]:text-blue-700 \
-        aria-[current=page]:font-semibold";
+        aria-[current=page]:bg-slate-200 aria-[current=page]:font-semibold";
 
     view! {
         <aside class="w-56 shrink-0 border-r border-slate-200 bg-white p-3">
