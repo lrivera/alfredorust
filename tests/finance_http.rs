@@ -1936,3 +1936,74 @@ async fn duplicate_username_is_rejected() {
 
     common::teardown(Some(ctx)).await;
 }
+/// Generating planned entries from an INACTIVE recurring plan is rejected with a
+/// clear message (this is the 400 the SPA must surface, not a generic error).
+#[tokio::test]
+async fn recurring_plan_generate_rejects_inactive() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let shared = Arc::new(state.clone());
+
+    let company = create_company(&state, "Recur Inactive Co", "recur-inactive-co", "MXN", true, None)
+        .await
+        .unwrap();
+    let admin_id = create_user(
+        &state,
+        "recur-inactive-admin@example.com",
+        "SECRET",
+        &[(company.clone(), UserRole::Admin)],
+    )
+    .await
+    .unwrap();
+    let admin = get_user_by_id(&state, &admin_id).await.unwrap().unwrap();
+    let token = create_session(&state, &admin.username).await.unwrap();
+    let host = "recur-inactive-co.miapp.local";
+    let category = create_category(&state, &company, "Cat", FlowType::Expense, None, None)
+        .await
+        .unwrap();
+    let account = create_account(&state, &company, "Acc", AccountType::Bank, "MXN", true, None)
+        .await
+        .unwrap();
+
+    // Create an INACTIVE plan.
+    let (status, body) = post_json_with_cookie(
+        build_app(shared.clone()),
+        host,
+        "/api/admin/recurring-plans",
+        &token,
+        serde_json::json!({
+            "name": "Inactive plan",
+            "flow_type": "expense",
+            "category_id": category.to_hex(),
+            "account_expected_id": account.to_hex(),
+            "amount_estimated": 100.0,
+            "frequency": "monthly",
+            "start_date": "2026-07-01T00:00:00Z",
+            "is_active": false,
+            "version": 1
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "body: {body}");
+    let plan_id = serde_json::from_str::<serde_json::Value>(&body).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Generate → rejected with an explanatory message.
+    let (status, body) = post_json_with_cookie(
+        build_app(shared.clone()),
+        host,
+        &format!("/api/admin/recurring-plans/{plan_id}/generate"),
+        &token,
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "body: {body}");
+    assert!(body.contains("inactive"), "expected an 'inactive' reason, got: {body}");
+
+    common::teardown(Some(ctx)).await;
+}

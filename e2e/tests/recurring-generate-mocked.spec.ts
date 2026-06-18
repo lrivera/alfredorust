@@ -50,4 +50,34 @@ test.describe("recurring plans / generate (mocked API)", () => {
     await expect(page.getByText("Entradas generadas")).toBeVisible();
     expect(generateHit).toBe(true);
   });
+
+  test("surfaces the server reason when generate fails", async ({ page }) => {
+    const plans = [
+      {
+        id: "rp1",
+        name: "Renta",
+        flow_type: "expense",
+        amount_estimated: 1000,
+        frequency: "monthly",
+        start_date: "2026-01-01T00:00:00Z",
+        is_active: false,
+      },
+    ];
+    await page.route("**/api/me", (r) => r.fulfill({ json: ADMIN_ME }));
+    await page.route("**/api/admin/categories", (r) => r.fulfill({ json: [] }));
+    await page.route("**/api/admin/accounts", (r) => r.fulfill({ json: [] }));
+    await page.route("**/api/admin/contacts", (r) => r.fulfill({ json: [] }));
+    await page.route("**/api/admin/recurring-plans/*/generate", (route) =>
+      route.fulfill({ status: 400, json: { error: "recurring plan is inactive" } }),
+    );
+    await page.route("**/api/admin/recurring-plans", (r) => r.fulfill({ json: plans }));
+
+    await page.goto("/v2/recurring-plans");
+    await page
+      .getByRole("row", { name: /Renta/ })
+      .getByRole("button", { name: "Generar" })
+      .click();
+    // The real backend reason is shown, not a generic message.
+    await expect(page.getByText("No se pudo generar: recurring plan is inactive")).toBeVisible();
+  });
 });
