@@ -138,8 +138,24 @@ pub(crate) fn flow_label(value: &str) -> &str {
     }
 }
 
+/// Format a currency/value amount for display: `$1,232,543.90`, with thousands
+/// separators, two decimals, and a leading `-$` for negatives. Reused
+/// everywhere money/value is shown so it stays consistent.
 pub(crate) fn money(n: f64) -> String {
-    format!("{n:.2}")
+    let neg = n < 0.0;
+    let cents = (n.abs() * 100.0).round() as u64;
+    let whole = (cents / 100).to_string();
+    let frac = cents % 100;
+    let bytes = whole.as_bytes();
+    let len = bytes.len();
+    let mut grouped = String::new();
+    for (i, b) in bytes.iter().enumerate() {
+        if i > 0 && (len - i) % 3 == 0 {
+            grouped.push(',');
+        }
+        grouped.push(*b as char);
+    }
+    format!("{}${grouped}.{frac:02}", if neg { "-" } else { "" })
 }
 
 
@@ -231,8 +247,11 @@ mod tests {
         assert_eq!(flow_label("income"), "Ingreso");
         assert_eq!(flow_label("expense"), "Egreso");
         assert_eq!(flow_label("weird"), "weird");
-        assert_eq!(money(1234.5), "1234.50");
-        assert_eq!(money(0.0), "0.00");
+        assert_eq!(money(1234.5), "$1,234.50");
+        assert_eq!(money(0.0), "$0.00");
+        assert_eq!(money(1232543.9), "$1,232,543.90");
+        assert_eq!(money(-2100.4), "-$2,100.40");
+        assert_eq!(money(999.0), "$999.00");
     }
 
 }

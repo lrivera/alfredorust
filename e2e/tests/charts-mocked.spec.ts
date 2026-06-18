@@ -37,7 +37,7 @@ test.describe("finance charts (mocked API)", () => {
     await expect(page.getByText("Ingresos", { exact: true })).toBeVisible();
     await expect(page.getByText("Por categoría", { exact: true })).toBeVisible();
     // KPI value + at least the two chart SVGs (line + donut).
-    await expect(page.getByText("1000.00").first()).toBeVisible();
+    await expect(page.getByText("$1,000.00").first()).toBeVisible();
     expect(await page.locator("svg").count()).toBeGreaterThanOrEqual(2);
   });
 

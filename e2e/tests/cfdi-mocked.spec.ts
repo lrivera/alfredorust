@@ -47,6 +47,6 @@ test.describe("cfdi (mocked API)", () => {
     await page.goto("/v2/cfdi");
     await expect(page.getByRole("cell", { name: "A-100" })).toBeVisible();
     await expect(page.getByRole("cell", { name: "Emitido" })).toBeVisible();
-    await expect(page.getByRole("cell", { name: /1160\.00/ })).toBeVisible();
+    await expect(page.getByRole("cell", { name: /\$1,160\.00/ })).toBeVisible();
   });
 });
