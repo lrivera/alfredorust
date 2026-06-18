@@ -127,8 +127,11 @@ test.describe("admin / users (mocked API)", () => {
       r.fulfill({ contentType: "image/png", body: png }),
     );
     await page.route("**/api/admin/users", (r) => r.fulfill({ json: users }));
-    // Detail GET wins for the single-segment path (registered last).
-    await page.route("**/api/admin/users/*", (r) => r.fulfill({ json: users[0] }));
+    // Detail GET wins for the single-segment path (registered last). The detail
+    // endpoint also returns the secret for copying.
+    await page.route("**/api/admin/users/*", (r) =>
+      r.fulfill({ json: { ...users[0], secret: "JBSWY3DPEHPK3PXP" } }),
+    );
 
     await page.goto("/v2/users");
     await page
@@ -140,6 +143,8 @@ test.describe("admin / users (mocked API)", () => {
     const qr = page.getByRole("img", { name: "Código QR TOTP" });
     await expect(qr).toBeVisible();
     await expect(qr).toHaveAttribute("src", "/admin/users/u2/qrcode");
+    // The secret is shown as copyable text under the QR.
+    await expect(page.getByText("JBSWY3DPEHPK3PXP")).toBeVisible();
   });
 
   test("duplicate username is reported", async ({ page }) => {

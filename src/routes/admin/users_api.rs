@@ -49,6 +49,10 @@ pub struct UserRowData {
     pub role: String,
     pub companies: Vec<String>,
     pub memberships: Vec<UserMembershipData>,
+    /// TOTP secret, only populated by the single-user detail endpoint (so an
+    /// admin can copy it when provisioning); omitted from the list.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub secret: String,
 }
 
 #[derive(Deserialize, utoipa::ToSchema)]
@@ -127,6 +131,7 @@ fn user_row_data(user: UserWithCompany) -> UserRowData {
         role: user.role.as_str().to_string(),
         companies: user.company_names.clone(),
         memberships,
+        secret: String::new(),
     }
 }
 
@@ -216,7 +221,11 @@ pub async fn api_user_detail(
     if !user_shares_admin_company(&user.company_ids, &admin_companies) {
         return Err(StatusCode::FORBIDDEN);
     }
-    Ok(Json(user_row_data(user)))
+    // Detail view exposes the secret so the admin can copy it alongside the QR.
+    let secret = user.secret.clone();
+    let mut row = user_row_data(user);
+    row.secret = secret;
+    Ok(Json(row))
 }
 
 #[utoipa::path(

@@ -69,6 +69,9 @@ pub fn UsersPage() -> impl IntoView {
     let editing = RwSignal::new(None::<String>);
     let email = RwSignal::new(String::new());
     let secret = RwSignal::new(String::new());
+    // The existing secret of the user being edited, shown (read-only) under the
+    // QR so it can be copied. Empty when creating.
+    let secret_view = RwSignal::new(String::new());
     let memberships = RwSignal::new(Vec::<MembershipState>::new());
     let form_error = RwSignal::new(None::<String>);
 
@@ -83,6 +86,7 @@ pub fn UsersPage() -> impl IntoView {
         editing.set(None);
         email.set(String::new());
         secret.set(String::new());
+        secret_view.set(String::new());
         memberships.update(|rows| {
             for r in rows.iter_mut() {
                 r.included = false;
@@ -162,6 +166,7 @@ pub fn UsersPage() -> impl IntoView {
             if let Ok(d) = api::get_json::<UserRowData>(&format!("/api/admin/users/{id}")).await {
                 email.set(d.username);
                 secret.set(String::new());
+                secret_view.set(d.secret.clone());
                 memberships.update(|rows| {
                     for r in rows.iter_mut() {
                         if let Some(m) =
@@ -272,6 +277,22 @@ pub fn UsersPage() -> impl IntoView {
                                             <p class="text-xs text-slate-500">
                                                 "El usuario escanea este código para configurar su autenticador."
                                             </p>
+                                            {move || {
+                                                let s = secret_view.get();
+                                                (!s.is_empty())
+                                                    .then(|| {
+                                                        view! {
+                                                            <div class="space-y-1">
+                                                                <label class="block text-xs font-medium text-slate-500">
+                                                                    "Secreto TOTP (texto)"
+                                                                </label>
+                                                                <code class="block select-all rounded border border-slate-200 bg-slate-50 px-2 py-1 font-mono text-xs break-all text-slate-700">
+                                                                    {s}
+                                                                </code>
+                                                            </div>
+                                                        }
+                                                    })
+                                            }}
                                         </div>
                                     }
                                 })

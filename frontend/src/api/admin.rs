@@ -61,6 +61,10 @@ pub struct UserRowData {
     pub companies: Vec<String>,
     #[serde(default)]
     pub memberships: Vec<UserMembershipData>,
+    /// Only present on the single-user detail endpoint (for copying alongside
+    /// the QR); empty in the list.
+    #[serde(default)]
+    pub secret: String,
 }
 
 /// Membership in a create/update payload. Mirrors `UserMembershipPayload`.
