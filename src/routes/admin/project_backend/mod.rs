@@ -1,19 +1,19 @@
-use std::{
+pub(crate) use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
 };
 
-use askama::Template;
-use axum::{
+pub(crate) use askama::Template;
+pub(crate) use axum::{
     Form, Json,
     extract::{Path, Query, State},
     http::StatusCode,
     response::{Html, IntoResponse, Redirect, Response},
 };
-use bson::{DateTime, oid::ObjectId};
-use serde::{Deserialize, Serialize};
+pub(crate) use bson::{DateTime, oid::ObjectId};
+pub(crate) use serde::{Deserialize, Serialize};
 
-use crate::{
+pub(crate) use crate::{
     models::{
         ConceptStatus, ProjectConcept, ResourceUsage, ResourceUsageAllocation, UserPermission,
         UserRole,
@@ -36,17 +36,17 @@ use crate::{
 
 use super::finance::helpers::{SimpleOption, require_active_company, require_admin_active};
 
-fn render<T: Template>(tpl: T) -> Result<Html<String>, StatusCode> {
+pub(crate) fn render<T: Template>(tpl: T) -> Result<Html<String>, StatusCode> {
     tpl.render()
         .map(Html)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
 
-fn json_error(status: StatusCode, message: &str) -> Response {
+pub(crate) fn json_error(status: StatusCode, message: &str) -> Response {
     (status, Json(serde_json::json!({ "error": message }))).into_response()
 }
 
-fn parse_oid(id: &str) -> Result<ObjectId, Response> {
+pub(crate) fn parse_oid(id: &str) -> Result<ObjectId, Response> {
     ObjectId::parse_str(id).map_err(|_| json_error(StatusCode::BAD_REQUEST, "invalid id"))
 }
 
@@ -65,13 +65,13 @@ pub struct ConceptStatusPayload {
     pub is_active: bool,
 }
 
-fn default_true() -> bool {
+pub(crate) fn default_true() -> bool {
     true
 }
 
 // Flat JSON DTOs so these endpoints return clean `id`/ISO-8601 fields like every
 // other API, instead of raw MongoDB extended JSON (`_id.$oid`, `$date`).
-fn iso(dt: DateTime) -> String {
+pub(crate) fn iso(dt: DateTime) -> String {
     dt.to_chrono().to_rfc3339()
 }
 
@@ -90,7 +90,7 @@ pub struct ConceptStatusData {
     pub updated_at: Option<String>,
 }
 
-fn concept_status_data(s: ConceptStatus) -> Option<ConceptStatusData> {
+pub(crate) fn concept_status_data(s: ConceptStatus) -> Option<ConceptStatusData> {
     Some(ConceptStatusData {
         id: s.id?.to_hex(),
         company_id: s.company_id.to_hex(),
@@ -124,7 +124,7 @@ pub struct ProjectConceptData {
     pub updated_at: Option<String>,
 }
 
-fn project_concept_data(c: ProjectConcept) -> Option<ProjectConceptData> {
+pub(crate) fn project_concept_data(c: ProjectConcept) -> Option<ProjectConceptData> {
     Some(ProjectConceptData {
         id: c.id?.to_hex(),
         company_id: c.company_id.to_hex(),
@@ -161,7 +161,7 @@ pub struct ResourceUsageData {
     pub updated_at: Option<String>,
 }
 
-fn resource_usage_data(u: ResourceUsage) -> Option<ResourceUsageData> {
+pub(crate) fn resource_usage_data(u: ResourceUsage) -> Option<ResourceUsageData> {
     Some(ResourceUsageData {
         id: u.id?.to_hex(),
         company_id: u.company_id.to_hex(),
@@ -195,7 +195,7 @@ pub struct ResourceUsageAllocationData {
     pub updated_at: Option<String>,
 }
 
-fn resource_usage_allocation_data(a: ResourceUsageAllocation) -> Option<ResourceUsageAllocationData> {
+pub(crate) fn resource_usage_allocation_data(a: ResourceUsageAllocation) -> Option<ResourceUsageAllocationData> {
     Some(ResourceUsageAllocationData {
         id: a.id?.to_hex(),
         company_id: a.company_id.to_hex(),
@@ -651,7 +651,7 @@ pub struct ResourceUsagePayload {
     pub notes: Option<String>,
 }
 
-fn parse_datetime(value: &str) -> Result<DateTime, Response> {
+pub(crate) fn parse_datetime(value: &str) -> Result<DateTime, Response> {
     DateTime::parse_rfc3339_str(value)
         .map_err(|_| json_error(StatusCode::BAD_REQUEST, "invalid datetime"))
 }
@@ -1004,11 +1004,11 @@ pub async fn api_resource_usages_delete(
 
 #[derive(Template)]
 #[template(path = "admin/concept_statuses/index.html")]
-struct ConceptStatusesTemplate {
+pub(crate) struct ConceptStatusesTemplate {
     statuses: Vec<ConceptStatusRow>,
 }
 
-struct ConceptStatusRow {
+pub(crate) struct ConceptStatusRow {
     id: String,
     name: String,
     position: i32,
@@ -1021,7 +1021,7 @@ struct ConceptStatusRow {
 
 #[derive(Template)]
 #[template(path = "admin/concept_statuses/form.html")]
-struct ConceptStatusFormTemplate {
+pub(crate) struct ConceptStatusFormTemplate {
     action: String,
     name: String,
     position: String,
@@ -1203,7 +1203,7 @@ pub async fn concept_statuses_delete_form(
 
 #[derive(Template)]
 #[template(path = "admin/projects/detail.html")]
-struct ProjectDetailTemplate {
+pub(crate) struct ProjectDetailTemplate {
     project_id: String,
     title: String,
     description: String,
@@ -1213,13 +1213,13 @@ struct ProjectDetailTemplate {
     can_view_money: bool,
 }
 
-struct ProjectSummaryRow {
+pub(crate) struct ProjectSummaryRow {
     name: String,
     quantity: String,
     unit: String,
 }
 
-struct ProjectConceptRow {
+pub(crate) struct ProjectConceptRow {
     id: String,
     name: String,
     description: String,
@@ -1233,7 +1233,7 @@ struct ProjectConceptRow {
 
 #[derive(Template)]
 #[template(path = "admin/project_concepts/form.html")]
-struct ProjectConceptFormTemplate {
+pub(crate) struct ProjectConceptFormTemplate {
     action: String,
     project_id: String,
     name: String,
@@ -1538,7 +1538,7 @@ pub async fn project_concepts_delete_form(
 
 #[derive(Template)]
 #[template(path = "admin/resource_usages/index.html")]
-struct ResourceUsagesTemplate {
+pub(crate) struct ResourceUsagesTemplate {
     date: String,
     statuses: Vec<SimpleOption>,
     selected_status_id: String,
@@ -1549,12 +1549,12 @@ struct ResourceUsagesTemplate {
     can_edit: bool,
 }
 
-struct HourHeader {
+pub(crate) struct HourHeader {
     hour: i32,
     is_work_hour: bool,
 }
 
-struct ResourceUsageGridRow {
+pub(crate) struct ResourceUsageGridRow {
     concept_id: String,
     project_id: String,
     show_project_header: bool,
@@ -1566,14 +1566,14 @@ struct ResourceUsageGridRow {
     cells: Vec<ResourceUsageGridCell>,
 }
 
-struct ResourceUsageGridCell {
+pub(crate) struct ResourceUsageGridCell {
     hour: i32,
     is_work_hour: bool,
     resources: Vec<ResourceUsageGridResource>,
     labels: String,
 }
 
-struct ResourceUsageGridResource {
+pub(crate) struct ResourceUsageGridResource {
     field_name: String,
     resource_id: String,
     label: String,
@@ -1582,7 +1582,7 @@ struct ResourceUsageGridResource {
 
 #[derive(Template)]
 #[template(path = "admin/resource_usages/form.html")]
-struct ResourceUsageFormTemplate {
+pub(crate) struct ResourceUsageFormTemplate {
     action: String,
     resources: Vec<SimpleOption>,
     concepts: Vec<SimpleOption>,
@@ -1859,7 +1859,7 @@ pub async fn resource_usages_index(
     })
 }
 
-fn can_save_resource_usage_date(
+pub(crate) fn can_save_resource_usage_date(
     role: &UserRole,
     permissions: &[UserPermission],
     date: &str,
@@ -2535,7 +2535,7 @@ async fn concept_options(
     Ok(out)
 }
 
-fn clean_optional(value: String) -> Option<String> {
+pub(crate) fn clean_optional(value: String) -> Option<String> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
         None
@@ -2544,7 +2544,7 @@ fn clean_optional(value: String) -> Option<String> {
     }
 }
 
-fn format_quantity(value: f64) -> String {
+pub(crate) fn format_quantity(value: f64) -> String {
     if (value.fract()).abs() < 0.0001 {
         format!("{value:.0}")
     } else {
@@ -2552,7 +2552,7 @@ fn format_quantity(value: f64) -> String {
     }
 }
 
-fn format_html_datetime(dt: &DateTime) -> String {
+pub(crate) fn format_html_datetime(dt: &DateTime) -> String {
     let ms = dt.timestamp_millis();
     let secs = ms / 1000;
     chrono::DateTime::from_timestamp(secs, 0)
@@ -2561,20 +2561,20 @@ fn format_html_datetime(dt: &DateTime) -> String {
         .to_string()
 }
 
-fn parse_html_datetime(value: &str) -> Option<DateTime> {
+pub(crate) fn parse_html_datetime(value: &str) -> Option<DateTime> {
     chrono::NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M")
         .ok()
         .map(|dt| DateTime::from_millis(dt.and_utc().timestamp_millis()))
 }
 
-fn parse_html_date(value: &str) -> Option<DateTime> {
+pub(crate) fn parse_html_date(value: &str) -> Option<DateTime> {
     chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d")
         .ok()
         .and_then(|date| date.and_hms_opt(0, 0, 0))
         .map(|dt| DateTime::from_millis(dt.and_utc().timestamp_millis()))
 }
 
-fn add_hours_for_route(date_start: DateTime, hour: i32) -> Option<DateTime> {
+pub(crate) fn add_hours_for_route(date_start: DateTime, hour: i32) -> Option<DateTime> {
     if !(0..=24).contains(&hour) {
         return None;
     }
