@@ -203,6 +203,12 @@ fn AuthedApp(me: Me, auth: RwSignal<Auth>) -> impl IntoView {
 fn Sidebar() -> impl IntoView {
     let me = use_context::<Me>().expect("Me context");
     let is_admin = me.role == "admin";
+    // Per-permission visibility for staff (admins implicitly have everything),
+    // mirroring the v1 nav gating.
+    let can_timeline = is_admin || me.can("view_timeline");
+    let can_projects = is_admin || me.can("view_projects");
+    let can_resource_usage =
+        is_admin || me.can("edit_resource_usage_today") || me.can("view_resource_usage_history");
     let link = "block rounded-md px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 \
         aria-[current=page]:bg-slate-200 aria-[current=page]:font-semibold";
 
@@ -216,12 +222,49 @@ fn Sidebar() -> impl IntoView {
                 <A href="/v2/" attr:class=link>
                     "Inicio"
                 </A>
-                <A href="/v2/tiempo" attr:class=link>
-                    "Tiempo"
-                </A>
+                {move || {
+                    can_timeline
+                        .then(|| {
+                            view! {
+                                <A href="/v2/tiempo" attr:class=link>
+                                    "Tiempo"
+                                </A>
+                            }
+                        })
+                }}
                 <A href="/v2/account" attr:class=link>
                     "Mi cuenta"
                 </A>
+                // Staff see only the operations screens their permissions unlock;
+                // admins get the full menu below.
+                {move || {
+                    if !is_admin && (can_projects || can_resource_usage) {
+                        view! {
+                            <p class="px-3 pt-3 pb-1 text-xs font-semibold uppercase text-slate-400">
+                                "Operaciones"
+                            </p>
+                            {can_projects
+                                .then(|| {
+                                    view! {
+                                        <A href="/v2/projects" attr:class=link>
+                                            "Proyectos"
+                                        </A>
+                                    }
+                                })}
+                            {can_resource_usage
+                                .then(|| {
+                                    view! {
+                                        <A href="/v2/resource-usages" attr:class=link>
+                                            "Uso de recursos (grid)"
+                                        </A>
+                                    }
+                                })}
+                        }
+                            .into_any()
+                    } else {
+                        ().into_any()
+                    }
+                }}
                 {move || {
                     if is_admin {
                         view! {

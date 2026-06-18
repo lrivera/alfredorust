@@ -21,6 +21,9 @@ fn opt_num(s: &str) -> Option<f64> {
 pub fn ProjectsPage() -> impl IntoView {
     let me = use_context::<Me>().expect("Me context");
     let is_admin = me.role == "admin";
+    // Without `view_project_money` the budget column is hidden (v1 parity); the
+    // backend also nulls the amount for these users.
+    let can_money = is_admin || me.can("view_project_money");
 
     let items = RwSignal::new(None::<Result<Vec<ProjectRow>, ApiError>>);
     let reload = move || {
@@ -297,7 +300,10 @@ pub fn ProjectsPage() -> impl IntoView {
                                         <th class="px-4 py-2 font-medium">"Título"</th>
                                         <th class="px-4 py-2 font-medium">"Estado"</th>
                                         <th class="px-4 py-2 font-medium">"Prioridad"</th>
-                                        <th class="px-4 py-2 font-medium">"Presupuesto"</th>
+                                        {can_money
+                                            .then(|| {
+                                                view! { <th class="px-4 py-2 font-medium">"Presupuesto"</th> }
+                                            })}
                                         <th class="px-4 py-2 font-medium">"Fecha límite"</th>
                                         <th class="px-4 py-2"></th>
                                     </tr>
@@ -324,7 +330,8 @@ pub fn ProjectsPage() -> impl IntoView {
                                                     <td class="px-4 py-2">{p.title}</td>
                                                     <td class="px-4 py-2">{status}</td>
                                                     <td class="px-4 py-2">{prio}</td>
-                                                    <td class="px-4 py-2">{budget}</td>
+                                                    {can_money
+                                                        .then(|| view! { <td class="px-4 py-2">{budget}</td> })}
                                                     <td class="px-4 py-2 text-slate-500">{sched}</td>
                                                     <td class="px-4 py-2 text-right">
                                                         {
