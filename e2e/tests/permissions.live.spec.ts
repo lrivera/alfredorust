@@ -22,8 +22,12 @@ const root = (process.env.SPCLI_BASE_URL ?? "https://app.alfredorivera.dev").rep
 );
 const test2Host = `https://test2.${root}`;
 
-const STAFF_EMAIL = "test2-staff@example.com";
-const STAFF_SECRET = "JBSWY3DPEHPK3PXP"; // throwaway base32; deleted with the user
+// Unique per run: test2 is recreated each time with a fresh id, so a fixed
+// email would accumulate orphaned duplicates that shadow login by email.
+const STAFF_EMAIL = `test2-staff-${Date.now()}@example.com`;
+// Throwaway base32, 32 chars = 20 bytes (the server requires >= 16 bytes).
+// Worthless once the user is deleted at the end.
+const STAFF_SECRET = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP";
 
 test.describe("staff permissions (live · test tenant · self-cleaning)", () => {
   test("a staff user sees only what its permissions allow", async ({ request, browser }) => {
@@ -48,27 +52,17 @@ test.describe("staff permissions (live · test tenant · self-cleaning)", () => 
       role: "staff",
       permissions: ["view_projects", "view_timeline"],
     };
-    const usersRes = await request.get(`${test2Host}/api/admin/users`);
-    expect(usersRes.ok(), await usersRes.text()).toBeTruthy();
-    let userId: string | undefined = (await usersRes.json()).find(
-      (u: any) => u.email === STAFF_EMAIL,
-    )?.id;
-    if (userId) {
-      const upd = await request.post(`${test2Host}/api/admin/users/${userId}/update`, {
-        data: { email: STAFF_EMAIL, secret: STAFF_SECRET, memberships: [membership] },
-      });
-      expect(upd.ok(), await upd.text()).toBeTruthy();
-    } else {
-      const create = await request.post(`${test2Host}/api/admin/users`, {
-        data: { email: STAFF_EMAIL, secret: STAFF_SECRET, memberships: [membership] },
-      });
-      expect(create.status(), await create.text()).toBe(201);
-      userId = (await create.json()).id;
-    }
+    const create = await request.post(`${test2Host}/api/admin/users`, {
+      data: { email: STAFF_EMAIL, secret: STAFF_SECRET, memberships: [membership] },
+    });
+    expect(create.status(), await create.text()).toBe(201);
+    const userId: string = (await create.json()).id;
     expect(userId).toBeTruthy();
 
-    // 3. Log in as the staff user in a clean context on the test2 host.
-    const ctx = await browser.newContext();
+    // 3. Log in as the staff user in a guaranteed-clean context on test2.
+    //    (Don't log in via the `request` fixture — that would replace the admin
+    //    session cookie it carries and break the cleanup below.)
+    const ctx = await browser.newContext({ storageState: { cookies: [], origins: [] } });
     try {
       const page = await ctx.newPage();
       await page.goto(`${test2Host}/v2/`);
@@ -78,6 +72,11 @@ test.describe("staff permissions (live · test tenant · self-cleaning)", () => 
         .fill(authenticator.generate(STAFF_SECRET));
       await page.getByRole("button", { name: "Entrar" }).click();
       await expect(page.getByRole("button", { name: "Salir" })).toBeVisible();
+
+      // Sanity: we're really logged in as the staff user on test2.
+      const me = await page.evaluate(() => fetch("/api/me").then((r) => r.json()));
+      expect(me.role, JSON.stringify(me)).toBe("staff");
+      expect(me.company_slug).toBe("test2");
 
       const link = (name: string) =>
         page.locator("aside").getByRole("link", { name, exact: true });
