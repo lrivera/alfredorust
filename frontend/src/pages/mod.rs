@@ -1,0 +1,88 @@
+//! Routed screens. Each page reads `Me` from context and talks to the backend
+//! through the typed `api` client.
+
+mod accounts;
+mod categories;
+mod contacts;
+mod dashboard;
+mod forecasts;
+mod planned_entries;
+mod recurring_plans;
+mod transactions;
+
+pub use accounts::AccountsPage;
+pub use categories::CategoriesPage;
+pub use contacts::ContactsPage;
+pub use dashboard::Dashboard;
+pub use forecasts::ForecastsPage;
+pub use planned_entries::PlannedEntriesPage;
+pub use recurring_plans::RecurringPlansPage;
+pub use transactions::TransactionsPage;
+
+use leptos::prelude::*;
+use leptos::task::spawn_local;
+
+use crate::api;
+
+/// An `(id, label)` option for a `<select>`.
+pub(crate) type Options = Vec<(String, String)>;
+
+/// Load account options (id → name) into `target` on mount.
+pub(crate) fn load_account_options(target: RwSignal<Options>) {
+    spawn_local(async move {
+        if let Ok(v) = api::get_json::<Vec<api::Account>>("/api/admin/accounts").await {
+            target.set(v.into_iter().map(|a| (a.id, a.name)).collect());
+        }
+    });
+}
+
+/// Load category options (id → name) into `target` on mount.
+pub(crate) fn load_category_options(target: RwSignal<Options>) {
+    spawn_local(async move {
+        if let Ok(v) = api::get_json::<Vec<api::Category>>("/api/admin/categories").await {
+            target.set(v.into_iter().map(|c| (c.id, c.name)).collect());
+        }
+    });
+}
+
+/// URL for another tenant: swap the leftmost host label for the company slug,
+/// preserving protocol and port. Company switching is a full navigation.
+pub(crate) fn switch_company_href(slug: &str) -> String {
+    let loc = window().location();
+    let proto = loc.protocol().unwrap_or_else(|_| "https:".to_string());
+    let host = loc.host().unwrap_or_default();
+    let rest = host.split_once('.').map(|(_, r)| r).unwrap_or(&host);
+    // Land on the SPA (/v2) of the destination tenant, not the legacy root.
+    format!("{proto}//{slug}.{rest}/v2/")
+}
+
+// --- shared label / formatting helpers ------------------------------------
+
+pub(crate) fn flow_label(value: &str) -> &str {
+    match value {
+        "income" => "Ingreso",
+        "expense" => "Egreso",
+        other => other,
+    }
+}
+
+pub(crate) fn money(n: f64) -> String {
+    format!("{n:.2}")
+}
+
+/// Backend datetime fields are parsed as RFC3339. `<input type="date">` yields
+/// `YYYY-MM-DD`, so append a midnight-UTC time when needed.
+pub(crate) fn date_to_rfc3339(date: &str) -> String {
+    let d = date.trim();
+    if d.is_empty() || d.contains('T') {
+        d.to_string()
+    } else {
+        format!("{d}T00:00:00Z")
+    }
+}
+
+/// Inverse for edit forms: take the `YYYY-MM-DD` prefix of an RFC3339 datetime
+/// so it fits an `<input type="date">`.
+pub(crate) fn rfc3339_to_date(value: &str) -> String {
+    value.get(..10).unwrap_or(value).to_string()
+}

@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2021"
 description = "Leptos CSR single-page app for alfredodev, served by the Axum backend."
 
+# Standalone workspace: the backend root Cargo.toml declares a [workspace], and
+# this WASM crate must NOT be pulled into it (it would force its native-only
+# deps onto a wasm32 build). An empty [workspace] makes this its own root.
+[workspace]
+
 [dependencies]
 leptos = { version = "0.8", features = ["csr"] }
 leptos_router = "0.8"

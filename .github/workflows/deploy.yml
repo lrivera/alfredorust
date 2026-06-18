@@ -28,6 +28,26 @@ jobs:
           RUSTFLAGS: "-C target-cpu=x86-64"
         run: cargo build --release
 
+      # --- SPA (Leptos /v2) build ---------------------------------------
+      - name: Add wasm target
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Setup Node (Tailwind)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Trunk
+        uses: jetli/trunk-action@v0.5.0
+        with:
+          version: latest
+
+      - name: Build SPA (frontend/dist)
+        run: |
+          cd frontend
+          npm install
+          trunk build --release
+
       - name: Deploy to server
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
@@ -41,6 +61,14 @@ jobs:
           scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
             target/release/alfredodev \
             $SSH_USER@$SSH_HOST:/home/$SSH_USER/alfredorust/alfredodev
+          # Ship the SPA build (hashed assets); --delete prunes stale files.
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            $SSH_USER@$SSH_HOST \
+            "mkdir -p /home/$SSH_USER/alfredorust/frontend/dist"
+          rsync -az --delete \
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
+            frontend/dist/ \
+            $SSH_USER@$SSH_HOST:/home/$SSH_USER/alfredorust/frontend/dist/
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
             $SSH_USER@$SSH_HOST \
             "sudo systemctl restart alfredorust"

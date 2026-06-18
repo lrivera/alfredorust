@@ -1,0 +1,4 @@
+# Run `cargo test --target wasm32-unknown-unknown` through the wasm-bindgen test
+# runner (non-DOM tests execute under Node). Requires `wasm-bindgen-cli`.
+[target.wasm32-unknown-unknown]
+runner = "wasm-bindgen-test-runner"

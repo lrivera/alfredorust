@@ -1,11 +1,17 @@
 //! App shell: bootstrap the session, then render either the login view or the
-//! authenticated shell. Client-side routing per screen (leptos_router) lands in
-//! the per-category migration phases; the login slice uses auth-state switching.
+//! authenticated app (client-side routed via leptos_router).
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
+use leptos_router::components::{Route, Router, Routes, A};
+use leptos_router::path;
 
-use crate::api::{self, Me};
+use crate::api::{self, ApiError, Me};
+use crate::components::{Button, ButtonVariant, Card, CardContent, CardHeader, CardTitle, Input};
+use crate::pages::{
+    AccountsPage, CategoriesPage, ContactsPage, Dashboard, ForecastsPage, PlannedEntriesPage,
+    RecurringPlansPage, TransactionsPage,
+};
 
 #[derive(Clone)]
 enum Auth {
@@ -29,15 +35,24 @@ pub fn App() -> impl IntoView {
     view! {
         <div class="min-h-screen bg-slate-50 text-slate-900">
             {move || match auth.get() {
-                Auth::Loading => view! {
-                    <p class="p-8 text-slate-500">"Cargando…"</p>
+                Auth::Loading => {
+                    view! { <p class="p-8 text-slate-500">"Cargando…"</p> }.into_any()
                 }
-                .into_any(),
                 Auth::Anon => view! { <LoginView auth=auth /> }.into_any(),
-                Auth::Authed(me) => view! { <Shell me=me auth=auth /> }.into_any(),
+                Auth::Authed(me) => view! { <AuthedApp me=me auth=auth /> }.into_any(),
             }}
         </div>
     }
+}
+
+/// What the login action resolves to. Kept as one outcome type so the action
+/// owns the whole login→bootstrap sequence and the UI just reacts to it.
+#[derive(Clone)]
+enum LoginOutcome {
+    Redirect(String),
+    Authed(Me),
+    BadCreds,
+    Error(String),
 }
 
 #[component]
@@ -45,90 +60,190 @@ fn LoginView(auth: RwSignal<Auth>) -> impl IntoView {
     let email = RwSignal::new(String::new());
     let code = RwSignal::new(String::new());
     let error = RwSignal::new(Option::<String>::None);
-    let pending = RwSignal::new(false);
+
+    // Action drives the async login + bootstrap; gives us pending() for free.
+    // `new_local` because the web fetch future (JsFuture) is not `Send`.
+    let login_action = Action::new_local(move |input: &(String, String)| {
+        let (email, code) = input.clone();
+        async move {
+            match api::login(&email, &code).await {
+                Ok(ok) => match ok.redirect_url {
+                    // Full navigation to the tenant subdomain re-bootstraps the
+                    // SPA under the correct host.
+                    Some(url) => LoginOutcome::Redirect(url),
+                    None => match api::get_me().await {
+                        Ok(me) => LoginOutcome::Authed(me),
+                        Err(_) => LoginOutcome::Error("No se pudo cargar el perfil".into()),
+                    },
+                },
+                // Generic message — never reveal whether the email exists.
+                Err(ApiError::Unauthorized) => LoginOutcome::BadCreds,
+                Err(_) => LoginOutcome::Error("Error de autenticación. Intenta de nuevo.".into()),
+            }
+        }
+    });
+
+    let pending = login_action.pending();
+
+    Effect::new(move |_| {
+        match login_action.value().get() {
+            Some(LoginOutcome::Redirect(url)) => {
+                let _ = window().location().set_href(&url);
+            }
+            Some(LoginOutcome::Authed(me)) => auth.set(Auth::Authed(me)),
+            Some(LoginOutcome::BadCreds) => error.set(Some("Correo o código inválido".into())),
+            Some(LoginOutcome::Error(msg)) => error.set(Some(msg)),
+            None => {}
+        }
+    });
 
     let submit = move |ev: web_sys::SubmitEvent| {
         ev.prevent_default();
-        let (e, c) = (email.get(), code.get());
-        pending.set(true);
         error.set(None);
-        spawn_local(async move {
-            match api::login(&e, &c).await {
-                Ok(ok) => {
-                    if let Some(url) = ok.redirect_url {
-                        // Full navigation to the tenant subdomain re-bootstraps
-                        // the SPA under the correct host.
-                        let _ = window().location().set_href(&url);
-                    } else {
-                        match api::get_me().await {
-                            Ok(me) => auth.set(Auth::Authed(me)),
-                            Err(_) => error.set(Some("No se pudo cargar el perfil".into())),
-                        }
-                    }
-                }
-                Err(api::ApiError::Unauthorized) => {
-                    // Generic message — never reveal whether the email exists.
-                    error.set(Some("Correo o código inválido".into()))
-                }
-                Err(_) => error.set(Some("Error de autenticación. Intenta de nuevo.".into())),
-            }
-            pending.set(false);
-        });
+        login_action.dispatch((email.get(), code.get()));
     };
 
     view! {
         <div class="flex min-h-screen items-center justify-center p-4">
-            <form
-                on:submit=submit
-                class="w-full max-w-sm space-y-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
-            >
-                <h1 class="text-xl font-semibold">"Iniciar sesión"</h1>
+            <Card class="w-full max-w-sm">
+                <CardHeader>
+                    <CardTitle>"Iniciar sesión"</CardTitle>
+                </CardHeader>
+                <CardContent>
+                    <form on:submit=submit class="space-y-4">
+                        <div class="space-y-1">
+                            <label class="block text-sm font-medium text-slate-700">"Correo"</label>
+                            <Input
+                                value=email
+                                on_input=Callback::new(move |v| email.set(v))
+                                r#type="email"
+                                autocomplete="email"
+                                placeholder="tu@correo.com"
+                                required=true
+                            />
+                        </div>
 
-                <div class="space-y-1">
-                    <label class="block text-sm font-medium text-slate-700">"Correo"</label>
-                    <input
-                        type="email"
-                        autocomplete="email"
-                        required
-                        class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-slate-500"
-                        prop:value=move || email.get()
-                        on:input=move |ev| email.set(event_target_value(&ev))
-                    />
-                </div>
+                        <div class="space-y-1">
+                            <label class="block text-sm font-medium text-slate-700">
+                                "Código (6 dígitos)"
+                            </label>
+                            <Input
+                                value=code
+                                on_input=Callback::new(move |v| code.set(v))
+                                inputmode="numeric"
+                                maxlength="6"
+                                class="tracking-widest"
+                                required=true
+                            />
+                        </div>
 
-                <div class="space-y-1">
-                    <label class="block text-sm font-medium text-slate-700">"Código (6 dígitos)"</label>
-                    <input
-                        type="text"
-                        inputmode="numeric"
-                        maxlength="6"
-                        required
-                        class="w-full rounded-md border border-slate-300 px-3 py-2 tracking-widest outline-none focus:border-slate-500"
-                        prop:value=move || code.get()
-                        on:input=move |ev| code.set(event_target_value(&ev))
-                    />
-                </div>
+                        {move || {
+                            error
+                                .get()
+                                .map(|msg| view! { <p class="text-sm text-red-600">{msg}</p> })
+                        }}
 
-                {move || {
-                    error
-                        .get()
-                        .map(|msg| view! { <p class="text-sm text-red-600">{msg}</p> })
-                }}
-
-                <button
-                    type="submit"
-                    disabled=move || pending.get()
-                    class="w-full rounded-md bg-slate-900 px-3 py-2 font-medium text-white hover:bg-slate-700 disabled:opacity-50"
-                >
-                    {move || if pending.get() { "Entrando…" } else { "Entrar" }}
-                </button>
-            </form>
+                        <Button disabled=pending class="w-full">
+                            {move || if pending.get() { "Entrando…" } else { "Entrar" }}
+                        </Button>
+                    </form>
+                </CardContent>
+            </Card>
         </div>
     }
 }
 
+/// Authenticated, client-side routed app: provides `Me`/`auth` via context and
+/// renders the persistent layout (sidebar + topbar) around routed pages.
 #[component]
-fn Shell(me: Me, auth: RwSignal<Auth>) -> impl IntoView {
+fn AuthedApp(me: Me, auth: RwSignal<Auth>) -> impl IntoView {
+    provide_context(me);
+    provide_context(auth);
+
+    view! {
+        <Router base="/v2">
+            <div class="flex min-h-screen">
+                <Sidebar />
+                <div class="flex flex-1 flex-col">
+                    <Topbar />
+                    <main class="flex-1 p-6">
+                        <Routes fallback=|| view! { <p class="text-slate-500">"No encontrado"</p> }>
+                            <Route path=path!("/") view=Dashboard />
+                            <Route path=path!("/accounts") view=AccountsPage />
+                            <Route path=path!("/categories") view=CategoriesPage />
+                            <Route path=path!("/contacts") view=ContactsPage />
+                            <Route path=path!("/transactions") view=TransactionsPage />
+                            <Route path=path!("/recurring-plans") view=RecurringPlansPage />
+                            <Route path=path!("/planned-entries") view=PlannedEntriesPage />
+                            <Route path=path!("/forecasts") view=ForecastsPage />
+                        </Routes>
+                    </main>
+                </div>
+            </div>
+        </Router>
+    }
+}
+
+#[component]
+fn Sidebar() -> impl IntoView {
+    let me = use_context::<Me>().expect("Me context");
+    let is_admin = me.role == "admin";
+    let link = "block rounded-md px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 \
+        aria-[current=page]:bg-slate-200 aria-[current=page]:font-semibold";
+
+    view! {
+        <aside class="w-56 shrink-0 border-r border-slate-200 bg-white p-3">
+            <p class="px-3 pb-3 text-sm font-semibold text-slate-900">"alfredodev"</p>
+            <nav class="space-y-1">
+                // Absolute hrefs include the /v2 prefix: leptos_router passes
+                // absolute links through unchanged (base only strips for route
+                // matching), so the prefix must be explicit here.
+                <A href="/v2/" attr:class=link>
+                    "Inicio"
+                </A>
+                {move || {
+                    if is_admin {
+                        view! {
+                            <p class="px-3 pt-3 pb-1 text-xs font-semibold uppercase text-slate-400">
+                                "Finanzas"
+                            </p>
+                            <A href="/v2/accounts" attr:class=link>
+                                "Cuentas"
+                            </A>
+                            <A href="/v2/categories" attr:class=link>
+                                "Categorías"
+                            </A>
+                            <A href="/v2/contacts" attr:class=link>
+                                "Contactos"
+                            </A>
+                            <A href="/v2/transactions" attr:class=link>
+                                "Movimientos"
+                            </A>
+                            <A href="/v2/recurring-plans" attr:class=link>
+                                "Planes recurrentes"
+                            </A>
+                            <A href="/v2/planned-entries" attr:class=link>
+                                "Entradas planificadas"
+                            </A>
+                            <A href="/v2/forecasts" attr:class=link>
+                                "Pronósticos"
+                            </A>
+                        }
+                            .into_any()
+                    } else {
+                        ().into_any()
+                    }
+                }}
+            </nav>
+        </aside>
+    }
+}
+
+#[component]
+fn Topbar() -> impl IntoView {
+    let me = use_context::<Me>().expect("Me context");
+    let auth = use_context::<RwSignal<Auth>>().expect("auth context");
+
     let do_logout = move |_| {
         spawn_local(async move {
             let _ = api::logout().await;
@@ -136,60 +251,17 @@ fn Shell(me: Me, auth: RwSignal<Auth>) -> impl IntoView {
         });
     };
 
-    let companies = me.companies.clone();
-    let email = me.email.clone();
-    let company = me.company.clone();
-    let role = me.role.clone();
-
     view! {
         <header class="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-3">
             <div>
-                <p class="text-sm text-slate-500">{email}</p>
-                <p class="font-semibold">{company} " · " <span class="text-slate-500">{role}</span></p>
+                <p class="text-sm text-slate-500">{me.email.clone()}</p>
+                <p class="font-semibold">
+                    {me.company.clone()} " · " <span class="text-slate-500">{me.role.clone()}</span>
+                </p>
             </div>
-            <button
-                on:click=do_logout
-                class="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
-            >
+            <Button variant=ButtonVariant::Outline on:click=do_logout>
                 "Salir"
-            </button>
+            </Button>
         </header>
-
-        <main class="p-6">
-            <h2 class="mb-3 text-lg font-semibold">"Compañías"</h2>
-            <ul class="space-y-1">
-                {companies
-                    .into_iter()
-                    .map(|c| {
-                        let href = switch_company_href(&c.slug);
-                        view! {
-                            <li>
-                                <a
-                                    href=href
-                                    class=if c.active {
-                                        "font-semibold text-slate-900"
-                                    } else {
-                                        "text-slate-600 hover:underline"
-                                    }
-                                >
-                                    {c.name}
-                                    {if c.active { " (activa)" } else { "" }}
-                                </a>
-                            </li>
-                        }
-                    })
-                    .collect::<Vec<_>>()}
-            </ul>
-        </main>
     }
-}
-
-/// Build the URL for another tenant by swapping the leftmost host label for the
-/// company slug, preserving protocol and port.
-fn switch_company_href(slug: &str) -> String {
-    let loc = window().location();
-    let proto = loc.protocol().unwrap_or_else(|_| "https:".to_string());
-    let host = loc.host().unwrap_or_default();
-    let rest = host.split_once('.').map(|(_, r)| r).unwrap_or(&host);
-    format!("{proto}//{slug}.{rest}")
 }

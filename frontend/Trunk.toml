@@ -1,6 +1,9 @@
 [build]
 target = "index.html"
 dist = "dist"
+# The SPA is served under the /v2/ path prefix (same on every tenant). This sets
+# asset URLs to /v2/... and injects <base href="/v2/"> so the app works there.
+public_url = "/v2/"
 
 # Compile Tailwind before each build. Uses the local tailwindcss (npm) via npx.
 [[hooks]]

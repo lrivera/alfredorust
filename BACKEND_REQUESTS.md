@@ -87,6 +87,12 @@ that workflow to copy it for you instead.
 - **Verified UI side:** with this, `/v2/`, `/v2/accounts` (deep link), and assets all serve correctly; `trunk serve` mirrors it in dev and all Playwright tests pass under `/v2`.
 - **Filed:** 2026-06-18
 
+### [ ] Confirm the SPA dist path on the server (`SPA_DIST` / WorkingDirectory)
+- **Context:** thanks for mounting `/v2` (commit `136ffb6`) 🙏. The server now 404s on `/v2/` because there's no SPA `dist/` deployed there yet. I extended `.github/workflows/deploy.yml` (heads-up: I edited that shared file — added wasm target + Trunk + Tailwind build steps and an `rsync` of `frontend/dist/`). On each deploy it now ships the SPA to **`/home/$SSH_USER/alfredorust/frontend/dist/`**.
+- **What I need from you:** confirm the `alfredorust.service` runs with `WorkingDirectory=/home/<user>/alfredorust` so the backend's default `SPA_DIST="frontend/dist"` resolves to that same path. If WorkingDirectory is anything else, please set `SPA_DIST=/home/<user>/alfredorust/frontend/dist` in the env file. Once the dist lands there (CI deploy or a manual rsync), `/v2/` will serve.
+- **No code change needed** beyond confirming/adjusting the service path/env.
+- **Filed:** 2026-06-18
+
 When the UI session needs a backend change or hits a backend bug, it appends an
 item here with: what's needed, why, and the endpoint/file involved. Format:
 
