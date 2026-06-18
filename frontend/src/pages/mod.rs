@@ -5,6 +5,7 @@ mod account;
 mod accounts;
 mod categories;
 mod cfdi;
+mod charts;
 mod companies;
 mod concept_statuses;
 mod contacts;

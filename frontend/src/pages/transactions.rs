@@ -1,6 +1,9 @@
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
+use std::collections::{BTreeMap, HashMap};
+
+use super::charts::{donut, line_area_chart};
 use super::{
     date_to_rfc3339, load_account_options, load_category_options, load_planned_entry_options, money,
     rfc3339_to_date, Options,
@@ -22,6 +25,121 @@ fn tx_label(value: &str) -> &str {
 
 fn opt_id(value: String) -> Option<String> {
     (!value.is_empty()).then_some(value)
+}
+
+/// KPIs + monthly income/expense chart + donut + top-category bars, computed
+/// from the loaded transactions (ported from the v1 charts).
+fn tx_charts(list: &[Transaction]) -> impl IntoView {
+    let mut monthly: BTreeMap<String, (f64, f64)> = BTreeMap::new();
+    let mut cats: HashMap<String, (f64, f64, f64, u32)> = HashMap::new();
+    let (mut total_income, mut total_expense) = (0.0_f64, 0.0_f64);
+    for t in list {
+        let month = t.date.get(..7).unwrap_or("").to_string();
+        let m = monthly.entry(month).or_default();
+        match t.tx_type.as_str() {
+            "income" => {
+                m.0 += t.amount;
+                total_income += t.amount;
+            }
+            "expense" => {
+                m.1 += t.amount;
+                total_expense += t.amount;
+            }
+            _ => {}
+        }
+        let key = if t.category.is_empty() {
+            "Sin categoría".to_string()
+        } else {
+            t.category.clone()
+        };
+        let c = cats.entry(key).or_insert((0.0, 0.0, 0.0, 0));
+        match t.tx_type.as_str() {
+            "income" => c.0 += t.amount,
+            "expense" => c.1 += t.amount,
+            _ => c.2 += t.amount,
+        }
+        c.3 += 1;
+    }
+    let series: Vec<(String, f64, f64)> = monthly.into_iter().map(|(m, (i, e))| (m, i, e)).collect();
+    let line_svg = line_area_chart(&series);
+    let net = total_income - total_expense;
+    let donut_svg = donut(
+        &[
+            ("Ingresos".into(), total_income, "#10b981".into()),
+            ("Egresos".into(), total_expense, "#f43f5e".into()),
+        ],
+        &money(net),
+        "neto",
+    );
+
+    let mut cat_vec: Vec<(String, f64, f64, f64, u32)> =
+        cats.into_iter().map(|(k, (i, e, tr, n))| (k, i, e, tr, n)).collect();
+    cat_vec.sort_by(|a, b| {
+        (b.1 + b.2 + b.3)
+            .partial_cmp(&(a.1 + a.2 + a.3))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    cat_vec.truncate(8);
+    let max_amt = cat_vec.iter().map(|c| c.1 + c.2 + c.3).fold(1.0_f64, f64::max);
+
+    let bars = cat_vec
+        .into_iter()
+        .map(|(name, inc, exp, tr, count)| {
+            let total = inc + exp + tr;
+            let pct = |v: f64| (v / max_amt) * 100.0;
+            view! {
+                <div class="mb-2">
+                    <div class="flex justify-between text-xs">
+                        <span class="truncate text-slate-600">{name}</span>
+                        <span class="font-medium text-slate-800">{money(total)}</span>
+                    </div>
+                    <div class="mt-1 flex h-1.5 overflow-hidden rounded bg-slate-100">
+                        <div style=format!("width:{}%;background:#10b981", pct(inc))></div>
+                        <div style=format!("width:{}%;background:#f43f5e", pct(exp))></div>
+                        <div style=format!("width:{}%;background:#2563eb", pct(tr))></div>
+                    </div>
+                    <span class="text-[10px] text-slate-400">{format!("{count} mov.")}</span>
+                </div>
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let kpi = |label: &str, value: String, color: &str| {
+        view! {
+            <div class="rounded-xl border border-slate-200 bg-white p-3">
+                <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                    {label.to_string()}
+                </p>
+                <p class="mt-1 text-2xl font-bold" style=format!("color:{color}")>
+                    {value}
+                </p>
+            </div>
+        }
+    };
+
+    view! {
+        <div class="space-y-4">
+            <div class="grid gap-3 sm:grid-cols-3">
+                {kpi("Ingresos", money(total_income), "#10b981")}
+                {kpi("Egresos", money(total_expense), "#f43f5e")}
+                {kpi("Neto", money(net), if net >= 0.0 { "#0ea5e9" } else { "#f43f5e" })}
+            </div>
+            <div class="grid gap-3 lg:grid-cols-3">
+                <div class="rounded-xl border border-slate-200 bg-white p-3 lg:col-span-2">
+                    <p class="mb-2 text-xs font-semibold text-slate-500">"Mensual (ingresos vs egresos)"</p>
+                    <div class="h-40" inner_html=line_svg></div>
+                </div>
+                <div class="rounded-xl border border-slate-200 bg-white p-3">
+                    <p class="mb-2 text-xs font-semibold text-slate-500">"Distribución"</p>
+                    <div class="mx-auto h-40 w-40" inner_html=donut_svg></div>
+                </div>
+            </div>
+            <div class="rounded-xl border border-slate-200 bg-white p-3">
+                <p class="mb-2 text-xs font-semibold text-slate-500">"Por categoría"</p>
+                {bars}
+            </div>
+        </div>
+    }
 }
 
 #[component]
@@ -344,6 +462,13 @@ pub fn TransactionsPage() -> impl IntoView {
                         .into_any()
                 } else {
                     ().into_any()
+                }
+            }}
+
+            {move || {
+                match items.get() {
+                    Some(Ok(list)) if !list.is_empty() => tx_charts(&list).into_any(),
+                    _ => ().into_any(),
                 }
             }}
 

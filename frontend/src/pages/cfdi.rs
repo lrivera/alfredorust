@@ -3,13 +3,15 @@
 //! splits it into one background job per month), and the page polls the job
 //! list until every chunk finishes. Mirrors the v1 download UI.
 
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
+use super::charts::{donut, line_area_chart};
 use super::{money, rfc3339_to_date};
-use crate::api::{self, ApiError, CfdiDownloadPayload, CfdiJob, CfdiList, Me, SatConfigData};
+use crate::api::{self, ApiError, Cfdi, CfdiDownloadPayload, CfdiJob, CfdiList, Me, SatConfigData};
 use crate::components::{Button, Card, CardContent, CardHeader, CardTitle, Checkbox, Input, Select};
 
 fn today_str() -> String {
@@ -55,6 +57,67 @@ fn status_badge(status: &str) -> impl IntoView {
     // Own the label so the returned view doesn't borrow the `status` argument.
     let label = label.to_string();
     view! { <span class=format!("rounded px-2 py-0.5 text-xs {cls}")>{label}</span> }
+}
+
+/// KPIs + monthly emitidos/recibidos chart + donut, computed from the CFDI list
+/// (ported from the v1 CFDI charts).
+fn cfdi_charts(items: &[Cfdi]) -> impl IntoView {
+    let mut monthly: BTreeMap<String, (f64, f64)> = BTreeMap::new();
+    let (mut emitidos, mut recibidos) = (0.0_f64, 0.0_f64);
+    for c in items {
+        // Skip payment complements (tipo P) and zero totals, like v1.
+        if c.tipo == "P" || c.total <= 0.0 {
+            continue;
+        }
+        let month = c.fecha.get(..7).unwrap_or("").to_string();
+        let m = monthly.entry(month).or_default();
+        if c.es_emitido {
+            m.0 += c.total;
+            emitidos += c.total;
+        } else {
+            m.1 += c.total;
+            recibidos += c.total;
+        }
+    }
+    let series: Vec<(String, f64, f64)> = monthly.into_iter().map(|(m, (i, e))| (m, i, e)).collect();
+    let line_svg = line_area_chart(&series);
+    let donut_svg = donut(
+        &[
+            ("Emitidos".into(), emitidos, "#10b981".into()),
+            ("Recibidos".into(), recibidos, "#f43f5e".into()),
+        ],
+        &money(emitidos - recibidos),
+        "neto",
+    );
+    let kpi = |label: &str, value: String, color: &str| {
+        view! {
+            <div class="rounded-xl border border-slate-200 bg-white p-3">
+                <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                    {label.to_string()}
+                </p>
+                <p class="mt-1 text-2xl font-bold" style=format!("color:{color}")>{value}</p>
+            </div>
+        }
+    };
+    view! {
+        <div class="space-y-4">
+            <div class="grid gap-3 sm:grid-cols-3">
+                {kpi("Emitidos", money(emitidos), "#10b981")}
+                {kpi("Recibidos", money(recibidos), "#f43f5e")}
+                {kpi("Neto", money(emitidos - recibidos), "#0ea5e9")}
+            </div>
+            <div class="grid gap-3 lg:grid-cols-3">
+                <div class="rounded-xl border border-slate-200 bg-white p-3 lg:col-span-2">
+                    <p class="mb-2 text-xs font-semibold text-slate-500">"Mensual (emitidos vs recibidos)"</p>
+                    <div class="h-40" inner_html=line_svg></div>
+                </div>
+                <div class="rounded-xl border border-slate-200 bg-white p-3">
+                    <p class="mb-2 text-xs font-semibold text-slate-500">"Dirección"</p>
+                    <div class="mx-auto h-40 w-40" inner_html=donut_svg></div>
+                </div>
+            </div>
+        </div>
+    }
 }
 
 #[component]
@@ -300,6 +363,13 @@ pub fn CfdiPage() -> impl IntoView {
                     </Card>
                 }
                     .into_any()
+            }}
+
+            {move || {
+                match data.get() {
+                    Some(Ok(list)) if !list.items.is_empty() => cfdi_charts(&list.items).into_any(),
+                    _ => ().into_any(),
+                }
             }}
 
             {move || match data.get() {
