@@ -63,6 +63,7 @@ pub fn CompaniesPage() -> impl IntoView {
     let notes = RwSignal::new(String::new());
     let is_active = RwSignal::new(true);
     let form_error = RwSignal::new(None::<String>);
+    let danger_msg = RwSignal::new(None::<String>);
 
     let reset_form = move || {
         editing.set(None);
@@ -72,6 +73,7 @@ pub fn CompaniesPage() -> impl IntoView {
         notes.set(String::new());
         is_active.set(true);
         form_error.set(None);
+        danger_msg.set(None);
     };
 
     let save = Action::new_local(move |_: &()| {
@@ -143,6 +145,21 @@ pub fn CompaniesPage() -> impl IntoView {
         spawn_local(async move {
             if api::post_empty(&format!("/api/admin/companies/{id}/delete")).await.is_ok() {
                 reload();
+            }
+        });
+    };
+    // Danger zone: bulk-delete the editing company's CFDIs or transactions,
+    // behind a confirm. `suffix` is the endpoint tail.
+    let run_danger = move |suffix: &'static str, confirm_msg: &'static str, ok_msg: &'static str| {
+        let Some(id) = editing.get_untracked() else { return };
+        if !window().confirm_with_message(confirm_msg).unwrap_or(false) {
+            return;
+        }
+        danger_msg.set(None);
+        spawn_local(async move {
+            match api::post_empty(&format!("/api/admin/companies/{id}/{suffix}")).await {
+                Ok(()) => danger_msg.set(Some(ok_msg.to_string())),
+                Err(_) => danger_msg.set(Some("No se pudo completar".into())),
             }
         });
     };
@@ -248,6 +265,55 @@ pub fn CompaniesPage() -> impl IntoView {
                     </form>
                 </CardContent>
             </Card>
+
+            {move || {
+                if editing.get().is_none() {
+                    return ().into_any();
+                }
+                view! {
+                    <Card class="max-w-2xl border-rose-200">
+                        <CardHeader>
+                            <CardTitle>"Zona de pruebas"</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <div class="flex flex-wrap gap-3">
+                                <button
+                                    type="button"
+                                    class="inline-flex items-center rounded-md border border-rose-200 bg-rose-50 px-3 py-1.5 text-sm font-medium text-rose-700 hover:bg-rose-100"
+                                    on:click=move |_| {
+                                        run_danger(
+                                            "cfdis/delete_all",
+                                            "¿Borrar TODOS los CFDIs de esta compañía? Esta acción no se puede deshacer.",
+                                            "CFDIs borrados",
+                                        )
+                                    }
+                                >
+                                    "Borrar todos los CFDIs"
+                                </button>
+                                <button
+                                    type="button"
+                                    class="inline-flex items-center rounded-md border border-rose-200 bg-rose-50 px-3 py-1.5 text-sm font-medium text-rose-700 hover:bg-rose-100"
+                                    on:click=move |_| {
+                                        run_danger(
+                                            "transactions/delete_all",
+                                            "¿Borrar TODAS las transacciones de esta compañía? Esta acción no se puede deshacer.",
+                                            "Transacciones borradas",
+                                        )
+                                    }
+                                >
+                                    "Borrar todas las transacciones"
+                                </button>
+                            </div>
+                            {move || {
+                                danger_msg
+                                    .get()
+                                    .map(|m| view! { <p class="mt-2 text-sm text-rose-700">{m}</p> })
+                            }}
+                        </CardContent>
+                    </Card>
+                }
+                    .into_any()
+            }}
 
             {move || match items.get() {
                 None => view! { <p class="text-slate-500">"Cargando…"</p> }.into_any(),

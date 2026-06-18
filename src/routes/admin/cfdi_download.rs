@@ -94,6 +94,45 @@ pub async fn company_cfdi_download(
     Path(company_id): Path<String>,
     Form(form): Form<CfdiDownloadForm>,
 ) -> impl IntoResponse {
+    start_cfdi_download(session_user, state, company_id, form).await
+}
+
+/// JSON twin of [`company_cfdi_download`] for the SPA (`POST
+/// /api/admin/companies/{id}/cfdi/download`). Same body fields, same job-start
+/// behavior; only the request encoding differs.
+#[utoipa::path(
+    post,
+    path = "/api/admin/companies/{id}/cfdi/download",
+    tag = "cfdi",
+    params(("id" = String, Path, description = "Company id")),
+    request_body = CfdiDownloadForm,
+    responses(
+        (status = 202, description = "Download jobs started"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found"),
+        (status = 400, description = "Invalid input")
+    ),
+    security(("session" = []))
+)]
+pub async fn company_cfdi_download_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(company_id): Path<String>,
+    Json(form): Json<CfdiDownloadForm>,
+) -> impl IntoResponse {
+    start_cfdi_download(session_user, state, company_id, form).await
+}
+
+/// Shared core: validate, split the range into monthly chunks, and spawn one
+/// background download job per chunk. Used by both the HTML form handler and
+/// the JSON API handler.
+async fn start_cfdi_download(
+    session_user: SessionUser,
+    state: Arc<AppState>,
+    company_id: String,
+    form: CfdiDownloadForm,
+) -> axum::response::Response {
     let company_object_id = match ObjectId::from_str(&company_id) {
         Ok(id) => id,
         Err(_) => {

@@ -135,6 +135,52 @@ pub async fn upload_sat_config(
     err_for(resp.status()).map_or(Ok(()), Err)
 }
 
+// --- CFDI download jobs ----------------------------------------------------
+
+/// Body for starting a CFDI download. Mirrors the backend `CfdiDownloadForm`.
+/// `download_type` is `issued` | `received` | `both`.
+#[derive(Clone, Debug, Serialize)]
+pub struct CfdiDownloadPayload {
+    pub sat_config_id: String,
+    pub start: String,
+    pub end: String,
+    pub download_type: String,
+    pub auto_create_payments: bool,
+}
+
+/// Status of one download job. The backend serializes the job status as an
+/// internally-tagged enum, so `status` (`queued`/`running`/`done`/`failed`)
+/// sits alongside the variant fields in the same object.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct CfdiJobStatus {
+    pub status: String,
+    #[serde(default)]
+    pub imported: u64,
+    #[serde(default)]
+    pub transactions_created: u64,
+    #[serde(default)]
+    pub transactions_updated: u64,
+    #[serde(default)]
+    pub transactions_skipped: u64,
+    #[serde(default)]
+    pub errors: Vec<String>,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
+/// One CFDI download job (one monthly chunk). Mirrors the backend `CfdiJob`.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct CfdiJob {
+    pub job_id: String,
+    #[serde(default)]
+    pub label: String,
+    #[serde(default)]
+    pub chunk_start: String,
+    #[serde(default)]
+    pub started_at: String,
+    pub status: CfdiJobStatus,
+}
+
 // --- account (own profile) ------------------------------------------------
 
 /// The logged-in user's own profile. Mirrors the backend `AccountData` (named

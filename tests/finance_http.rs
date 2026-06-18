@@ -1776,3 +1776,93 @@ async fn planned_entries_bulk_pay_creates_transactions() {
 }
 
 
+/// The company danger-zone JSON endpoints delete all CFDIs / transactions for a
+/// company (scoped + count returned), and reject non-admins.
+#[tokio::test]
+async fn company_danger_zone_delete_all_endpoints() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let shared = Arc::new(state.clone());
+
+    let company = create_company(&state, "Danger Co", "danger-co", "MXN", true, None)
+        .await
+        .unwrap();
+    create_user_with_permissions(
+        &state,
+        "danger-admin@example.com",
+        "SECRET",
+        &[(company.clone(), UserRole::Admin, vec![])],
+    )
+    .await
+    .unwrap();
+    create_user_with_permissions(
+        &state,
+        "danger-staff@example.com",
+        "SECRET",
+        &[(company.clone(), UserRole::Staff, vec![])],
+    )
+    .await
+    .unwrap();
+    let admin_token = create_session(&state, "danger-admin@example.com").await.unwrap();
+    let staff_token = create_session(&state, "danger-staff@example.com").await.unwrap();
+    let host = "danger-co.miapp.local";
+    let cid = company.to_hex();
+
+    // Seed data the way each collection stores company_id: CFDIs by hex string,
+    // transactions by ObjectId.
+    state
+        .cfdis
+        .insert_one(mongodb::bson::doc! { "company_id": &cid, "uuid": "u-danger-1" })
+        .await
+        .unwrap();
+    state
+        .transactions
+        .clone_with_type::<mongodb::bson::Document>()
+        .insert_one(mongodb::bson::doc! { "company_id": company.clone(), "amount": 1.0 })
+        .await
+        .unwrap();
+
+    // Staff cannot use the danger zone.
+    let (status, _) = post_json_with_cookie(
+        build_app(shared.clone()),
+        host,
+        &format!("/api/admin/companies/{cid}/cfdis/delete_all"),
+        &staff_token,
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    // Admin deletes all CFDIs and gets the count back.
+    let (status, body) = post_json_with_cookie(
+        build_app(shared.clone()),
+        host,
+        &format!("/api/admin/companies/{cid}/cfdis/delete_all"),
+        &admin_token,
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(v["ok"], true);
+    assert_eq!(v["deleted"], 1);
+
+    // Admin deletes all transactions and gets the count back.
+    let (status, body) = post_json_with_cookie(
+        build_app(shared.clone()),
+        host,
+        &format!("/api/admin/companies/{cid}/transactions/delete_all"),
+        &admin_token,
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(v["ok"], true);
+    assert_eq!(v["deleted"], 1);
+
+    common::teardown(Some(ctx)).await;
+}

@@ -53,6 +53,16 @@ impl Me {
     pub fn can(&self, permission: &str) -> bool {
         self.permissions.iter().any(|p| p == permission)
     }
+
+    /// Id of the tenant the session is scoped to (the `active` company), falling
+    /// back to the first membership.
+    pub fn active_company_id(&self) -> Option<String> {
+        self.companies
+            .iter()
+            .find(|c| c.active)
+            .or_else(|| self.companies.first())
+            .map(|c| c.id.clone())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -133,7 +143,7 @@ pub(crate) fn transport(e: gloo_net::Error) -> ApiError {
 /// Maps an HTTP status to an error, or `None` when it is a success status.
 pub(crate) fn err_for(status: u16) -> Option<ApiError> {
     match status {
-        200 | 201 | 204 => None,
+        200 | 201 | 202 | 204 => None,
         401 => Some(ApiError::Unauthorized),
         403 => Some(ApiError::Forbidden),
         s => Some(ApiError::Status(s)),

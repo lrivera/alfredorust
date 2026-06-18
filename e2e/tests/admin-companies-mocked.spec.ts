@@ -88,6 +88,36 @@ test.describe("admin / companies (mocked API)", () => {
     await expect(page.getByText(/Slug inválido/)).toBeVisible();
   });
 
+  test("danger zone bulk-deletes after confirming", async ({ page }) => {
+    const companies = [company({ id: "c2", name: "Beta" })];
+    let deletedCfdis = false;
+
+    await page.route("**/api/me", (r) => r.fulfill({ json: ADMIN_ME }));
+    await page.route("**/api/admin/companies/*/cfdis/delete_all", (route) => {
+      deletedCfdis = true;
+      return route.fulfill({ json: { ok: true, deleted: 7 } });
+    });
+    await page.route("**/api/admin/companies", (r) => r.fulfill({ json: companies }));
+    // Detail GET (for begin_edit), registered last to win the single-segment path.
+    await page.route("**/api/admin/companies/*", (r) =>
+      r.fulfill({ json: company({ id: "c2", name: "Beta" }) }),
+    );
+
+    // Accept the confirm() dialog.
+    page.on("dialog", (d) => d.accept());
+
+    await page.goto("/v2/companies");
+    await page
+      .getByRole("row", { name: /Beta/ })
+      .getByRole("button", { name: "Editar" })
+      .click();
+    await expect(page.getByText("Zona de pruebas")).toBeVisible();
+
+    await page.getByRole("button", { name: "Borrar todos los CFDIs" }).click();
+    await expect(page.getByText("CFDIs borrados")).toBeVisible();
+    expect(deletedCfdis).toBe(true);
+  });
+
   test("staff does not see the companies nav link", async ({ page }) => {
     await page.route("**/api/me", (r) => r.fulfill({ json: STAFF_ME }));
     await page.goto("/v2/");

@@ -380,6 +380,76 @@ pub async fn company_delete_api(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/companies/{id}/cfdis/delete_all",
+    tag = "admin",
+    params(("id" = String, Path, description = "Record id")),
+    responses(
+        (status = 200, description = "All CFDIs deleted; returns the count"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 400, description = "Invalid id")
+    ),
+    security(("session" = []))
+)]
+pub async fn company_cfdis_delete_all_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let object_id = match ObjectId::from_str(&id) {
+        Ok(id) => id,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    if !has_admin_role_for(&session_user, &object_id) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    // CFDIs store `company_id` as the hex string (see cfdis insertion).
+    match state.cfdis.delete_many(doc! { "company_id": &id }).await {
+        Ok(res) => Json(serde_json::json!({ "ok": true, "deleted": res.deleted_count }))
+            .into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/admin/companies/{id}/transactions/delete_all",
+    tag = "admin",
+    params(("id" = String, Path, description = "Record id")),
+    responses(
+        (status = 200, description = "All transactions deleted; returns the count"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden"),
+        (status = 400, description = "Invalid id")
+    ),
+    security(("session" = []))
+)]
+pub async fn company_transactions_delete_all_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let object_id = match ObjectId::from_str(&id) {
+        Ok(id) => id,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    if !has_admin_role_for(&session_user, &object_id) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    // Transactions store `company_id` as an ObjectId (see finance inserts).
+    match state
+        .transactions
+        .delete_many(doc! { "company_id": object_id })
+        .await
+    {
+        Ok(res) => Json(serde_json::json!({ "ok": true, "deleted": res.deleted_count }))
+            .into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
 pub async fn companies_index(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,

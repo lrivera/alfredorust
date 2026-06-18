@@ -84,6 +84,14 @@ pub fn build_app(state: Arc<AppState>) -> Router {
             "/api/admin/companies/{id}/update",
             post(routes::company_update_api),
         )
+        .route(
+            "/api/admin/companies/{id}/cfdis/delete_all",
+            post(routes::company_cfdis_delete_all_api),
+        )
+        .route(
+            "/api/admin/companies/{id}/transactions/delete_all",
+            post(routes::company_transactions_delete_all_api),
+        )
         .route("/admin/companies/new", get(routes::companies_new))
         .route("/admin/companies/{id}/edit", get(routes::companies_edit))
         .route("/admin/cfdis", get(routes::cfdis_index))

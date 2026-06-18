@@ -100,6 +100,26 @@ async fn main() {
             "/api/admin/companies/{id}/delete",
             post(routes::company_delete_api),
         )
+        .route(
+            "/api/admin/companies/{id}/cfdis/delete_all",
+            post(routes::company_cfdis_delete_all_api),
+        )
+        .route(
+            "/api/admin/companies/{id}/transactions/delete_all",
+            post(routes::company_transactions_delete_all_api),
+        )
+        .route(
+            "/api/admin/companies/{id}/cfdi/download",
+            post(routes::company_cfdi_download_api),
+        )
+        .route(
+            "/api/admin/companies/{id}/cfdi/jobs",
+            get(routes::company_cfdi_jobs_list),
+        )
+        .route(
+            "/api/admin/companies/{id}/cfdi/jobs/{job_id}",
+            get(routes::company_cfdi_job_status),
+        )
         .route("/admin/companies/new", get(routes::companies_new))
         .route("/admin/companies/{id}/edit", get(routes::companies_edit))
         .route(
