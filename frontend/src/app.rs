@@ -165,9 +165,9 @@ fn AuthedApp(me: Me, auth: RwSignal<Auth>) -> impl IntoView {
         <Router base="/v2">
             <div class="flex min-h-screen">
                 <Sidebar />
-                <div class="flex flex-1 flex-col">
+                <div class="flex min-w-0 flex-1 flex-col">
                     <Topbar />
-                    <main class="flex-1 p-6">
+                    <main class="min-w-0 flex-1 p-6">
                         <Routes fallback=|| view! { <p class="text-slate-500">"No encontrado"</p> }>
                             <Route path=path!("/") view=Dashboard />
                             <Route path=path!("/accounts") view=AccountsPage />

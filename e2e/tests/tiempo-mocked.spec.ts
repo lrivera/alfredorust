@@ -35,4 +35,28 @@ test.describe("tiempo timeline (mocked API)", () => {
     await page.getByRole("button", { name: "Semana" }).click();
     await expect.poll(() => lastUrl).toContain("mode=week");
   });
+
+  test("centers on today and contains its own scroll", async ({ page }) => {
+    await me(page);
+    await page.route("**/api/tiempo*", (route) => route.fulfill({ json: [] }));
+    await page.goto("/v2/tiempo");
+    await expect(page.locator("#timelineStrip > div").first()).toBeVisible();
+
+    // recenter() scrolls the viewport to the middle (today), not the far-left
+    // (which would be years in the past).
+    await expect
+      .poll(() => page.locator("#timelineViewport").evaluate((el) => el.scrollLeft))
+      .toBeGreaterThan(40000);
+
+    // The huge strip scrolls inside the viewport; the page itself does not
+    // overflow horizontally.
+    const pageOverflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(pageOverflow).toBeLessThanOrEqual(2);
+    const viewportScrolls = await page
+      .locator("#timelineViewport")
+      .evaluate((el) => el.scrollWidth > el.clientWidth);
+    expect(viewportScrolls).toBe(true);
+  });
 });

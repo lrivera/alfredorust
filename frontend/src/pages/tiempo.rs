@@ -27,14 +27,14 @@ const TIEMPO_HTML: &str = r##"
     <button id="bulkPayTimelineBtn" class="hidden rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700">Pagar seleccionados</button>
   </div>
 
-  <div class="relative w-full flex flex-1 min-h-[24rem] max-h-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm flex-col">
+  <div class="relative flex w-full min-w-0 flex-1 min-h-[24rem] max-h-full flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
     <div id="chartLegend" class="pointer-events-none sticky top-0 left-0 z-20 flex flex-wrap items-center gap-3 bg-white px-4 py-3 border-b border-slate-200">
       <span class="flex items-center gap-2 text-xs font-semibold text-slate-700"><span class="h-2.5 w-4 rounded-sm bg-sky-500"></span> Real acumulado</span>
       <span class="flex items-center gap-2 text-xs font-semibold text-slate-700"><span class="h-2.5 w-4 rounded-sm bg-purple-500"></span> Plan acumulado</span>
     </div>
-    <div id="timelineViewport" class="relative w-full h-full overflow-x-auto overflow-y-hidden border-t border-slate-100 flex-1">
+    <div id="timelineViewport" class="relative w-full min-w-0 max-w-full flex-1 overflow-x-auto overflow-y-hidden border-t border-slate-100">
       <div id="timelineChart" class="sticky top-0 z-10 h-40 pointer-events-none bg-white"></div>
-      <div id="timelineStrip" class="flex h-full min-h-[24rem] w-full"></div>
+      <div id="timelineStrip" class="flex h-full min-h-[24rem]"></div>
     </div>
   </div>
 "##;
@@ -296,12 +296,15 @@ const TIEMPO_JS: &str = r##"
       const currentConfig = modes[mode];
       const anchorDate = currentConfig.add(baseDate, origin);
       mode = nextMode; baseDate = anchorDate; origin = 0; bucketData = new Map(); bucketList = [];
-      renderCells(); updateModeButtons(); await loadData(); recenter();
+      // Center on "today" immediately (before the fetch) so we never flash the
+      // far-left edge, then re-center once layout settles.
+      renderCells(); updateModeButtons(); recenter(); requestAnimationFrame(recenter);
+      await loadData(); recenter();
     };
 
     document.querySelectorAll(".mode-btn").forEach((btn) => { btn.addEventListener("click", () => setMode(btn.dataset.mode)); });
     const btnHoy = document.getElementById("btnHoy");
-    if (btnHoy) btnHoy.addEventListener("click", () => { baseDate = new Date(); origin = 0; bucketData = new Map(); bucketList = []; renderCells(); recenter(); void loadData(); });
+    if (btnHoy) btnHoy.addEventListener("click", () => { baseDate = new Date(); origin = 0; bucketData = new Map(); bucketList = []; renderCells(); recenter(); requestAnimationFrame(recenter); void loadData(); });
 
     const loadData = async () => {
       const config = modes[mode];
@@ -333,5 +336,10 @@ pub fn TiempoPage() -> impl IntoView {
             run_script(TIEMPO_JS);
         }
     });
-    view! { <div node_ref=host class="flex h-[calc(100vh-8rem)] flex-col"></div> }
+    view! {
+        <div
+            node_ref=host
+            class="flex h-[calc(100vh-8rem)] w-full min-w-0 flex-col overflow-hidden"
+        ></div>
+    }
 }
