@@ -39,6 +39,13 @@ For each category: build SPA routes/screens over the existing JSON API → reach
 > (not in use for now). Resume when needed: migrate `/pdf` (editor) + `POST
 > /pdf/preview` to an SPA screen. — held 2026-06-18
 
+## Phase N — Follow-ups
+- [ ] **Tiempo pay buttons → SPA flow.** The timeline "Pagar" / "Pagar seleccionados"
+      buttons currently link to the v1 routes (`/admin/planned_entries/{id}/pay`,
+      `/admin/planned_entries/bulk_pay`), which briefly leave `/v2` and return to
+      `/v2/tiempo`. Reconnect them to the SPA planned-entries pay / bulk-pay flow.
+      — noted 2026-06-18
+
 ## Phase N — Cleanup
 - [ ] Remove `src/templates/**` and HTML/form route handlers once every category has SPA parity.
 - [ ] Trim now-unused HTML-only dependencies (Askama) if nothing else uses them.
