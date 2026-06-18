@@ -5,10 +5,13 @@
   "description": "Playwright end-to-end tests for the Leptos SPA.",
   "scripts": {
     "test": "playwright test",
-    "test:headed": "playwright test --headed"
+    "test:headed": "playwright test --headed",
+    "test:server": "E2E_SMOKE=1 playwright test --workers=1",
+    "report": "playwright show-report"
   },
   "devDependencies": {
     "@playwright/test": "^1.48.0",
+    "dotenv": "^17.4.2",
     "otplib": "^12.0.1"
   }
 }

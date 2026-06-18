@@ -69,6 +69,15 @@ jobs:
             -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
             frontend/dist/ \
             $SSH_USER@$SSH_HOST:/home/$SSH_USER/alfredorust/frontend/dist/
+          # Ship the committed Playwright UI report (generated locally, not in
+          # CI) so it's served at /test/reports/playwright on the test tenant.
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            $SSH_USER@$SSH_HOST \
+            "mkdir -p /home/$SSH_USER/alfredorust/test-reports/playwright"
+          rsync -az --delete \
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
+            test-reports/playwright/ \
+            $SSH_USER@$SSH_HOST:/home/$SSH_USER/alfredorust/test-reports/playwright/
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
             $SSH_USER@$SSH_HOST \
             "sudo systemctl restart alfredorust"
