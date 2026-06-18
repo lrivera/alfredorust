@@ -214,7 +214,7 @@ pub fn AccountsPage() -> impl IntoView {
                                         <Checkbox checked=is_active label="Activa" />
                                     </div>
                                     <div class="flex items-end gap-2">
-                                        <Button disabled=pending>
+                                        <Button r#type="submit" disabled=pending>
                                             {move || {
                                                 if pending.get() {
                                                     "Guardando…"

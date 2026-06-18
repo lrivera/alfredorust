@@ -37,14 +37,18 @@ pub fn Button(
     #[prop(optional)] variant: ButtonVariant,
     #[prop(optional, into)] class: String,
     #[prop(optional, into)] disabled: MaybeProp<bool>,
+    /// Defaults to "button" so action buttons inside a `<form>` never submit it
+    /// by accident. Set `r#type="submit"` on the form's submit button.
+    #[prop(optional, into)] r#type: String,
     children: Children,
 ) -> impl IntoView {
     let classes = merge_classes(
         &format!("{BUTTON_BASE} {}", variant.classes()),
         &class,
     );
+    let ty = if r#type.is_empty() { "button".to_string() } else { r#type };
     view! {
-        <button class=classes disabled=move || disabled.get().unwrap_or(false)>
+        <button type=ty class=classes disabled=move || disabled.get().unwrap_or(false)>
             {children()}
         </button>
     }

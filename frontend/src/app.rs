@@ -9,8 +9,8 @@ use leptos_router::path;
 use crate::api::{self, ApiError, Me};
 use crate::components::{Button, ButtonVariant, Card, CardContent, CardHeader, CardTitle, Input};
 use crate::pages::{
-    AccountsPage, CategoriesPage, ContactsPage, Dashboard, ForecastsPage, PlannedEntriesPage,
-    RecurringPlansPage, TransactionsPage,
+    AccountsPage, CategoriesPage, ContactsPage, Dashboard, ForecastsPage, OrdersPage,
+    PlannedEntriesPage, ProjectsPage, RecurringPlansPage, TransactionsPage,
 };
 
 #[derive(Clone)]
@@ -143,7 +143,7 @@ fn LoginView(auth: RwSignal<Auth>) -> impl IntoView {
                                 .map(|msg| view! { <p class="text-sm text-red-600">{msg}</p> })
                         }}
 
-                        <Button disabled=pending class="w-full">
+                        <Button r#type="submit" disabled=pending class="w-full">
                             {move || if pending.get() { "Entrando…" } else { "Entrar" }}
                         </Button>
                     </form>
@@ -176,6 +176,8 @@ fn AuthedApp(me: Me, auth: RwSignal<Auth>) -> impl IntoView {
                             <Route path=path!("/recurring-plans") view=RecurringPlansPage />
                             <Route path=path!("/planned-entries") view=PlannedEntriesPage />
                             <Route path=path!("/forecasts") view=ForecastsPage />
+                            <Route path=path!("/orders") view=OrdersPage />
+                            <Route path=path!("/projects") view=ProjectsPage />
                         </Routes>
                     </main>
                 </div>
@@ -227,6 +229,15 @@ fn Sidebar() -> impl IntoView {
                             </A>
                             <A href="/v2/forecasts" attr:class=link>
                                 "Pronósticos"
+                            </A>
+                            <p class="px-3 pt-3 pb-1 text-xs font-semibold uppercase text-slate-400">
+                                "Operaciones"
+                            </p>
+                            <A href="/v2/orders" attr:class=link>
+                                "Órdenes"
+                            </A>
+                            <A href="/v2/projects" attr:class=link>
+                                "Proyectos"
                             </A>
                         }
                             .into_any()

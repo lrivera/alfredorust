@@ -519,3 +519,99 @@ pub struct TransactionDetail {
     pub is_confirmed: bool,
     pub notes: Option<String>,
 }
+
+// --- orders (service orders) ----------------------------------------------
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct OrderItem {
+    pub description: String,
+    pub quantity: f64,
+    pub unit_price: f64,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct Order {
+    pub id: String,
+    pub title: String,
+    pub status: String,
+    #[serde(default)]
+    pub status_label: String,
+    pub amount: f64,
+    #[serde(default)]
+    pub scheduled_at: Option<String>,
+    #[serde(default)]
+    pub contact_id: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct OrderPayload {
+    pub title: String,
+    pub contact_id: Option<String>,
+    pub category_id: Option<String>,
+    pub account_id: Option<String>,
+    pub status: String,
+    pub amount: f64,
+    pub scheduled_at: Option<String>,
+    pub items: Vec<OrderItem>,
+    pub notes: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct OrderDetail {
+    pub title: String,
+    pub contact_id: Option<String>,
+    pub category_id: Option<String>,
+    pub account_id: Option<String>,
+    pub status: String,
+    pub amount: f64,
+    pub scheduled_at: Option<String>,
+    #[serde(default)]
+    pub items: Vec<OrderItem>,
+    pub notes: Option<String>,
+}
+
+// --- projects -------------------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct ProjectRow {
+    pub id: String,
+    pub title: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    pub status: String,
+    #[serde(default)]
+    pub status_label: String,
+    pub priority: String,
+    #[serde(default)]
+    pub priority_label: String,
+    #[serde(default)]
+    pub total_budget: Option<f64>,
+    #[serde(default)]
+    pub scheduled_at: Option<String>,
+    #[serde(default)]
+    pub contact_id: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ProjectPayload {
+    pub title: String,
+    pub contact_id: Option<String>,
+    pub category_id: Option<String>,
+    pub description: Option<String>,
+    pub priority: String,
+    pub total_budget: Option<f64>,
+    pub scheduled_at: Option<String>,
+    pub notes: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct ProjectDetail {
+    pub title: String,
+    pub contact_id: Option<String>,
+    pub category_id: Option<String>,
+    pub description: Option<String>,
+    pub priority: String,
+    pub total_budget: Option<f64>,
+    pub scheduled_at: Option<String>,
+    pub notes: Option<String>,
+}

@@ -417,7 +417,7 @@ pub fn PlannedEntriesPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="flex items-end gap-2">
-                                        <Button disabled=pending>
+                                        <Button r#type="submit" disabled=pending>
                                             {move || {
                                                 if pending.get() {
                                                     "Guardando…"
@@ -524,7 +524,7 @@ pub fn PlannedEntriesPage() -> impl IntoView {
                                             />
                                         </div>
                                         <div class="flex items-end gap-2 sm:col-span-2">
-                                            <Button disabled=pay_pending>
+                                            <Button r#type="submit" disabled=pay_pending>
                                                 {move || {
                                                     if pay_pending.get() { "Pagando…" } else { "Confirmar pago" }
                                                 }}
@@ -624,7 +624,7 @@ pub fn PlannedEntriesPage() -> impl IntoView {
                                             />
                                         </div>
                                         <div class="flex items-end gap-2 sm:col-span-2">
-                                            <Button disabled=bulk_pending>
+                                            <Button r#type="submit" disabled=bulk_pending>
                                                 {move || {
                                                     if bulk_pending.get() { "Pagando…" } else { "Confirmar pago" }
                                                 }}

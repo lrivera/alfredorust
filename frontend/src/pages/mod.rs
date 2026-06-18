@@ -6,7 +6,9 @@ mod categories;
 mod contacts;
 mod dashboard;
 mod forecasts;
+mod orders;
 mod planned_entries;
+mod projects;
 mod recurring_plans;
 mod transactions;
 
@@ -15,7 +17,9 @@ pub use categories::CategoriesPage;
 pub use contacts::ContactsPage;
 pub use dashboard::Dashboard;
 pub use forecasts::ForecastsPage;
+pub use orders::OrdersPage;
 pub use planned_entries::PlannedEntriesPage;
+pub use projects::ProjectsPage;
 pub use recurring_plans::RecurringPlansPage;
 pub use transactions::TransactionsPage;
 

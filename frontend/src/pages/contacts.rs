@@ -195,7 +195,7 @@ pub fn ContactsPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="flex items-end gap-2">
-                                        <Button disabled=pending>
+                                        <Button r#type="submit" disabled=pending>
                                             {move || {
                                                 if pending.get() {
                                                     "Guardando…"

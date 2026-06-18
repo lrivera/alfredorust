@@ -301,7 +301,7 @@ pub fn TransactionsPage() -> impl IntoView {
                                         <Checkbox checked=is_confirmed label="Confirmado" />
                                     </div>
                                     <div class="flex items-end gap-2">
-                                        <Button disabled=pending>
+                                        <Button r#type="submit" disabled=pending>
                                             {move || {
                                                 if pending.get() {
                                                     "Guardando…"
