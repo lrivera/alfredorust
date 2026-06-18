@@ -3,6 +3,7 @@
 
 mod accounts;
 mod categories;
+mod cfdi;
 mod contacts;
 mod dashboard;
 mod forecasts;
@@ -12,10 +13,12 @@ mod projects;
 mod recurring_plans;
 mod resource_logs;
 mod resources;
+mod tiempo;
 mod transactions;
 
 pub use accounts::AccountsPage;
 pub use categories::CategoriesPage;
+pub use cfdi::CfdiPage;
 pub use contacts::ContactsPage;
 pub use dashboard::Dashboard;
 pub use forecasts::ForecastsPage;
@@ -25,6 +28,7 @@ pub use projects::ProjectsPage;
 pub use recurring_plans::RecurringPlansPage;
 pub use resource_logs::ResourceLogsPage;
 pub use resources::ResourcesPage;
+pub use tiempo::TiempoPage;
 pub use transactions::TransactionsPage;
 
 use leptos::prelude::*;

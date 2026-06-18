@@ -9,9 +9,9 @@ use leptos_router::path;
 use crate::api::{self, ApiError, Me};
 use crate::components::{Button, ButtonVariant, Card, CardContent, CardHeader, CardTitle, Input};
 use crate::pages::{
-    AccountsPage, CategoriesPage, ContactsPage, Dashboard, ForecastsPage, OrdersPage,
+    AccountsPage, CategoriesPage, CfdiPage, ContactsPage, Dashboard, ForecastsPage, OrdersPage,
     PlannedEntriesPage, ProjectsPage, RecurringPlansPage, ResourceLogsPage, ResourcesPage,
-    TransactionsPage,
+    TiempoPage, TransactionsPage,
 };
 
 #[derive(Clone)]
@@ -181,6 +181,8 @@ fn AuthedApp(me: Me, auth: RwSignal<Auth>) -> impl IntoView {
                             <Route path=path!("/projects") view=ProjectsPage />
                             <Route path=path!("/resources") view=ResourcesPage />
                             <Route path=path!("/resource-logs") view=ResourceLogsPage />
+                            <Route path=path!("/tiempo") view=TiempoPage />
+                            <Route path=path!("/cfdi") view=CfdiPage />
                         </Routes>
                     </main>
                 </div>
@@ -205,6 +207,9 @@ fn Sidebar() -> impl IntoView {
                 // matching), so the prefix must be explicit here.
                 <A href="/v2/" attr:class=link>
                     "Inicio"
+                </A>
+                <A href="/v2/tiempo" attr:class=link>
+                    "Tiempo"
                 </A>
                 {move || {
                     if is_admin {
@@ -247,6 +252,12 @@ fn Sidebar() -> impl IntoView {
                             </A>
                             <A href="/v2/resource-logs" attr:class=link>
                                 "Registros de recursos"
+                            </A>
+                            <p class="px-3 pt-3 pb-1 text-xs font-semibold uppercase text-slate-400">
+                                "Fiscal"
+                            </p>
+                            <A href="/v2/cfdi" attr:class=link>
+                                "CFDIs"
                             </A>
                         }
                             .into_any()

@@ -25,13 +25,19 @@
 ## Phase 3+ — Migrate `/admin/*` by category
 For each category: build SPA routes/screens over the existing JSON API → reach parity → unit + Playwright coverage → retire the matching Askama templates and HTML/form handlers.
 
-- [ ] **finance** — accounts, categories, contacts, transactions, recurring plans, planned entries (incl. bulk-pay/pay), forecasts.
-- [ ] **projects** — projects, concepts, concept statuses, status summary, workflow advance.
-- [ ] **resources** — resources, resource logs (incl. end), resource usages + hourly grid save.
-- [ ] **orders** — service orders (incl. complete).
-- [ ] **admin** — users, companies, SAT configs (incl. multipart `.cer`/`.key` upload).
+- [x] **finance** — accounts, categories, contacts, transactions, recurring plans, planned entries (incl. bulk-pay/pay + links), forecasts. CRUD + edit, v1 parity, Playwright per field/flow.
+- [x] **orders** — service orders incl. complete + dynamic line items.
+- [x] **projects** — projects CRUD + advance. (Concept detail page pending below.)
+- [x] **resources** — resources (allowed statuses), resource logs (incl. end). (Hourly grid pending below.)
+- [ ] **resource usages** — hourly grid + allocations (the heaviest screen).
+- [ ] **project detail** — concepts, concept statuses, status summary, per-concept advance.
 - [ ] **cfdi** — CFDI reads + download jobs.
-- [ ] **tiempo / pdf** — time timeline; PDF preview.
+- [ ] **tiempo** — time timeline (read view).
+- [ ] **admin** — users, companies, SAT configs (incl. multipart `.cer`/`.key` upload).
+
+> **ON HOLD — `pdf` (PDF preview):** intentionally deferred at the user's request
+> (not in use for now). Resume when needed: migrate `/pdf` (editor) + `POST
+> /pdf/preview` to an SPA screen. — held 2026-06-18
 
 ## Phase N — Cleanup
 - [ ] Remove `src/templates/**` and HTML/form route handlers once every category has SPA parity.
