@@ -199,7 +199,7 @@ pub fn RecurringPlansPage() -> impl IntoView {
                             <CardContent>
                                 <form on:submit=submit class="grid gap-3 sm:grid-cols-3">
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Nombre"
                                         </label>
                                         <Input
@@ -209,7 +209,7 @@ pub fn RecurringPlansPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Flujo"
                                         </label>
                                         <Select value=flow>
@@ -218,7 +218,7 @@ pub fn RecurringPlansPage() -> impl IntoView {
                                         </Select>
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Frecuencia"
                                         </label>
                                         <Select value=frequency>
@@ -227,7 +227,7 @@ pub fn RecurringPlansPage() -> impl IntoView {
                                         </Select>
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Categoría"
                                         </label>
                                         <Select value=category>
@@ -244,7 +244,7 @@ pub fn RecurringPlansPage() -> impl IntoView {
                                         </Select>
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Cuenta esperada"
                                         </label>
                                         <Select value=account>
@@ -261,7 +261,7 @@ pub fn RecurringPlansPage() -> impl IntoView {
                                         </Select>
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Monto estimado"
                                         </label>
                                         <Input
@@ -272,7 +272,7 @@ pub fn RecurringPlansPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Inicio"
                                         </label>
                                         <Input
@@ -283,7 +283,7 @@ pub fn RecurringPlansPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Término (opcional)"
                                         </label>
                                         <Input
@@ -293,7 +293,7 @@ pub fn RecurringPlansPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Día del mes (opcional)"
                                         </label>
                                         <Input
@@ -303,7 +303,7 @@ pub fn RecurringPlansPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Contacto (opcional)"
                                         </label>
                                         <Select value=contact>
@@ -320,7 +320,7 @@ pub fn RecurringPlansPage() -> impl IntoView {
                                         </Select>
                                     </div>
                                     <div class="space-y-1 sm:col-span-2">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Notas"
                                         </label>
                                         <Input
@@ -379,18 +379,18 @@ pub fn RecurringPlansPage() -> impl IntoView {
             }}
 
             {move || match items.get() {
-                None => view! { <p class="text-slate-500">"Cargando…"</p> }.into_any(),
+                None => view! { <p class="text-muted-foreground">"Cargando…"</p> }.into_any(),
                 Some(Err(_)) => {
                     view! { <p class="text-red-600">"No se pudieron cargar los planes."</p> }.into_any()
                 }
                 Some(Ok(list)) if list.is_empty() => {
-                    view! { <p class="text-slate-500">"Sin planes todavía."</p> }.into_any()
+                    view! { <p class="text-muted-foreground">"Sin planes todavía."</p> }.into_any()
                 }
                 Some(Ok(list)) => {
                     view! {
-                        <div class="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                        <div class="overflow-hidden rounded-xl border border-border bg-card">
                             <table class="w-full text-left text-sm">
-                                <thead class="bg-slate-50 text-slate-600">
+                                <thead class="bg-muted text-muted-foreground">
                                     <tr>
                                         <th class="px-4 py-2 font-medium">"Nombre"</th>
                                         <th class="px-4 py-2 font-medium">"Flujo"</th>
@@ -406,7 +406,7 @@ pub fn RecurringPlansPage() -> impl IntoView {
                                         .map(|p| {
                                             let id = p.id.clone();
                                             view! {
-                                                <tr class="border-t border-slate-100">
+                                                <tr class="border-t border-border">
                                                     <td class="px-4 py-2">{p.name}</td>
                                                     <td class="px-4 py-2">
                                                         {flow_label(&p.flow_type).to_string()}

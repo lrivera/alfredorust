@@ -138,7 +138,7 @@ pub fn ProjectDetailPage() -> impl IntoView {
 
     view! {
         <div class="space-y-6">
-            <a href="/v2/projects" class="text-sm text-slate-500 hover:underline">"← Proyectos"</a>
+            <a href="/v2/projects" class="text-sm text-muted-foreground hover:underline">"← Proyectos"</a>
             <h1 class="text-xl font-semibold">{move || title.get()}</h1>
 
             {move || {
@@ -155,7 +155,7 @@ pub fn ProjectDetailPage() -> impl IntoView {
                             <CardContent>
                                 <form on:submit=submit class="grid gap-3 sm:grid-cols-3">
                                     <div class="space-y-1 sm:col-span-2">
-                                        <label class="block text-sm font-medium text-slate-700">"Concepto"</label>
+                                        <label class="block text-sm font-medium text-foreground">"Concepto"</label>
                                         <Input
                                             value=name
                                             on_input=Callback::new(move |v| name.set(v))
@@ -163,7 +163,7 @@ pub fn ProjectDetailPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">"Estado"</label>
+                                        <label class="block text-sm font-medium text-foreground">"Estado"</label>
                                         <Select value=status>
                                             <option value="">"— Inicial —"</option>
                                             {move || {
@@ -176,7 +176,7 @@ pub fn ProjectDetailPage() -> impl IntoView {
                                         </Select>
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">"Cantidad"</label>
+                                        <label class="block text-sm font-medium text-foreground">"Cantidad"</label>
                                         <Input
                                             value=quantity
                                             on_input=Callback::new(move |v| quantity.set(v))
@@ -184,11 +184,11 @@ pub fn ProjectDetailPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">"Unidad"</label>
+                                        <label class="block text-sm font-medium text-foreground">"Unidad"</label>
                                         <Input value=unit on_input=Callback::new(move |v| unit.set(v)) />
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">"Orden"</label>
+                                        <label class="block text-sm font-medium text-foreground">"Orden"</label>
                                         <Input
                                             value=position
                                             on_input=Callback::new(move |v| position.set(v))
@@ -196,7 +196,7 @@ pub fn ProjectDetailPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Horas estimadas"
                                         </label>
                                         <Input
@@ -206,7 +206,7 @@ pub fn ProjectDetailPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Costo estimado"
                                         </label>
                                         <Input
@@ -216,7 +216,7 @@ pub fn ProjectDetailPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="space-y-1 sm:col-span-3">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Descripción"
                                         </label>
                                         <Input
@@ -268,18 +268,18 @@ pub fn ProjectDetailPage() -> impl IntoView {
             }}
 
             {move || match concepts.get() {
-                None => view! { <p class="text-slate-500">"Cargando…"</p> }.into_any(),
+                None => view! { <p class="text-muted-foreground">"Cargando…"</p> }.into_any(),
                 Some(Err(_)) => {
                     view! { <p class="text-red-600">"No se pudieron cargar los conceptos."</p> }.into_any()
                 }
                 Some(Ok(list)) if list.is_empty() => {
-                    view! { <p class="text-slate-500">"Sin conceptos todavía."</p> }.into_any()
+                    view! { <p class="text-muted-foreground">"Sin conceptos todavía."</p> }.into_any()
                 }
                 Some(Ok(list)) => {
                     view! {
-                        <div class="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                        <div class="overflow-hidden rounded-xl border border-border bg-card">
                             <table class="w-full text-left text-sm">
-                                <thead class="bg-slate-50 text-slate-600">
+                                <thead class="bg-muted text-muted-foreground">
                                     <tr>
                                         <th class="px-4 py-2 font-medium">"Orden"</th>
                                         <th class="px-4 py-2 font-medium">"Concepto"</th>
@@ -304,8 +304,8 @@ pub fn ProjectDetailPage() -> impl IntoView {
                                             );
                                             let hrs = c.estimated_hours.map(|h| format!("{h:.1}")).unwrap_or_default();
                                             view! {
-                                                <tr class="border-t border-slate-100">
-                                                    <td class="px-4 py-2 text-slate-500">{c.position}</td>
+                                                <tr class="border-t border-border">
+                                                    <td class="px-4 py-2 text-muted-foreground">{c.position}</td>
                                                     <td class="px-4 py-2">{c.name}</td>
                                                     <td class="px-4 py-2">{qty}</td>
                                                     <td class="px-4 py-2">{move || status_name(&sid)}</td>

@@ -35,10 +35,10 @@ pub fn App() -> impl IntoView {
     });
 
     view! {
-        <div class="min-h-screen bg-slate-50 text-slate-900">
+        <div class="min-h-screen bg-background text-foreground">
             {move || match auth.get() {
                 Auth::Loading => {
-                    view! { <p class="p-8 text-slate-500">"Cargando…"</p> }.into_any()
+                    view! { <p class="p-8 text-muted-foreground">"Cargando…"</p> }.into_any()
                 }
                 Auth::Anon => view! { <LoginView auth=auth /> }.into_any(),
                 Auth::Authed(me) => view! { <AuthedApp me=me auth=auth /> }.into_any(),
@@ -114,7 +114,7 @@ fn LoginView(auth: RwSignal<Auth>) -> impl IntoView {
                 <CardContent>
                     <form on:submit=submit class="space-y-4">
                         <div class="space-y-1">
-                            <label class="block text-sm font-medium text-slate-700">"Usuario"</label>
+                            <label class="block text-sm font-medium text-foreground">"Usuario"</label>
                             <Input
                                 value=email
                                 on_input=Callback::new(move |v| email.set(v))
@@ -125,7 +125,7 @@ fn LoginView(auth: RwSignal<Auth>) -> impl IntoView {
                         </div>
 
                         <div class="space-y-1">
-                            <label class="block text-sm font-medium text-slate-700">
+                            <label class="block text-sm font-medium text-foreground">
                                 "Código (6 dígitos)"
                             </label>
                             <Input
@@ -141,7 +141,7 @@ fn LoginView(auth: RwSignal<Auth>) -> impl IntoView {
                         {move || {
                             error
                                 .get()
-                                .map(|msg| view! { <p class="text-sm text-red-600">{msg}</p> })
+                                .map(|msg| view! { <p class="text-sm text-destructive">{msg}</p> })
                         }}
 
                         <Button r#type="submit" disabled=pending class="w-full">
@@ -168,7 +168,9 @@ fn AuthedApp(me: Me, auth: RwSignal<Auth>) -> impl IntoView {
                 <div class="flex min-w-0 flex-1 flex-col">
                     <Topbar />
                     <main class="min-w-0 flex-1 p-6">
-                        <Routes fallback=|| view! { <p class="text-slate-500">"No encontrado"</p> }>
+                        <Routes fallback=|| {
+                            view! { <p class="text-muted-foreground">"No encontrado"</p> }
+                        }>
                             <Route path=path!("/") view=Dashboard />
                             <Route path=path!("/accounts") view=AccountsPage />
                             <Route path=path!("/categories") view=CategoriesPage />
@@ -208,12 +210,13 @@ fn Sidebar() -> impl IntoView {
     let can_projects = is_admin || me.can("view_projects");
     let can_resource_usage =
         is_admin || me.can("edit_resource_usage_today") || me.can("view_resource_usage_history");
-    let link = "block rounded-md px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 \
-        aria-[current=page]:bg-slate-200 aria-[current=page]:font-semibold";
+    let link = "block rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-muted \
+        hover:text-foreground aria-[current=page]:bg-muted aria-[current=page]:text-foreground \
+        aria-[current=page]:font-semibold";
 
     view! {
-        <aside class="w-56 shrink-0 border-r border-slate-200 bg-white p-3">
-            <p class="px-3 pb-3 text-sm font-semibold text-slate-900">"alfredodev"</p>
+        <aside class="w-56 shrink-0 border-r border-border bg-card p-3">
+            <p class="px-3 pb-3 text-sm font-semibold text-foreground">"alfredodev"</p>
             <nav class="space-y-1">
                 // Absolute hrefs include the /v2 prefix: leptos_router passes
                 // absolute links through unchanged (base only strips for route
@@ -239,7 +242,7 @@ fn Sidebar() -> impl IntoView {
                 {move || {
                     if !is_admin && (can_projects || can_resource_usage) {
                         view! {
-                            <p class="px-3 pt-3 pb-1 text-xs font-semibold uppercase text-slate-400">
+                            <p class="px-3 pt-3 pb-1 text-xs font-semibold uppercase text-muted-foreground">
                                 "Operaciones"
                             </p>
                             {can_projects
@@ -267,7 +270,7 @@ fn Sidebar() -> impl IntoView {
                 {move || {
                     if is_admin {
                         view! {
-                            <p class="px-3 pt-3 pb-1 text-xs font-semibold uppercase text-slate-400">
+                            <p class="px-3 pt-3 pb-1 text-xs font-semibold uppercase text-muted-foreground">
                                 "Finanzas"
                             </p>
                             <A href="/v2/accounts" attr:class=link>
@@ -291,7 +294,7 @@ fn Sidebar() -> impl IntoView {
                             <A href="/v2/forecasts" attr:class=link>
                                 "Pronósticos"
                             </A>
-                            <p class="px-3 pt-3 pb-1 text-xs font-semibold uppercase text-slate-400">
+                            <p class="px-3 pt-3 pb-1 text-xs font-semibold uppercase text-muted-foreground">
                                 "Operaciones"
                             </p>
                             <A href="/v2/orders" attr:class=link>
@@ -312,7 +315,7 @@ fn Sidebar() -> impl IntoView {
                             <A href="/v2/resource-usages" attr:class=link>
                                 "Uso de recursos (grid)"
                             </A>
-                            <p class="px-3 pt-3 pb-1 text-xs font-semibold uppercase text-slate-400">
+                            <p class="px-3 pt-3 pb-1 text-xs font-semibold uppercase text-muted-foreground">
                                 "Fiscal"
                             </p>
                             <A href="/v2/cfdi" attr:class=link>
@@ -321,7 +324,7 @@ fn Sidebar() -> impl IntoView {
                             <A href="/v2/sat-configs" attr:class=link>
                                 "Config. SAT"
                             </A>
-                            <p class="px-3 pt-3 pb-1 text-xs font-semibold uppercase text-slate-400">
+                            <p class="px-3 pt-3 pb-1 text-xs font-semibold uppercase text-muted-foreground">
                                 "Administración"
                             </p>
                             <A href="/v2/companies" attr:class=link>
@@ -353,17 +356,39 @@ fn Topbar() -> impl IntoView {
         });
     };
 
+    // Theme toggle, persisted in localStorage and reflected on <html>.
+    let theme = RwSignal::new(crate::theme::stored_theme());
+    let toggle_theme = move |_| {
+        let next = theme.get().toggled();
+        crate::theme::set_theme(next);
+        theme.set(next);
+    };
+
     view! {
-        <header class="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-3">
+        <header class="flex items-center justify-between border-b border-border bg-card px-6 py-3">
             <div>
-                <p class="text-sm text-slate-500">{me.username.clone()}</p>
+                <p class="text-sm text-muted-foreground">{me.username.clone()}</p>
                 <p class="font-semibold">
-                    {me.company.clone()} " · " <span class="text-slate-500">{me.role.clone()}</span>
+                    {me.company.clone()} " · "
+                    <span class="text-muted-foreground">{me.role.clone()}</span>
                 </p>
             </div>
-            <Button variant=ButtonVariant::Outline on:click=do_logout>
-                "Salir"
-            </Button>
+            <div class="flex items-center gap-2">
+                <Button
+                    variant=ButtonVariant::Ghost
+                    on:click=toggle_theme
+                    attr:aria-label="Cambiar tema"
+                    attr:title="Cambiar tema claro/oscuro"
+                >
+                    {move || match theme.get() {
+                        crate::theme::Theme::Dark => "🌙",
+                        crate::theme::Theme::Light => "☀️",
+                    }}
+                </Button>
+                <Button variant=ButtonVariant::Outline on:click=do_logout>
+                    "Salir"
+                </Button>
+            </div>
         </header>
     }
 }

@@ -167,7 +167,7 @@ pub fn ForecastsPage() -> impl IntoView {
                             <CardContent>
                                 <form on:submit=submit class="grid gap-3 sm:grid-cols-3">
                                     <div class="space-y-1 sm:col-span-3">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Escenario"
                                         </label>
                                         <Input
@@ -177,7 +177,7 @@ pub fn ForecastsPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Desde"
                                         </label>
                                         <Input
@@ -188,7 +188,7 @@ pub fn ForecastsPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Hasta"
                                         </label>
                                         <Input
@@ -199,7 +199,7 @@ pub fn ForecastsPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Moneda"
                                         </label>
                                         <Input
@@ -208,7 +208,7 @@ pub fn ForecastsPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Ingreso proyectado"
                                         </label>
                                         <Input
@@ -219,7 +219,7 @@ pub fn ForecastsPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Egreso proyectado"
                                         </label>
                                         <Input
@@ -230,7 +230,7 @@ pub fn ForecastsPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Saldo inicial (opcional)"
                                         </label>
                                         <Input
@@ -240,7 +240,7 @@ pub fn ForecastsPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Saldo final (opcional)"
                                         </label>
                                         <Input
@@ -250,7 +250,7 @@ pub fn ForecastsPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="space-y-1 sm:col-span-3">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Detalles (opcional)"
                                         </label>
                                         <Input
@@ -306,19 +306,19 @@ pub fn ForecastsPage() -> impl IntoView {
             }}
 
             {move || match items.get() {
-                None => view! { <p class="text-slate-500">"Cargando…"</p> }.into_any(),
+                None => view! { <p class="text-muted-foreground">"Cargando…"</p> }.into_any(),
                 Some(Err(_)) => {
                     view! { <p class="text-red-600">"No se pudieron cargar los pronósticos."</p> }
                         .into_any()
                 }
                 Some(Ok(list)) if list.is_empty() => {
-                    view! { <p class="text-slate-500">"Sin pronósticos todavía."</p> }.into_any()
+                    view! { <p class="text-muted-foreground">"Sin pronósticos todavía."</p> }.into_any()
                 }
                 Some(Ok(list)) => {
                     view! {
-                        <div class="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                        <div class="overflow-hidden rounded-xl border border-border bg-card">
                             <table class="w-full text-left text-sm">
-                                <thead class="bg-slate-50 text-slate-600">
+                                <thead class="bg-muted text-muted-foreground">
                                     <tr>
                                         <th class="px-4 py-2 font-medium">"Escenario"</th>
                                         <th class="px-4 py-2 font-medium">"Periodo"</th>
@@ -335,9 +335,9 @@ pub fn ForecastsPage() -> impl IntoView {
                                             let period = format!("{} → {}", f.start_date, f.end_date);
                                             let scenario = f.scenario_name.unwrap_or_default();
                                             view! {
-                                                <tr class="border-t border-slate-100">
+                                                <tr class="border-t border-border">
                                                     <td class="px-4 py-2">{scenario}</td>
-                                                    <td class="px-4 py-2 text-slate-500">{period}</td>
+                                                    <td class="px-4 py-2 text-muted-foreground">{period}</td>
                                                     <td class="px-4 py-2">{money(f.projected_net)}</td>
                                                     <td class="px-4 py-2">{f.currency}</td>
                                                     <td class="px-4 py-2 text-right">

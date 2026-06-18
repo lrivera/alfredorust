@@ -17,9 +17,9 @@ pub fn Dashboard() -> impl IntoView {
                 .map(|c| {
                     let href = switch_company_href(&c.slug);
                     let cls = if c.active {
-                        "font-semibold text-slate-900"
+                        "font-semibold text-foreground"
                     } else {
-                        "text-slate-600 hover:underline"
+                        "text-muted-foreground hover:underline"
                     };
                     let suffix = if c.active { " (activa)" } else { "" };
                     view! {

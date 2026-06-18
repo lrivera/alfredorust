@@ -15,19 +15,19 @@ pub enum ButtonVariant {
 impl ButtonVariant {
     fn classes(self) -> &'static str {
         match self {
-            ButtonVariant::Primary => "bg-slate-900 text-white hover:bg-slate-700",
-            ButtonVariant::Secondary => "bg-slate-100 text-slate-900 hover:bg-slate-200",
+            ButtonVariant::Primary => "bg-primary text-primary-foreground hover:bg-primary/90",
+            ButtonVariant::Secondary => "bg-muted text-foreground hover:bg-muted/70",
             ButtonVariant::Outline => {
-                "border border-slate-300 bg-transparent text-slate-900 hover:bg-slate-100"
+                "border border-border bg-transparent text-foreground hover:bg-muted"
             }
-            ButtonVariant::Ghost => "bg-transparent text-slate-900 hover:bg-slate-100",
+            ButtonVariant::Ghost => "bg-transparent text-foreground hover:bg-muted",
         }
     }
 }
 
 const BUTTON_BASE: &str = "inline-flex items-center justify-center rounded-md px-3 py-2 \
      text-sm font-medium transition-colors focus:outline-none focus:ring-2 \
-     focus:ring-slate-400 disabled:pointer-events-none disabled:opacity-50";
+     focus:ring-ring disabled:pointer-events-none disabled:opacity-50";
 
 /// Button. The native `<button>` defaults to `submit` inside a form, so the
 /// login submit button works without an explicit type; standalone buttons can

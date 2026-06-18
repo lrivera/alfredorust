@@ -179,7 +179,7 @@ pub fn CompaniesPage() -> impl IntoView {
                 <CardContent>
                     <form on:submit=submit class="grid gap-3 sm:grid-cols-2">
                         <div class="space-y-1">
-                            <label class="block text-sm font-medium text-slate-700">"Nombre"</label>
+                            <label class="block text-sm font-medium text-foreground">"Nombre"</label>
                             <Input
                                 value=name
                                 on_input=Callback::new(move |v| name.set(v))
@@ -188,7 +188,7 @@ pub fn CompaniesPage() -> impl IntoView {
                             />
                         </div>
                         <div class="space-y-1">
-                            <label class="block text-sm font-medium text-slate-700">
+                            <label class="block text-sm font-medium text-foreground">
                                 "Slug (subdominio)"
                             </label>
                             <Input
@@ -196,12 +196,12 @@ pub fn CompaniesPage() -> impl IntoView {
                                 on_input=Callback::new(move |v| slug.set(v))
                                 placeholder="ej. research"
                             />
-                            <p class="text-xs text-slate-500">
+                            <p class="text-xs text-muted-foreground">
                                 "Se genera del nombre si lo dejas vacío."
                             </p>
                         </div>
                         <div class="space-y-1">
-                            <label class="block text-sm font-medium text-slate-700">
+                            <label class="block text-sm font-medium text-foreground">
                                 "Moneda por defecto"
                             </label>
                             <Input
@@ -214,7 +214,7 @@ pub fn CompaniesPage() -> impl IntoView {
                             <Checkbox checked=is_active label="Activa" />
                         </div>
                         <div class="space-y-1 sm:col-span-2">
-                            <label class="block text-sm font-medium text-slate-700">"Notas"</label>
+                            <label class="block text-sm font-medium text-foreground">"Notas"</label>
                             <Input
                                 value=notes
                                 on_input=Callback::new(move |v| notes.set(v))
@@ -312,19 +312,19 @@ pub fn CompaniesPage() -> impl IntoView {
             }}
 
             {move || match items.get() {
-                None => view! { <p class="text-slate-500">"Cargando…"</p> }.into_any(),
+                None => view! { <p class="text-muted-foreground">"Cargando…"</p> }.into_any(),
                 Some(Err(_)) => {
                     view! { <p class="text-red-600">"No se pudieron cargar las compañías."</p> }
                         .into_any()
                 }
                 Some(Ok(list)) if list.is_empty() => {
-                    view! { <p class="text-slate-500">"Sin compañías todavía."</p> }.into_any()
+                    view! { <p class="text-muted-foreground">"Sin compañías todavía."</p> }.into_any()
                 }
                 Some(Ok(list)) => {
                     view! {
-                        <div class="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                        <div class="overflow-hidden rounded-xl border border-border bg-card">
                             <table class="w-full text-left text-sm">
-                                <thead class="bg-slate-50 text-slate-600">
+                                <thead class="bg-muted text-muted-foreground">
                                     <tr>
                                         <th class="px-4 py-2 font-medium">"Nombre"</th>
                                         <th class="px-4 py-2 font-medium">"Moneda"</th>
@@ -340,9 +340,9 @@ pub fn CompaniesPage() -> impl IntoView {
                                             let did = c.id.clone();
                                             let is_current = c.is_current;
                                             view! {
-                                                <tr class="border-t border-slate-100">
+                                                <tr class="border-t border-border">
                                                     <td class="px-4 py-2">{c.name}</td>
-                                                    <td class="px-4 py-2 text-slate-500">
+                                                    <td class="px-4 py-2 text-muted-foreground">
                                                         {c.default_currency}
                                                     </td>
                                                     <td class="px-4 py-2">
@@ -357,7 +357,7 @@ pub fn CompaniesPage() -> impl IntoView {
                                                         </Button>
                                                         {if is_current {
                                                             view! {
-                                                                <span class="ml-1 rounded bg-slate-100 px-2 py-1 text-xs text-slate-500">
+                                                                <span class="ml-1 rounded bg-muted px-2 py-1 text-xs text-muted-foreground">
                                                                     "Actual"
                                                                 </span>
                                                             }

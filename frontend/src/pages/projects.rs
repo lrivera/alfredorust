@@ -158,7 +158,7 @@ pub fn ProjectsPage() -> impl IntoView {
                             <CardContent>
                                 <form on:submit=submit class="grid gap-3 sm:grid-cols-3">
                                     <div class="space-y-1 sm:col-span-2">
-                                        <label class="block text-sm font-medium text-slate-700">"Título"</label>
+                                        <label class="block text-sm font-medium text-foreground">"Título"</label>
                                         <Input
                                             value=title
                                             on_input=Callback::new(move |v| title.set(v))
@@ -166,7 +166,7 @@ pub fn ProjectsPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Prioridad"
                                         </label>
                                         <Select value=priority>
@@ -177,7 +177,7 @@ pub fn ProjectsPage() -> impl IntoView {
                                         </Select>
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Cliente (opcional)"
                                         </label>
                                         <Select value=contact>
@@ -192,7 +192,7 @@ pub fn ProjectsPage() -> impl IntoView {
                                         </Select>
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Categoría (opcional)"
                                         </label>
                                         <Select value=category>
@@ -207,7 +207,7 @@ pub fn ProjectsPage() -> impl IntoView {
                                         </Select>
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Presupuesto (opcional)"
                                         </label>
                                         <Input
@@ -217,7 +217,7 @@ pub fn ProjectsPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Fecha límite (opcional)"
                                         </label>
                                         <Input
@@ -227,7 +227,7 @@ pub fn ProjectsPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="space-y-1 sm:col-span-3">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Descripción (opcional)"
                                         </label>
                                         <Input
@@ -236,7 +236,7 @@ pub fn ProjectsPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="space-y-1 sm:col-span-2">
-                                        <label class="block text-sm font-medium text-slate-700">"Notas"</label>
+                                        <label class="block text-sm font-medium text-foreground">"Notas"</label>
                                         <Input value=notes on_input=Callback::new(move |v| notes.set(v)) />
                                     </div>
                                     <div class="flex items-end gap-2">
@@ -283,18 +283,18 @@ pub fn ProjectsPage() -> impl IntoView {
             }}
 
             {move || match items.get() {
-                None => view! { <p class="text-slate-500">"Cargando…"</p> }.into_any(),
+                None => view! { <p class="text-muted-foreground">"Cargando…"</p> }.into_any(),
                 Some(Err(_)) => {
                     view! { <p class="text-red-600">"No se pudieron cargar los proyectos."</p> }.into_any()
                 }
                 Some(Ok(list)) if list.is_empty() => {
-                    view! { <p class="text-slate-500">"Sin proyectos todavía."</p> }.into_any()
+                    view! { <p class="text-muted-foreground">"Sin proyectos todavía."</p> }.into_any()
                 }
                 Some(Ok(list)) => {
                     view! {
-                        <div class="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                        <div class="overflow-hidden rounded-xl border border-border bg-card">
                             <table class="w-full text-left text-sm">
-                                <thead class="bg-slate-50 text-slate-600">
+                                <thead class="bg-muted text-muted-foreground">
                                     <tr>
                                         <th class="px-4 py-2 font-medium">"Título"</th>
                                         <th class="px-4 py-2 font-medium">"Estado"</th>
@@ -325,20 +325,20 @@ pub fn ProjectsPage() -> impl IntoView {
                                             let budget = p.total_budget.map(money).unwrap_or_default();
                                             let sched = p.scheduled_at.as_deref().map(rfc3339_to_date).unwrap_or_default();
                                             view! {
-                                                <tr class="border-t border-slate-100">
+                                                <tr class="border-t border-border">
                                                     <td class="px-4 py-2">{p.title}</td>
                                                     <td class="px-4 py-2">{status}</td>
                                                     <td class="px-4 py-2">{prio}</td>
                                                     {can_money
                                                         .then(|| view! { <td class="px-4 py-2">{budget}</td> })}
-                                                    <td class="px-4 py-2 text-slate-500">{sched}</td>
+                                                    <td class="px-4 py-2 text-muted-foreground">{sched}</td>
                                                     <td class="px-4 py-2 text-right">
                                                         {
                                                             let vid = id.clone();
                                                             view! {
                                                                 <a
                                                                     href=format!("/v2/projects/{vid}")
-                                                                    class="mr-1 inline-flex items-center rounded-md px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+                                                                    class="mr-1 inline-flex items-center rounded-md px-3 py-2 text-sm font-medium text-foreground hover:bg-muted"
                                                                 >
                                                                     "Ver"
                                                                 </a>

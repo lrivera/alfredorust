@@ -150,7 +150,7 @@ pub fn ResourcesPage() -> impl IntoView {
                             <CardContent>
                                 <form on:submit=submit class="grid gap-3 sm:grid-cols-3">
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">"Nombre"</label>
+                                        <label class="block text-sm font-medium text-foreground">"Nombre"</label>
                                         <Input
                                             value=name
                                             on_input=Callback::new(move |v| name.set(v))
@@ -158,7 +158,7 @@ pub fn ResourcesPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">"Tipo"</label>
+                                        <label class="block text-sm font-medium text-foreground">"Tipo"</label>
                                         <Select value=rtype>
                                             {TYPES
                                                 .iter()
@@ -167,7 +167,7 @@ pub fn ResourcesPage() -> impl IntoView {
                                         </Select>
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Costo por hora"
                                         </label>
                                         <Input
@@ -178,7 +178,7 @@ pub fn ResourcesPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">"Moneda"</label>
+                                        <label class="block text-sm font-medium text-foreground">"Moneda"</label>
                                         <Input
                                             value=currency
                                             on_input=Callback::new(move |v| currency.set(v))
@@ -188,10 +188,10 @@ pub fn ResourcesPage() -> impl IntoView {
                                         <Checkbox checked=is_active label="Activo" />
                                     </div>
                                     <div class="space-y-1 sm:col-span-3">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Mostrar en estados"
                                         </label>
-                                        <div class="flex flex-wrap gap-3 rounded-md border border-slate-200 p-3">
+                                        <div class="flex flex-wrap gap-3 rounded-md border border-border p-3">
                                             {move || {
                                                 let sel = allowed.get();
                                                 statuses
@@ -204,7 +204,7 @@ pub fn ResourcesPage() -> impl IntoView {
                                                             <label class="inline-flex items-center gap-2 text-sm">
                                                                 <input
                                                                     type="checkbox"
-                                                                    class="h-4 w-4 rounded border-slate-300"
+                                                                    class="h-4 w-4 rounded border-border"
                                                                     prop:checked=checked
                                                                     on:change=move |_| toggle_status(tid.clone())
                                                                 />
@@ -217,7 +217,7 @@ pub fn ResourcesPage() -> impl IntoView {
                                         </div>
                                     </div>
                                     <div class="space-y-1 sm:col-span-2">
-                                        <label class="block text-sm font-medium text-slate-700">"Notas"</label>
+                                        <label class="block text-sm font-medium text-foreground">"Notas"</label>
                                         <Input value=notes on_input=Callback::new(move |v| notes.set(v)) />
                                     </div>
                                     <div class="flex items-end gap-2">
@@ -264,18 +264,18 @@ pub fn ResourcesPage() -> impl IntoView {
             }}
 
             {move || match items.get() {
-                None => view! { <p class="text-slate-500">"Cargando…"</p> }.into_any(),
+                None => view! { <p class="text-muted-foreground">"Cargando…"</p> }.into_any(),
                 Some(Err(_)) => {
                     view! { <p class="text-red-600">"No se pudieron cargar los recursos."</p> }.into_any()
                 }
                 Some(Ok(list)) if list.is_empty() => {
-                    view! { <p class="text-slate-500">"Sin recursos todavía."</p> }.into_any()
+                    view! { <p class="text-muted-foreground">"Sin recursos todavía."</p> }.into_any()
                 }
                 Some(Ok(list)) => {
                     view! {
-                        <div class="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                        <div class="overflow-hidden rounded-xl border border-border bg-card">
                             <table class="w-full text-left text-sm">
-                                <thead class="bg-slate-50 text-slate-600">
+                                <thead class="bg-muted text-muted-foreground">
                                     <tr>
                                         <th class="px-4 py-2 font-medium">"Nombre"</th>
                                         <th class="px-4 py-2 font-medium">"Tipo"</th>
@@ -298,12 +298,12 @@ pub fn ResourcesPage() -> impl IntoView {
                                             };
                                             let n_status = r.allowed_status_ids.len();
                                             view! {
-                                                <tr class="border-t border-slate-100">
+                                                <tr class="border-t border-border">
                                                     <td class="px-4 py-2">{r.name}</td>
                                                     <td class="px-4 py-2">{ty}</td>
                                                     <td class="px-4 py-2">{money(r.hourly_cost)}</td>
                                                     <td class="px-4 py-2">{r.currency}</td>
-                                                    <td class="px-4 py-2 text-slate-500">{n_status}</td>
+                                                    <td class="px-4 py-2 text-muted-foreground">{n_status}</td>
                                                     <td class="px-4 py-2">
                                                         {if r.is_active { "Sí" } else { "No" }}
                                                     </td>

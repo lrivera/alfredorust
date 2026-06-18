@@ -48,11 +48,11 @@ fn poll_jobs(cid: String, jobs: RwSignal<Vec<CfdiJob>>, busy: RwSignal<bool>) {
 
 fn status_badge(status: &str) -> impl IntoView {
     let (label, cls) = match status {
-        "queued" => ("En cola", "bg-slate-100 text-slate-600"),
+        "queued" => ("En cola", "bg-muted text-muted-foreground"),
         "running" => ("● Descargando", "bg-sky-100 text-sky-700"),
         "done" => ("✓ Listo", "bg-emerald-100 text-emerald-700"),
         "failed" => ("✗ Error", "bg-rose-100 text-rose-700"),
-        other => (other, "bg-slate-100 text-slate-600"),
+        other => (other, "bg-muted text-muted-foreground"),
     };
     // Own the label so the returned view doesn't borrow the `status` argument.
     let label = label.to_string();
@@ -91,8 +91,8 @@ fn cfdi_charts(items: &[Cfdi]) -> impl IntoView {
     );
     let kpi = |label: &str, value: String, color: &str| {
         view! {
-            <div class="rounded-xl border border-slate-200 bg-white p-3">
-                <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+            <div class="rounded-xl border border-border bg-card p-3">
+                <p class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                     {label.to_string()}
                 </p>
                 <p class="mt-1 text-2xl font-bold" style=format!("color:{color}")>{value}</p>
@@ -107,12 +107,12 @@ fn cfdi_charts(items: &[Cfdi]) -> impl IntoView {
                 {kpi("Neto", money(emitidos - recibidos), "#0ea5e9")}
             </div>
             <div class="grid gap-3 lg:grid-cols-3">
-                <div class="rounded-xl border border-slate-200 bg-white p-3 lg:col-span-2">
-                    <p class="mb-2 text-xs font-semibold text-slate-500">"Mensual (emitidos vs recibidos)"</p>
+                <div class="rounded-xl border border-border bg-card p-3 lg:col-span-2">
+                    <p class="mb-2 text-xs font-semibold text-muted-foreground">"Mensual (emitidos vs recibidos)"</p>
                     <div class="h-40" inner_html=line_svg></div>
                 </div>
-                <div class="rounded-xl border border-slate-200 bg-white p-3">
-                    <p class="mb-2 text-xs font-semibold text-slate-500">"Dirección"</p>
+                <div class="rounded-xl border border-border bg-card p-3">
+                    <p class="mb-2 text-xs font-semibold text-muted-foreground">"Dirección"</p>
                     <div class="mx-auto h-40 w-40" inner_html=donut_svg></div>
                 </div>
             </div>
@@ -226,7 +226,7 @@ pub fn CfdiPage() -> impl IntoView {
                                     view! {
                                         <form on:submit=start_download class="grid gap-3 sm:grid-cols-2">
                                             <div class="space-y-1">
-                                                <label class="block text-sm font-medium text-slate-700">
+                                                <label class="block text-sm font-medium text-foreground">
                                                     "Configuración SAT"
                                                 </label>
                                                 <Select value=sat_config>
@@ -250,7 +250,7 @@ pub fn CfdiPage() -> impl IntoView {
                                                 </Select>
                                             </div>
                                             <div class="space-y-1">
-                                                <label class="block text-sm font-medium text-slate-700">
+                                                <label class="block text-sm font-medium text-foreground">
                                                     "Tipo"
                                                 </label>
                                                 <Select value=dl_type>
@@ -260,7 +260,7 @@ pub fn CfdiPage() -> impl IntoView {
                                                 </Select>
                                             </div>
                                             <div class="space-y-1">
-                                                <label class="block text-sm font-medium text-slate-700">
+                                                <label class="block text-sm font-medium text-foreground">
                                                     "Desde"
                                                 </label>
                                                 <Input
@@ -270,7 +270,7 @@ pub fn CfdiPage() -> impl IntoView {
                                                 />
                                             </div>
                                             <div class="space-y-1">
-                                                <label class="block text-sm font-medium text-slate-700">
+                                                <label class="block text-sm font-medium text-foreground">
                                                     "Hasta"
                                                 </label>
                                                 <Input
@@ -310,11 +310,11 @@ pub fn CfdiPage() -> impl IntoView {
                                 }
                                 view! {
                                     <div class="mt-4 overflow-x-auto">
-                                        <p class="mb-1 text-sm font-medium text-slate-700">
+                                        <p class="mb-1 text-sm font-medium text-foreground">
                                             "Descargas"
                                         </p>
                                         <table class="w-full text-left text-xs">
-                                            <thead class="text-slate-500">
+                                            <thead class="text-muted-foreground">
                                                 <tr>
                                                     <th class="py-1 font-medium">"Período"</th>
                                                     <th class="py-1 font-medium">"Estado"</th>
@@ -340,7 +340,7 @@ pub fn CfdiPage() -> impl IntoView {
                                                             .collect::<Vec<_>>()
                                                             .join("\n");
                                                         view! {
-                                                            <tr class="border-t border-slate-100">
+                                                            <tr class="border-t border-border">
                                                                 <td class="py-1">{j.label}</td>
                                                                 <td class="py-1">{status_badge(&s.status)}</td>
                                                                 <td class="py-1">{s.imported}</td>
@@ -372,18 +372,18 @@ pub fn CfdiPage() -> impl IntoView {
             }}
 
             {move || match data.get() {
-                None => view! { <p class="text-slate-500">"Cargando…"</p> }.into_any(),
+                None => view! { <p class="text-muted-foreground">"Cargando…"</p> }.into_any(),
                 Some(Err(_)) => {
                     view! { <p class="text-red-600">"No se pudieron cargar los CFDIs."</p> }.into_any()
                 }
                 Some(Ok(list)) if list.items.is_empty() => {
-                    view! { <p class="text-slate-500">"Sin CFDIs."</p> }.into_any()
+                    view! { <p class="text-muted-foreground">"Sin CFDIs."</p> }.into_any()
                 }
                 Some(Ok(list)) => {
                     view! {
-                        <div class="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                        <div class="overflow-hidden rounded-xl border border-border bg-card">
                             <table class="w-full text-left text-sm">
-                                <thead class="bg-slate-50 text-slate-600">
+                                <thead class="bg-muted text-muted-foreground">
                                     <tr>
                                         <th class="px-4 py-2 font-medium">"Folio"</th>
                                         <th class="px-4 py-2 font-medium">"Tipo"</th>
@@ -400,14 +400,14 @@ pub fn CfdiPage() -> impl IntoView {
                                         .into_iter()
                                         .map(|c| {
                                             view! {
-                                                <tr class="border-t border-slate-100">
+                                                <tr class="border-t border-border">
                                                     <td class="px-4 py-2">{c.folio}</td>
                                                     <td class="px-4 py-2">{c.tipo}</td>
-                                                    <td class="px-4 py-2 text-slate-500">
+                                                    <td class="px-4 py-2 text-muted-foreground">
                                                         {rfc3339_to_date(&c.fecha)}
                                                     </td>
-                                                    <td class="px-4 py-2 text-slate-500">{c.emisor_nombre}</td>
-                                                    <td class="px-4 py-2 text-slate-500">{c.receptor_nombre}</td>
+                                                    <td class="px-4 py-2 text-muted-foreground">{c.emisor_nombre}</td>
+                                                    <td class="px-4 py-2 text-muted-foreground">{c.receptor_nombre}</td>
                                                     <td class="px-4 py-2">
                                                         {format!("{} {}", money(c.total), c.moneda)}
                                                     </td>

@@ -2,7 +2,7 @@ use leptos::prelude::*;
 
 use super::merge_classes;
 
-const CARD_BASE: &str = "rounded-xl border border-slate-200 bg-white shadow-sm";
+const CARD_BASE: &str = "rounded-xl border border-border bg-card text-card-foreground shadow-sm";
 
 #[component]
 pub fn Card(#[prop(optional, into)] class: String, children: Children) -> impl IntoView {

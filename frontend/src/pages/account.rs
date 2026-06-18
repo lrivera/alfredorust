@@ -56,7 +56,7 @@ pub fn AccountPage() -> impl IntoView {
         <div class="space-y-6">
             <div>
                 <h1 class="text-xl font-semibold">"Mi cuenta"</h1>
-                <p class="text-sm text-slate-500">"Actualiza los datos asociados a tu usuario."</p>
+                <p class="text-sm text-muted-foreground">"Actualiza los datos asociados a tu usuario."</p>
             </div>
 
             <Card class="max-w-lg">
@@ -66,7 +66,7 @@ pub fn AccountPage() -> impl IntoView {
                 <CardContent>
                     <form on:submit=submit class="space-y-4">
                         <div class="space-y-1">
-                            <label class="block text-sm font-medium text-slate-700">"Usuario"</label>
+                            <label class="block text-sm font-medium text-foreground">"Usuario"</label>
                             <Input
                                 value=email
                                 on_input=Callback::new(move |v| email.set(v))
@@ -75,7 +75,7 @@ pub fn AccountPage() -> impl IntoView {
                             />
                         </div>
                         <div class="space-y-1">
-                            <label class="block text-sm font-medium text-slate-700">
+                            <label class="block text-sm font-medium text-foreground">
                                 "Secreto TOTP"
                             </label>
                             <Input
@@ -84,7 +84,7 @@ pub fn AccountPage() -> impl IntoView {
                                 class="font-mono"
                                 placeholder="Déjalo vacío para conservar el actual"
                             />
-                            <p class="text-xs text-slate-500">
+                            <p class="text-xs text-muted-foreground">
                                 "Escribe un nuevo secreto solo si quieres reconfigurar tu autenticador."
                             </p>
                         </div>

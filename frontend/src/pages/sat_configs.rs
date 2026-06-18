@@ -94,14 +94,14 @@ pub fn SatConfigsPage() -> impl IntoView {
     };
 
     let file_class =
-        "block w-full text-sm text-slate-700 file:mr-3 file:rounded-md file:border-0 \
-         file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-medium";
+        "block w-full text-sm text-foreground file:mr-3 file:rounded-md file:border-0 \
+         file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium";
 
     view! {
         <div class="space-y-6">
             <div>
                 <h1 class="text-xl font-semibold">"Configuraciones SAT"</h1>
-                <p class="text-sm text-slate-500">
+                <p class="text-sm text-muted-foreground">
                     "Firmas (CSD) de la compañía actual para timbrado y descarga de CFDIs."
                 </p>
             </div>
@@ -113,18 +113,18 @@ pub fn SatConfigsPage() -> impl IntoView {
                 <CardContent>
                     <form on:submit=submit class="grid gap-3 sm:grid-cols-2">
                         <div class="space-y-1">
-                            <label class="block text-sm font-medium text-slate-700">"Etiqueta"</label>
+                            <label class="block text-sm font-medium text-foreground">"Etiqueta"</label>
                             <Input
                                 value=label
                                 on_input=Callback::new(move |v| label.set(v))
                                 placeholder="Ej. Principal, Persona Moral…"
                             />
-                            <p class="text-xs text-slate-500">
+                            <p class="text-xs text-muted-foreground">
                                 "Útil para identificar esta firma cuando hay varias."
                             </p>
                         </div>
                         <div class="space-y-1">
-                            <label class="block text-sm font-medium text-slate-700">"RFC"</label>
+                            <label class="block text-sm font-medium text-foreground">"RFC"</label>
                             <Input
                                 value=rfc
                                 on_input=Callback::new(move |v| rfc.set(v))
@@ -134,19 +134,19 @@ pub fn SatConfigsPage() -> impl IntoView {
                             />
                         </div>
                         <div class="space-y-1">
-                            <label class="block text-sm font-medium text-slate-700">
+                            <label class="block text-sm font-medium text-foreground">
                                 "Certificado (.cer)"
                             </label>
                             <input type="file" accept=".cer" node_ref=cer_ref class=file_class />
                         </div>
                         <div class="space-y-1">
-                            <label class="block text-sm font-medium text-slate-700">
+                            <label class="block text-sm font-medium text-foreground">
                                 "Llave privada (.key)"
                             </label>
                             <input type="file" accept=".key" node_ref=key_ref class=file_class />
                         </div>
                         <div class="space-y-1 sm:col-span-2">
-                            <label class="block text-sm font-medium text-slate-700">
+                            <label class="block text-sm font-medium text-foreground">
                                 "Contraseña de la llave privada"
                             </label>
                             <Input
@@ -177,19 +177,19 @@ pub fn SatConfigsPage() -> impl IntoView {
             </Card>
 
             {move || match items.get() {
-                None => view! { <p class="text-slate-500">"Cargando…"</p> }.into_any(),
+                None => view! { <p class="text-muted-foreground">"Cargando…"</p> }.into_any(),
                 Some(Err(_)) => {
                     view! { <p class="text-red-600">"No se pudieron cargar las configuraciones."</p> }
                         .into_any()
                 }
                 Some(Ok(list)) if list.is_empty() => {
-                    view! { <p class="text-slate-500">"Sin configuraciones todavía."</p> }.into_any()
+                    view! { <p class="text-muted-foreground">"Sin configuraciones todavía."</p> }.into_any()
                 }
                 Some(Ok(list)) => {
                     view! {
-                        <div class="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                        <div class="overflow-hidden rounded-xl border border-border bg-card">
                             <table class="w-full text-left text-sm">
-                                <thead class="bg-slate-50 text-slate-600">
+                                <thead class="bg-muted text-muted-foreground">
                                     <tr>
                                         <th class="px-4 py-2 font-medium">"RFC"</th>
                                         <th class="px-4 py-2 font-medium">"Etiqueta"</th>
@@ -203,12 +203,12 @@ pub fn SatConfigsPage() -> impl IntoView {
                                         .map(|s| {
                                             let did = s.id.clone();
                                             view! {
-                                                <tr class="border-t border-slate-100">
+                                                <tr class="border-t border-border">
                                                     <td class="px-4 py-2 font-medium">{s.rfc}</td>
-                                                    <td class="px-4 py-2 text-slate-500">
+                                                    <td class="px-4 py-2 text-muted-foreground">
                                                         {s.label.unwrap_or_default()}
                                                     </td>
-                                                    <td class="px-4 py-2 text-slate-500">
+                                                    <td class="px-4 py-2 text-muted-foreground">
                                                         {s.created_at.get(..10).unwrap_or("").to_string()}
                                                     </td>
                                                     <td class="px-4 py-2 text-right">

@@ -121,7 +121,7 @@ pub fn ConceptStatusesPage() -> impl IntoView {
                             <CardContent>
                                 <form on:submit=submit class="grid gap-3 sm:grid-cols-3">
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">"Nombre"</label>
+                                        <label class="block text-sm font-medium text-foreground">"Nombre"</label>
                                         <Input
                                             value=name
                                             on_input=Callback::new(move |v| name.set(v))
@@ -129,7 +129,7 @@ pub fn ConceptStatusesPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">"Posición"</label>
+                                        <label class="block text-sm font-medium text-foreground">"Posición"</label>
                                         <Input
                                             value=position
                                             on_input=Callback::new(move |v| position.set(v))
@@ -137,7 +137,7 @@ pub fn ConceptStatusesPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Color (opcional)"
                                         </label>
                                         <Input value=color on_input=Callback::new(move |v| color.set(v)) />
@@ -198,18 +198,18 @@ pub fn ConceptStatusesPage() -> impl IntoView {
             }}
 
             {move || match items.get() {
-                None => view! { <p class="text-slate-500">"Cargando…"</p> }.into_any(),
+                None => view! { <p class="text-muted-foreground">"Cargando…"</p> }.into_any(),
                 Some(Err(_)) => {
                     view! { <p class="text-red-600">"No se pudieron cargar los estados."</p> }.into_any()
                 }
                 Some(Ok(list)) if list.is_empty() => {
-                    view! { <p class="text-slate-500">"Sin estados todavía."</p> }.into_any()
+                    view! { <p class="text-muted-foreground">"Sin estados todavía."</p> }.into_any()
                 }
                 Some(Ok(list)) => {
                     view! {
-                        <div class="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                        <div class="overflow-hidden rounded-xl border border-border bg-card">
                             <table class="w-full text-left text-sm">
-                                <thead class="bg-slate-50 text-slate-600">
+                                <thead class="bg-muted text-muted-foreground">
                                     <tr>
                                         <th class="px-4 py-2 font-medium">"Posición"</th>
                                         <th class="px-4 py-2 font-medium">"Nombre"</th>
@@ -226,8 +226,8 @@ pub fn ConceptStatusesPage() -> impl IntoView {
                                             let row = s.clone();
                                             let did = s.id.clone();
                                             view! {
-                                                <tr class="border-t border-slate-100">
-                                                    <td class="px-4 py-2 text-slate-500">{s.position}</td>
+                                                <tr class="border-t border-border">
+                                                    <td class="px-4 py-2 text-muted-foreground">{s.position}</td>
                                                     <td class="px-4 py-2">{s.name}</td>
                                                     <td class="px-4 py-2">{if s.is_initial { "Sí" } else { "" }}</td>
                                                     <td class="px-4 py-2">{if s.is_terminal { "Sí" } else { "" }}</td>

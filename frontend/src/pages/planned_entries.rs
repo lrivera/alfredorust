@@ -285,7 +285,7 @@ pub fn PlannedEntriesPage() -> impl IntoView {
                             <CardContent>
                                 <form on:submit=submit class="grid gap-3 sm:grid-cols-3">
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Nombre"
                                         </label>
                                         <Input
@@ -295,7 +295,7 @@ pub fn PlannedEntriesPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Flujo"
                                         </label>
                                         <Select value=flow>
@@ -304,7 +304,7 @@ pub fn PlannedEntriesPage() -> impl IntoView {
                                         </Select>
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Estado"
                                         </label>
                                         <Select value=status>
@@ -315,7 +315,7 @@ pub fn PlannedEntriesPage() -> impl IntoView {
                                         </Select>
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Categoría"
                                         </label>
                                         <Select value=category>
@@ -332,7 +332,7 @@ pub fn PlannedEntriesPage() -> impl IntoView {
                                         </Select>
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Cuenta esperada"
                                         </label>
                                         <Select value=account>
@@ -349,7 +349,7 @@ pub fn PlannedEntriesPage() -> impl IntoView {
                                         </Select>
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Monto estimado"
                                         </label>
                                         <Input
@@ -360,7 +360,7 @@ pub fn PlannedEntriesPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Vencimiento"
                                         </label>
                                         <Input
@@ -371,7 +371,7 @@ pub fn PlannedEntriesPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Contacto (opcional)"
                                         </label>
                                         <Select value=contact>
@@ -388,7 +388,7 @@ pub fn PlannedEntriesPage() -> impl IntoView {
                                         </Select>
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Proyecto (opcional)"
                                         </label>
                                         <Select value=project>
@@ -405,7 +405,7 @@ pub fn PlannedEntriesPage() -> impl IntoView {
                                         </Select>
                                     </div>
                                     <div class="space-y-1 sm:col-span-2">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Notas"
                                         </label>
                                         <Input
@@ -473,7 +473,7 @@ pub fn PlannedEntriesPage() -> impl IntoView {
                                 <CardContent>
                                     <form on:submit=pay_submit class="grid gap-3 sm:grid-cols-2">
                                         <div class="space-y-1">
-                                            <label class="block text-sm font-medium text-slate-700">
+                                            <label class="block text-sm font-medium text-foreground">
                                                 "Fecha de pago"
                                             </label>
                                             <Input
@@ -484,7 +484,7 @@ pub fn PlannedEntriesPage() -> impl IntoView {
                                             />
                                         </div>
                                         <div class="space-y-1">
-                                            <label class="block text-sm font-medium text-slate-700">
+                                            <label class="block text-sm font-medium text-foreground">
                                                 "Monto real pagado"
                                             </label>
                                             <Input
@@ -495,7 +495,7 @@ pub fn PlannedEntriesPage() -> impl IntoView {
                                             />
                                         </div>
                                         <div class="space-y-1">
-                                            <label class="block text-sm font-medium text-slate-700">
+                                            <label class="block text-sm font-medium text-foreground">
                                                 "Cuenta"
                                             </label>
                                             <Select value=pay_account>
@@ -512,7 +512,7 @@ pub fn PlannedEntriesPage() -> impl IntoView {
                                             </Select>
                                         </div>
                                         <div class="space-y-1">
-                                            <label class="block text-sm font-medium text-slate-700">
+                                            <label class="block text-sm font-medium text-foreground">
                                                 "Notas"
                                             </label>
                                             <Input
@@ -551,7 +551,7 @@ pub fn PlannedEntriesPage() -> impl IntoView {
                 (is_admin && n > 0 && !bulk_open.get())
                     .then(|| {
                         view! {
-                            <div class="flex items-center gap-3 rounded-md bg-slate-100 px-4 py-2 text-sm">
+                            <div class="flex items-center gap-3 rounded-md bg-muted px-4 py-2 text-sm">
                                 <span>{format!("{n} seleccionadas")}</span>
                                 <Button
                                     on:click=move |_| {
@@ -584,7 +584,7 @@ pub fn PlannedEntriesPage() -> impl IntoView {
                                 <CardContent>
                                     <form on:submit=bulk_submit class="grid gap-3 sm:grid-cols-2">
                                         <div class="space-y-1">
-                                            <label class="block text-sm font-medium text-slate-700">
+                                            <label class="block text-sm font-medium text-foreground">
                                                 "Fecha de pago"
                                             </label>
                                             <Input
@@ -595,7 +595,7 @@ pub fn PlannedEntriesPage() -> impl IntoView {
                                             />
                                         </div>
                                         <div class="space-y-1">
-                                            <label class="block text-sm font-medium text-slate-700">
+                                            <label class="block text-sm font-medium text-foreground">
                                                 "Cuenta"
                                             </label>
                                             <Select value=bulk_account>
@@ -612,7 +612,7 @@ pub fn PlannedEntriesPage() -> impl IntoView {
                                             </Select>
                                         </div>
                                         <div class="space-y-1 sm:col-span-2">
-                                            <label class="block text-sm font-medium text-slate-700">
+                                            <label class="block text-sm font-medium text-foreground">
                                                 "Notas"
                                             </label>
                                             <Input
@@ -646,19 +646,19 @@ pub fn PlannedEntriesPage() -> impl IntoView {
             }}
 
             {move || match items.get() {
-                None => view! { <p class="text-slate-500">"Cargando…"</p> }.into_any(),
+                None => view! { <p class="text-muted-foreground">"Cargando…"</p> }.into_any(),
                 Some(Err(_)) => {
                     view! { <p class="text-red-600">"No se pudieron cargar las entradas."</p> }
                         .into_any()
                 }
                 Some(Ok(list)) if list.is_empty() => {
-                    view! { <p class="text-slate-500">"Sin entradas todavía."</p> }.into_any()
+                    view! { <p class="text-muted-foreground">"Sin entradas todavía."</p> }.into_any()
                 }
                 Some(Ok(list)) => {
                     view! {
-                        <div class="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                        <div class="overflow-hidden rounded-xl border border-border bg-card">
                             <table class="w-full text-left text-sm">
-                                <thead class="bg-slate-50 text-slate-600">
+                                <thead class="bg-muted text-muted-foreground">
                                     <tr>
                                         <th class="px-4 py-2"></th>
                                         <th class="px-4 py-2 font-medium">"Nombre"</th>
@@ -681,7 +681,7 @@ pub fn PlannedEntriesPage() -> impl IntoView {
                                                 e.status_label.clone()
                                             };
                                             view! {
-                                                <tr class="border-t border-slate-100">
+                                                <tr class="border-t border-border">
                                                     <td class="px-4 py-2">
                                                         {move || {
                                                             if is_admin {
@@ -690,7 +690,7 @@ pub fn PlannedEntriesPage() -> impl IntoView {
                                                                 view! {
                                                                     <input
                                                                         type="checkbox"
-                                                                        class="h-4 w-4 rounded border-slate-300"
+                                                                        class="h-4 w-4 rounded border-border"
                                                                         prop:checked=move || selected.get().contains(&cid)
                                                                         on:change=move |_| toggle_sel(sid.clone())
                                                                     />
@@ -706,7 +706,7 @@ pub fn PlannedEntriesPage() -> impl IntoView {
                                                         {flow_label(&e.flow_type).to_string()}
                                                     </td>
                                                     <td class="px-4 py-2">{money(e.amount_estimated)}</td>
-                                                    <td class="px-4 py-2 text-slate-500">{e.due_date}</td>
+                                                    <td class="px-4 py-2 text-muted-foreground">{e.due_date}</td>
                                                     <td class="px-4 py-2">{status}</td>
                                                     <td class="px-4 py-2 text-right">
                                                         {move || {

@@ -211,7 +211,7 @@ pub fn UsersPage() -> impl IntoView {
                 <CardContent>
                     <form on:submit=submit class="space-y-4">
                         <div class="space-y-1">
-                            <label class="block text-sm font-medium text-slate-700">
+                            <label class="block text-sm font-medium text-foreground">
                                 "Nombre de usuario"
                             </label>
                             <Input
@@ -221,12 +221,12 @@ pub fn UsersPage() -> impl IntoView {
                                 placeholder="ej. alfredo@example.com"
                                 required=true
                             />
-                            <p class="text-xs text-slate-500">
+                            <p class="text-xs text-muted-foreground">
                                 "Identificador de acceso. Debe ser único."
                             </p>
                         </div>
                         <div class="space-y-1">
-                            <label class="block text-sm font-medium text-slate-700">
+                            <label class="block text-sm font-medium text-foreground">
                                 "Secreto TOTP"
                             </label>
                             <Input
@@ -235,18 +235,18 @@ pub fn UsersPage() -> impl IntoView {
                                 class="font-mono"
                                 placeholder="Se genera automáticamente si lo dejas vacío"
                             />
-                            <p class="text-xs text-slate-500">
+                            <p class="text-xs text-muted-foreground">
                                 "Comparte este valor con el usuario para configurar su autenticador."
                             </p>
                         </div>
 
                         <div class="space-y-2">
-                            <p class="text-sm font-medium text-slate-700">"Compañías y rol"</p>
+                            <p class="text-sm font-medium text-foreground">"Compañías y rol"</p>
                             {move || {
                                 let rows = memberships.get();
                                 if rows.is_empty() {
                                     return view! {
-                                        <p class="text-sm text-slate-500">"Sin compañías disponibles."</p>
+                                        <p class="text-sm text-muted-foreground">"Sin compañías disponibles."</p>
                                     }
                                         .into_any();
                                 }
@@ -264,15 +264,15 @@ pub fn UsersPage() -> impl IntoView {
                                 .map(|id| {
                                     view! {
                                         <div class="space-y-1">
-                                            <p class="text-sm font-medium text-slate-700">
+                                            <p class="text-sm font-medium text-foreground">
                                                 "Código QR (autenticador)"
                                             </p>
                                             <img
                                                 src=format!("/admin/users/{id}/qrcode")
                                                 alt="Código QR TOTP"
-                                                class="h-40 w-40 rounded border border-slate-200 bg-white p-1"
+                                                class="h-40 w-40 rounded border border-border bg-card p-1"
                                             />
-                                            <p class="text-xs text-slate-500">
+                                            <p class="text-xs text-muted-foreground">
                                                 "El usuario escanea este código para configurar su autenticador."
                                             </p>
                                             {move || {
@@ -281,10 +281,10 @@ pub fn UsersPage() -> impl IntoView {
                                                     .then(|| {
                                                         view! {
                                                             <div class="space-y-1">
-                                                                <label class="block text-xs font-medium text-slate-500">
+                                                                <label class="block text-xs font-medium text-muted-foreground">
                                                                     "Secreto TOTP (texto)"
                                                                 </label>
-                                                                <code class="block select-all rounded border border-slate-200 bg-slate-50 px-2 py-1 font-mono text-xs break-all text-slate-700">
+                                                                <code class="block select-all rounded border border-border bg-muted px-2 py-1 font-mono text-xs break-all text-foreground">
                                                                     {s}
                                                                 </code>
                                                             </div>
@@ -337,19 +337,19 @@ pub fn UsersPage() -> impl IntoView {
             {move || {
                 let my_username = my_username.clone();
                 match items.get() {
-                    None => view! { <p class="text-slate-500">"Cargando…"</p> }.into_any(),
+                    None => view! { <p class="text-muted-foreground">"Cargando…"</p> }.into_any(),
                     Some(Err(_)) => {
                         view! { <p class="text-red-600">"No se pudieron cargar los usuarios."</p> }
                             .into_any()
                     }
                     Some(Ok(list)) if list.is_empty() => {
-                        view! { <p class="text-slate-500">"Sin usuarios todavía."</p> }.into_any()
+                        view! { <p class="text-muted-foreground">"Sin usuarios todavía."</p> }.into_any()
                     }
                     Some(Ok(list)) => {
                         view! {
-                            <div class="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                            <div class="overflow-hidden rounded-xl border border-border bg-card">
                                 <table class="w-full text-left text-sm">
-                                    <thead class="bg-slate-50 text-slate-600">
+                                    <thead class="bg-muted text-muted-foreground">
                                         <tr>
                                             <th class="px-4 py-2 font-medium">"Usuario"</th>
                                             <th class="px-4 py-2 font-medium">"Compañías"</th>
@@ -365,9 +365,9 @@ pub fn UsersPage() -> impl IntoView {
                                                 let did = u.id.clone();
                                                 let is_self = u.username == my_username;
                                                 view! {
-                                                    <tr class="border-t border-slate-100">
+                                                    <tr class="border-t border-border">
                                                         <td class="px-4 py-2">{u.username}</td>
-                                                        <td class="px-4 py-2 text-slate-500">
+                                                        <td class="px-4 py-2 text-muted-foreground">
                                                             {u.companies.join(", ")}
                                                         </td>
                                                         <td class="px-4 py-2 uppercase">{u.role}</td>
@@ -420,12 +420,12 @@ fn membership_row(
     let show_perms = included && role == "staff";
 
     view! {
-        <div class="rounded-md border border-slate-200 p-3">
+        <div class="rounded-md border border-border p-3">
             <div class="flex items-center justify-between gap-3">
-                <label class="inline-flex items-center gap-2 text-sm text-slate-700">
+                <label class="inline-flex items-center gap-2 text-sm text-foreground">
                     <input
                         type="checkbox"
-                        class="h-4 w-4 rounded border-slate-300"
+                        class="h-4 w-4 rounded border-border"
                         prop:checked=included
                         on:change=move |ev| {
                             let on = event_target_checked(&ev);
@@ -439,7 +439,7 @@ fn membership_row(
                         let current = role.clone();
                         view! {
                             <select
-                                class="rounded-md border border-slate-300 px-2 py-1 text-sm"
+                                class="rounded-md border border-border px-2 py-1 text-sm"
                                 on:change=move |ev| {
                                     let v = event_target_value(&ev);
                                     memberships.update(|rows| rows[i].role = v);
@@ -459,7 +459,7 @@ fn membership_row(
                 .then(|| {
                     view! {
                         <div class="mt-2 grid gap-1 pl-6 sm:grid-cols-2">
-                            <p class="text-xs font-semibold uppercase text-slate-400 sm:col-span-2">
+                            <p class="text-xs font-semibold uppercase text-muted-foreground sm:col-span-2">
                                 "Permisos staff"
                             </p>
                             {PERMISSIONS
@@ -468,10 +468,10 @@ fn membership_row(
                                 .map(|(pi, (_, plabel))| {
                                     let on = m.perms.get(pi).copied().unwrap_or(false);
                                     view! {
-                                        <label class="inline-flex items-center gap-2 text-sm text-slate-700">
+                                        <label class="inline-flex items-center gap-2 text-sm text-foreground">
                                             <input
                                                 type="checkbox"
-                                                class="h-4 w-4 rounded border-slate-300"
+                                                class="h-4 w-4 rounded border-border"
                                                 prop:checked=on
                                                 on:change=move |ev| {
                                                     let checked = event_target_checked(&ev);

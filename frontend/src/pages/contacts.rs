@@ -137,7 +137,7 @@ pub fn ContactsPage() -> impl IntoView {
                             <CardContent>
                                 <form on:submit=submit class="grid gap-3 sm:grid-cols-2">
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Nombre"
                                         </label>
                                         <Input
@@ -148,7 +148,7 @@ pub fn ContactsPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Tipo"
                                         </label>
                                         <Select value=kind>
@@ -159,7 +159,7 @@ pub fn ContactsPage() -> impl IntoView {
                                         </Select>
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Correo"
                                         </label>
                                         <Input
@@ -170,13 +170,13 @@ pub fn ContactsPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "RFC"
                                         </label>
                                         <Input value=rfc on_input=Callback::new(move |v| rfc.set(v)) />
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Teléfono"
                                         </label>
                                         <Input
@@ -185,7 +185,7 @@ pub fn ContactsPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="space-y-1 sm:col-span-2">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Notas"
                                         </label>
                                         <Input
@@ -241,19 +241,19 @@ pub fn ContactsPage() -> impl IntoView {
             }}
 
             {move || match items.get() {
-                None => view! { <p class="text-slate-500">"Cargando…"</p> }.into_any(),
+                None => view! { <p class="text-muted-foreground">"Cargando…"</p> }.into_any(),
                 Some(Err(_)) => {
                     view! { <p class="text-red-600">"No se pudieron cargar los contactos."</p> }
                         .into_any()
                 }
                 Some(Ok(list)) if list.is_empty() => {
-                    view! { <p class="text-slate-500">"Sin contactos todavía."</p> }.into_any()
+                    view! { <p class="text-muted-foreground">"Sin contactos todavía."</p> }.into_any()
                 }
                 Some(Ok(list)) => {
                     view! {
-                        <div class="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                        <div class="overflow-hidden rounded-xl border border-border bg-card">
                             <table class="w-full text-left text-sm">
-                                <thead class="bg-slate-50 text-slate-600">
+                                <thead class="bg-muted text-muted-foreground">
                                     <tr>
                                         <th class="px-4 py-2 font-medium">"Nombre"</th>
                                         <th class="px-4 py-2 font-medium">"Tipo"</th>
@@ -267,10 +267,10 @@ pub fn ContactsPage() -> impl IntoView {
                                         .map(|c| {
                                             let id = c.id.clone();
                                             view! {
-                                                <tr class="border-t border-slate-100">
+                                                <tr class="border-t border-border">
                                                     <td class="px-4 py-2">{c.name}</td>
                                                     <td class="px-4 py-2">{c.kind}</td>
-                                                    <td class="px-4 py-2 text-slate-500">{c.email}</td>
+                                                    <td class="px-4 py-2 text-muted-foreground">{c.email}</td>
                                                     <td class="px-4 py-2 text-right">
                                                         {move || {
                                                             if is_admin {

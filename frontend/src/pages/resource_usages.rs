@@ -41,26 +41,26 @@ fn build_grid_html(view: &GridView) -> String {
         r#"<div data-resource-usage-editable="{}" class="hidden"></div>"#,
         if view.can_edit { "true" } else { "false" }
     ));
-    out.push_str(r#"<div class="overflow-x-auto rounded-3xl border border-slate-200 bg-white shadow-sm"><table class="min-w-[1200px] table-fixed border-collapse text-sm"><thead><tr class="bg-slate-50">"#);
+    out.push_str(r#"<div class="overflow-x-auto rounded-3xl border border-border bg-card shadow-sm"><table class="min-w-[1200px] table-fixed border-collapse text-sm"><thead><tr class="bg-muted">"#);
     out.push_str(&format!(
-        r#"<th class="sticky left-0 z-20 w-64 border-b border-r border-slate-200 bg-slate-50 px-4 py-3 text-left align-bottom"><div class="text-2xl font-black text-rose-600">{}</div><div class="mt-1 text-xs font-semibold uppercase tracking-wider text-slate-500">Concepto</div></th>"#,
+        r#"<th class="sticky left-0 z-20 w-64 border-b border-r border-border bg-muted px-4 py-3 text-left align-bottom"><div class="text-2xl font-black text-rose-600">{}</div><div class="mt-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Concepto</div></th>"#,
         esc(&view.date)
     ));
     for h in 0..24 {
         let work = (7..=22).contains(&h);
         let cls = if work {
-            "font-black text-slate-950"
+            "font-black text-foreground"
         } else {
-            "font-semibold text-slate-300 bg-slate-50"
+            "font-semibold text-muted-foreground bg-muted"
         };
         out.push_str(&format!(
-            r#"<th class="w-24 border-b border-r border-slate-200 px-2 py-3 text-center text-2xl {cls}">{h}</th>"#
+            r#"<th class="w-24 border-b border-r border-border px-2 py-3 text-center text-2xl {cls}">{h}</th>"#
         ));
     }
     out.push_str("</tr></thead><tbody>");
 
     if view.rows.is_empty() {
-        out.push_str(r#"<tr><td colspan="25" class="px-6 py-10 text-center text-slate-500">No hay conceptos activos en este estado.</td></tr>"#);
+        out.push_str(r#"<tr><td colspan="25" class="px-6 py-10 text-center text-muted-foreground">No hay conceptos activos en este estado.</td></tr>"#);
     }
 
     let mut last_project = String::new();
@@ -68,14 +68,14 @@ fn build_grid_html(view: &GridView) -> String {
         if row.project_id != last_project {
             last_project = row.project_id.clone();
             out.push_str(&format!(
-                r#"<tr class="bg-slate-100/80"><td colspan="25" class="border-b border-slate-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500"><a href="/v2/projects/{}" class="text-sky-700 hover:text-sky-900 hover:underline">{}</a></td></tr>"#,
+                r#"<tr class="bg-muted/80"><td colspan="25" class="border-b border-border px-4 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground"><a href="/v2/projects/{}" class="text-sky-700 hover:text-sky-900 hover:underline">{}</a></td></tr>"#,
                 esc(&row.project_id),
                 esc(&row.project_title)
             ));
         }
-        out.push_str(r#"<tr class="hover:bg-slate-50/60">"#);
+        out.push_str(r#"<tr class="hover:bg-muted/60">"#);
         out.push_str(&format!(
-            r#"<th class="sticky left-0 z-10 border-b border-r border-slate-200 bg-white px-4 py-4 text-left align-middle"><div class="text-xs font-semibold uppercase tracking-wider text-slate-400"><a href="/v2/projects/{pid}" class="hover:text-sky-700 hover:underline">{ptitle}</a></div><div class="mt-1 flex flex-wrap items-center gap-2"><span class="font-semibold text-sky-900">{cname}</span><span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">{status}</span></div><div class="mt-1 text-xs text-slate-500">{qty} {unit}</div></th>"#,
+            r#"<th class="sticky left-0 z-10 border-b border-r border-border bg-card px-4 py-4 text-left align-middle"><div class="text-xs font-semibold uppercase tracking-wider text-muted-foreground"><a href="/v2/projects/{pid}" class="hover:text-sky-700 hover:underline">{ptitle}</a></div><div class="mt-1 flex flex-wrap items-center gap-2"><span class="font-semibold text-sky-900">{cname}</span><span class="rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{status}</span></div><div class="mt-1 text-xs text-muted-foreground">{qty} {unit}</div></th>"#,
             pid = esc(&row.project_id),
             ptitle = esc(&row.project_title),
             cname = esc(&row.concept_name),
@@ -84,11 +84,11 @@ fn build_grid_html(view: &GridView) -> String {
             unit = esc(&row.unit),
         ));
         for cell in &row.cells {
-            let cell_bg = if cell.is_work_hour { "" } else { "bg-slate-50/70" };
+            let cell_bg = if cell.is_work_hour { "" } else { "bg-muted/70" };
             let btn_cls = if cell.is_work_hour {
-                "font-semibold text-slate-700"
+                "font-semibold text-foreground"
             } else {
-                "font-medium text-slate-400"
+                "font-medium text-muted-foreground"
             };
             let labels: Vec<String> = cell
                 .resources
@@ -102,15 +102,15 @@ fn build_grid_html(view: &GridView) -> String {
                 labels.join(", ")
             };
             out.push_str(&format!(
-                r#"<td class="h-20 border-b border-r border-slate-200 p-1 align-top {cell_bg}"><div class="resource-cell group relative h-full rounded-xl transition" data-resource-cell><button type="button" class="resource-cell-button flex h-full w-full cursor-pointer items-center justify-center rounded-xl px-1 text-center text-xs {btn_cls} hover:bg-slate-100" data-resource-cell-button><span data-resource-cell-label>{label_text}</span></button><div class="resource-cell-menu absolute left-0 top-full z-30 mt-1 hidden max-h-48 min-w-44 space-y-1 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-xl" data-resource-cell-menu>"#
+                r#"<td class="h-20 border-b border-r border-border p-1 align-top {cell_bg}"><div class="resource-cell group relative h-full rounded-xl transition" data-resource-cell><button type="button" class="resource-cell-button flex h-full w-full cursor-pointer items-center justify-center rounded-xl px-1 text-center text-xs {btn_cls} hover:bg-muted" data-resource-cell-button><span data-resource-cell-label>{label_text}</span></button><div class="resource-cell-menu absolute left-0 top-full z-30 mt-1 hidden max-h-48 min-w-44 space-y-1 overflow-y-auto rounded-xl border border-border bg-card p-2 shadow-xl" data-resource-cell-menu>"#
             ));
             if cell.resources.is_empty() {
-                out.push_str(r#"<div class="px-2 py-1 text-xs text-slate-400">Sin recursos</div>"#);
+                out.push_str(r#"<div class="px-2 py-1 text-xs text-muted-foreground">Sin recursos</div>"#);
             } else {
                 for r in &cell.resources {
                     let name = format!("cell_{}_{}_{}", row.concept_id, cell.hour, r.resource_id);
                     out.push_str(&format!(
-                        r#"<label class="flex items-center gap-2 rounded-lg px-2 py-1 text-xs hover:bg-slate-50"><input type="checkbox" name="{name}" data-resource-id="{rid}" data-resource-label="{label}" {checked} {disabled} class="rounded border-slate-300 text-sky-600 focus:ring-sky-500"><span>{label}</span></label>"#,
+                        r#"<label class="flex items-center gap-2 rounded-lg px-2 py-1 text-xs hover:bg-muted"><input type="checkbox" name="{name}" data-resource-id="{rid}" data-resource-label="{label}" {checked} {disabled} class="rounded border-border text-sky-600 focus:ring-sky-500"><span>{label}</span></label>"#,
                         name = esc(&name),
                         rid = esc(&r.resource_id),
                         label = esc(&r.label),
@@ -135,7 +135,7 @@ const GRID_JS: &str = r##"
       const checked = Array.from(cell.querySelectorAll("input[type='checkbox']:checked"));
       if (!label) return;
       label.textContent = checked.length ? checked.map((i) => i.dataset.resourceLabel || "").filter(Boolean).join(", ") : "+";
-      label.classList.toggle("text-slate-300", checked.length === 0);
+      label.classList.toggle("text-muted-foreground", checked.length === 0);
       cell.classList.toggle("bg-sky-50", checked.length > 0);
     };
     const closeMenus = (except) => {
@@ -207,7 +207,7 @@ pub fn ResourceUsagesPage() -> impl IntoView {
         let d = date.get_untracked();
         let s = status.get_untracked();
         let url = format!("/api/admin/resource_usages/grid?date={d}&status_id={s}");
-        set_html(&host_el, r#"<p class="text-slate-500">Cargando…</p>"#);
+        set_html(&host_el, r#"<p class="text-muted-foreground">Cargando…</p>"#);
         spawn_local(async move {
             match api::get_json::<GridView>(&url).await {
                 Ok(view) => {

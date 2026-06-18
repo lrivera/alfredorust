@@ -149,7 +149,7 @@ pub fn ResourceLogsPage() -> impl IntoView {
                             <CardContent>
                                 <form on:submit=submit class="grid gap-3 sm:grid-cols-3">
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Proyecto (opcional)"
                                         </label>
                                         <Select value=project>
@@ -164,7 +164,7 @@ pub fn ResourceLogsPage() -> impl IntoView {
                                         </Select>
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Recurso (opcional)"
                                         </label>
                                         <Select value=resource>
@@ -179,11 +179,11 @@ pub fn ResourceLogsPage() -> impl IntoView {
                                         </Select>
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">"Fase"</label>
+                                        <label class="block text-sm font-medium text-foreground">"Fase"</label>
                                         <Input value=phase on_input=Callback::new(move |v| phase.set(v)) />
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">"Inicio"</label>
+                                        <label class="block text-sm font-medium text-foreground">"Inicio"</label>
                                         <Input
                                             value=started
                                             on_input=Callback::new(move |v| started.set(v))
@@ -192,7 +192,7 @@ pub fn ResourceLogsPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Fin (opcional)"
                                         </label>
                                         <Input
@@ -202,14 +202,14 @@ pub fn ResourceLogsPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">"Operador"</label>
+                                        <label class="block text-sm font-medium text-foreground">"Operador"</label>
                                         <Input
                                             value=operator
                                             on_input=Callback::new(move |v| operator.set(v))
                                         />
                                     </div>
                                     <div class="space-y-1 sm:col-span-2">
-                                        <label class="block text-sm font-medium text-slate-700">"Notas"</label>
+                                        <label class="block text-sm font-medium text-foreground">"Notas"</label>
                                         <Input value=notes on_input=Callback::new(move |v| notes.set(v)) />
                                     </div>
                                     <div class="flex items-end gap-2">
@@ -256,18 +256,18 @@ pub fn ResourceLogsPage() -> impl IntoView {
             }}
 
             {move || match items.get() {
-                None => view! { <p class="text-slate-500">"Cargando…"</p> }.into_any(),
+                None => view! { <p class="text-muted-foreground">"Cargando…"</p> }.into_any(),
                 Some(Err(_)) => {
                     view! { <p class="text-red-600">"No se pudieron cargar los registros."</p> }.into_any()
                 }
                 Some(Ok(list)) if list.is_empty() => {
-                    view! { <p class="text-slate-500">"Sin registros todavía."</p> }.into_any()
+                    view! { <p class="text-muted-foreground">"Sin registros todavía."</p> }.into_any()
                 }
                 Some(Ok(list)) => {
                     view! {
-                        <div class="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                        <div class="overflow-hidden rounded-xl border border-border bg-card">
                             <table class="w-full text-left text-sm">
-                                <thead class="bg-slate-50 text-slate-600">
+                                <thead class="bg-muted text-muted-foreground">
                                     <tr>
                                         <th class="px-4 py-2 font-medium">"Proyecto"</th>
                                         <th class="px-4 py-2 font-medium">"Fase"</th>
@@ -290,14 +290,14 @@ pub fn ResourceLogsPage() -> impl IntoView {
                                             let ended = l.ended_at.as_deref().map(rfc3339_to_local_dt).unwrap_or_default();
                                             let hours = l.duration_hours.map(|h| format!("{h:.2}")).unwrap_or_default();
                                             view! {
-                                                <tr class="border-t border-slate-100">
-                                                    <td class="px-4 py-2 text-slate-500">
+                                                <tr class="border-t border-border">
+                                                    <td class="px-4 py-2 text-muted-foreground">
                                                         {move || project_name(&pid)}
                                                     </td>
                                                     <td class="px-4 py-2">{l.phase.unwrap_or_default()}</td>
                                                     <td class="px-4 py-2">{l.resource_name.unwrap_or_default()}</td>
-                                                    <td class="px-4 py-2 text-slate-500">{started}</td>
-                                                    <td class="px-4 py-2 text-slate-500">{ended}</td>
+                                                    <td class="px-4 py-2 text-muted-foreground">{started}</td>
+                                                    <td class="px-4 py-2 text-muted-foreground">{ended}</td>
                                                     <td class="px-4 py-2">{hours}</td>
                                                     <td class="px-4 py-2">{l.operator_name.unwrap_or_default()}</td>
                                                     <td class="px-4 py-2 text-right">

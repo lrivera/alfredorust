@@ -90,15 +90,15 @@ fn tx_charts(list: &[Transaction]) -> impl IntoView {
             view! {
                 <div class="mb-2">
                     <div class="flex justify-between text-xs">
-                        <span class="truncate text-slate-600">{name}</span>
-                        <span class="font-medium text-slate-800">{money(total)}</span>
+                        <span class="truncate text-muted-foreground">{name}</span>
+                        <span class="font-medium text-foreground">{money(total)}</span>
                     </div>
-                    <div class="mt-1 flex h-1.5 overflow-hidden rounded bg-slate-100">
+                    <div class="mt-1 flex h-1.5 overflow-hidden rounded bg-muted">
                         <div style=format!("width:{}%;background:#10b981", pct(inc))></div>
                         <div style=format!("width:{}%;background:#f43f5e", pct(exp))></div>
                         <div style=format!("width:{}%;background:#2563eb", pct(tr))></div>
                     </div>
-                    <span class="text-[10px] text-slate-400">{format!("{count} mov.")}</span>
+                    <span class="text-[10px] text-muted-foreground">{format!("{count} mov.")}</span>
                 </div>
             }
         })
@@ -106,8 +106,8 @@ fn tx_charts(list: &[Transaction]) -> impl IntoView {
 
     let kpi = |label: &str, value: String, color: &str| {
         view! {
-            <div class="rounded-xl border border-slate-200 bg-white p-3">
-                <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+            <div class="rounded-xl border border-border bg-card p-3">
+                <p class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                     {label.to_string()}
                 </p>
                 <p class="mt-1 text-2xl font-bold" style=format!("color:{color}")>
@@ -125,17 +125,17 @@ fn tx_charts(list: &[Transaction]) -> impl IntoView {
                 {kpi("Neto", money(net), if net >= 0.0 { "#0ea5e9" } else { "#f43f5e" })}
             </div>
             <div class="grid gap-3 lg:grid-cols-3">
-                <div class="rounded-xl border border-slate-200 bg-white p-3 lg:col-span-2">
-                    <p class="mb-2 text-xs font-semibold text-slate-500">"Mensual (ingresos vs egresos)"</p>
+                <div class="rounded-xl border border-border bg-card p-3 lg:col-span-2">
+                    <p class="mb-2 text-xs font-semibold text-muted-foreground">"Mensual (ingresos vs egresos)"</p>
                     <div class="h-40" inner_html=line_svg></div>
                 </div>
-                <div class="rounded-xl border border-slate-200 bg-white p-3">
-                    <p class="mb-2 text-xs font-semibold text-slate-500">"Distribución"</p>
+                <div class="rounded-xl border border-border bg-card p-3">
+                    <p class="mb-2 text-xs font-semibold text-muted-foreground">"Distribución"</p>
                     <div class="mx-auto h-40 w-40" inner_html=donut_svg></div>
                 </div>
             </div>
-            <div class="rounded-xl border border-slate-200 bg-white p-3">
-                <p class="mb-2 text-xs font-semibold text-slate-500">"Por categoría"</p>
+            <div class="rounded-xl border border-border bg-card p-3">
+                <p class="mb-2 text-xs font-semibold text-muted-foreground">"Por categoría"</p>
                 {bars}
             </div>
         </div>
@@ -295,7 +295,7 @@ pub fn TransactionsPage() -> impl IntoView {
                             <CardContent>
                                 <form on:submit=submit class="grid gap-3 sm:grid-cols-3">
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Fecha"
                                         </label>
                                         <Input
@@ -306,7 +306,7 @@ pub fn TransactionsPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="space-y-1 sm:col-span-2">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Descripción"
                                         </label>
                                         <Input
@@ -316,7 +316,7 @@ pub fn TransactionsPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Tipo"
                                         </label>
                                         <Select value=tx_type>
@@ -327,7 +327,7 @@ pub fn TransactionsPage() -> impl IntoView {
                                         </Select>
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Categoría"
                                         </label>
                                         <Select value=category>
@@ -344,7 +344,7 @@ pub fn TransactionsPage() -> impl IntoView {
                                         </Select>
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Monto"
                                         </label>
                                         <Input
@@ -355,7 +355,7 @@ pub fn TransactionsPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Cuenta origen"
                                         </label>
                                         <Select value=account_from>
@@ -372,7 +372,7 @@ pub fn TransactionsPage() -> impl IntoView {
                                         </Select>
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Cuenta destino"
                                         </label>
                                         <Select value=account_to>
@@ -389,7 +389,7 @@ pub fn TransactionsPage() -> impl IntoView {
                                         </Select>
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Compromiso ligado (opcional)"
                                         </label>
                                         <Select value=planned_entry>
@@ -406,7 +406,7 @@ pub fn TransactionsPage() -> impl IntoView {
                                         </Select>
                                     </div>
                                     <div class="space-y-1 sm:col-span-2">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Notas"
                                         </label>
                                         <Input
@@ -472,19 +472,19 @@ pub fn TransactionsPage() -> impl IntoView {
             }}
 
             {move || match items.get() {
-                None => view! { <p class="text-slate-500">"Cargando…"</p> }.into_any(),
+                None => view! { <p class="text-muted-foreground">"Cargando…"</p> }.into_any(),
                 Some(Err(_)) => {
                     view! { <p class="text-red-600">"No se pudieron cargar los movimientos."</p> }
                         .into_any()
                 }
                 Some(Ok(list)) if list.is_empty() => {
-                    view! { <p class="text-slate-500">"Sin movimientos todavía."</p> }.into_any()
+                    view! { <p class="text-muted-foreground">"Sin movimientos todavía."</p> }.into_any()
                 }
                 Some(Ok(list)) => {
                     view! {
-                        <div class="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                        <div class="overflow-hidden rounded-xl border border-border bg-card">
                             <table class="w-full text-left text-sm">
-                                <thead class="bg-slate-50 text-slate-600">
+                                <thead class="bg-muted text-muted-foreground">
                                     <tr>
                                         <th class="px-4 py-2 font-medium">"Fecha"</th>
                                         <th class="px-4 py-2 font-medium">"Descripción"</th>
@@ -500,12 +500,12 @@ pub fn TransactionsPage() -> impl IntoView {
                                         .map(|t| {
                                             let id = t.id.clone();
                                             view! {
-                                                <tr class="border-t border-slate-100">
-                                                    <td class="px-4 py-2 text-slate-500">{t.date}</td>
+                                                <tr class="border-t border-border">
+                                                    <td class="px-4 py-2 text-muted-foreground">{t.date}</td>
                                                     <td class="px-4 py-2">{t.description}</td>
                                                     <td class="px-4 py-2">{tx_label(&t.tx_type).to_string()}</td>
                                                     <td class="px-4 py-2">{money(t.amount)}</td>
-                                                    <td class="px-4 py-2 text-slate-500">{t.category}</td>
+                                                    <td class="px-4 py-2 text-muted-foreground">{t.category}</td>
                                                     <td class="px-4 py-2 text-right">
                                                         {move || {
                                                             if is_admin {

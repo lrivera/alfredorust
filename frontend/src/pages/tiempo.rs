@@ -11,29 +11,29 @@ use super::{run_script, set_html};
 const TIEMPO_HTML: &str = r##"
   <div class="flex items-center justify-between pb-6">
     <div>
-      <h1 class="text-2xl font-semibold text-slate-800">Tiempo</h1>
-      <p class="mt-1 text-sm text-slate-500">Línea de tiempo horizontal con navegación infinita.</p>
+      <h1 class="text-2xl font-semibold text-foreground">Tiempo</h1>
+      <p class="mt-1 text-sm text-muted-foreground">Línea de tiempo horizontal con navegación infinita.</p>
     </div>
   </div>
 
   <div class="mb-4 flex flex-wrap items-center gap-3">
-    <div class="inline-flex rounded-md border border-slate-200 bg-white shadow-sm">
-      <button data-mode="day" class="mode-btn px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 first:rounded-l-md last:rounded-r-md">Día</button>
-      <button data-mode="week" class="mode-btn px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 first:rounded-l-md last:rounded-r-md">Semana</button>
-      <button data-mode="month" class="mode-btn px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 first:rounded-l-md last:rounded-r-md">Mes</button>
-      <button data-mode="year" class="mode-btn px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 first:rounded-l-md last:rounded-r-md">Año</button>
+    <div class="inline-flex rounded-md border border-border bg-card shadow-sm">
+      <button data-mode="day" class="mode-btn px-3 py-2 text-sm font-semibold text-foreground hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 first:rounded-l-md last:rounded-r-md">Día</button>
+      <button data-mode="week" class="mode-btn px-3 py-2 text-sm font-semibold text-foreground hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 first:rounded-l-md last:rounded-r-md">Semana</button>
+      <button data-mode="month" class="mode-btn px-3 py-2 text-sm font-semibold text-foreground hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 first:rounded-l-md last:rounded-r-md">Mes</button>
+      <button data-mode="year" class="mode-btn px-3 py-2 text-sm font-semibold text-foreground hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 first:rounded-l-md last:rounded-r-md">Año</button>
     </div>
     <button id="btnHoy" class="rounded-md bg-sky-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2">Ir a hoy</button>
     <button id="bulkPayTimelineBtn" class="hidden rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700">Pagar seleccionados</button>
   </div>
 
-  <div class="relative flex w-full min-w-0 flex-1 min-h-[24rem] max-h-full flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-    <div id="chartLegend" class="pointer-events-none sticky top-0 left-0 z-20 flex flex-wrap items-center gap-3 bg-white px-4 py-3 border-b border-slate-200">
-      <span class="flex items-center gap-2 text-xs font-semibold text-slate-700"><span class="h-2.5 w-4 rounded-sm bg-sky-500"></span> Real acumulado</span>
-      <span class="flex items-center gap-2 text-xs font-semibold text-slate-700"><span class="h-2.5 w-4 rounded-sm bg-purple-500"></span> Plan acumulado</span>
+  <div class="relative flex w-full min-w-0 flex-1 min-h-[24rem] max-h-full flex-col overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+    <div id="chartLegend" class="pointer-events-none sticky top-0 left-0 z-20 flex flex-wrap items-center gap-3 bg-card px-4 py-3 border-b border-border">
+      <span class="flex items-center gap-2 text-xs font-semibold text-foreground"><span class="h-2.5 w-4 rounded-sm bg-sky-500"></span> Real acumulado</span>
+      <span class="flex items-center gap-2 text-xs font-semibold text-foreground"><span class="h-2.5 w-4 rounded-sm bg-purple-500"></span> Plan acumulado</span>
     </div>
-    <div id="timelineViewport" class="relative w-full min-w-0 max-w-full flex-1 overflow-x-auto overflow-y-hidden border-t border-slate-100">
-      <div id="timelineChart" class="sticky top-0 z-10 h-40 pointer-events-none bg-white"></div>
+    <div id="timelineViewport" class="relative w-full min-w-0 max-w-full flex-1 overflow-x-auto overflow-y-hidden border-t border-border">
+      <div id="timelineChart" class="sticky top-0 z-10 h-40 pointer-events-none bg-card"></div>
       <div id="timelineStrip" class="flex h-full min-h-[24rem]"></div>
     </div>
   </div>
@@ -91,16 +91,16 @@ const TIEMPO_JS: &str = r##"
     const cells = [];
     for (let i = 0; i < TOTAL; i++) {
       const cell = document.createElement("div");
-      cell.className = "flex min-w-[560px] flex-col border-r border-slate-200 px-6 py-4 text-center transition";
+      cell.className = "flex min-w-[560px] flex-col border-r border-border px-6 py-4 text-center transition";
       cell.style.width = `${CELL_WIDTH}px`;
       const label = document.createElement("div");
-      label.className = "text-sm font-semibold uppercase tracking-wide text-slate-600";
+      label.className = "text-sm font-semibold uppercase tracking-wide text-muted-foreground";
       const value = document.createElement("div");
-      value.className = "mt-1 text-base font-semibold text-slate-800";
+      value.className = "mt-1 text-base font-semibold text-foreground";
       const metrics = document.createElement("div");
-      metrics.className = "mt-2 text-xs leading-snug text-slate-600";
+      metrics.className = "mt-2 text-xs leading-snug text-muted-foreground";
       const items = document.createElement("div");
-      items.className = "mt-3 space-y-1 text-sm leading-snug text-slate-700 w-full";
+      items.className = "mt-3 space-y-1 text-sm leading-snug text-foreground w-full";
       cell.appendChild(label);
       cell.appendChild(value);
       cell.appendChild(metrics);
@@ -146,61 +146,61 @@ const TIEMPO_JS: &str = r##"
         } else {
           entry.value.textContent = config.format(bucket ? new Date(bucket.start) : target);
         }
-        entry.cell.classList.remove("bg-slate-50", "bg-white", "bg-sky-100", "ring", "ring-sky-300", "shadow");
+        entry.cell.classList.remove("bg-muted", "bg-card", "bg-sky-100", "ring", "ring-sky-300", "shadow");
         const startBucket = startOfBucket(target, mode);
         const nowBucket = startOfBucket(new Date(), mode);
         const isTodayBucket = startBucket.getTime() === nowBucket.getTime();
         if (isTodayBucket) {
           entry.cell.classList.add("bg-sky-100", "ring", "ring-sky-300", "shadow");
         } else {
-          entry.cell.classList.add(idx % 2 === 0 ? "bg-white" : "bg-slate-50");
+          entry.cell.classList.add(idx % 2 === 0 ? "bg-card" : "bg-muted");
         }
         const cumulativeReal = bucket?.cumulative_real ?? (bucketList.length ? bucketList[bucketList.length - 1].cumulative_real : 0);
         const cumulativePlanned = bucket?.cumulative_planned ?? (bucketList.length ? bucketList[bucketList.length - 1].cumulative_planned : 0);
         visiblePoints.push({ real: cumulativeReal, plan: cumulativePlanned });
         const badge = (value) => {
           if (value === 0) {
-            return `<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold bg-slate-100 text-slate-700 ring-1 ring-slate-200">${formatter.format(value)}</span>`;
+            return `<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold bg-muted text-foreground ring-1 ring-border">${formatter.format(value)}</span>`;
           }
           const positive = value > 0;
           return `<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${positive ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200" : "bg-rose-50 text-rose-700 ring-1 ring-rose-200"}">${formatter.format(value)}</span>`;
         };
         const metricsTable = (realInc, realExp, realNet, realCum, planInc, planExp, planNet, planCum) => `
-          <div class="overflow-hidden rounded-md ring-1 ring-slate-200">
+          <div class="overflow-hidden rounded-md ring-1 ring-border">
             <table class="w-full text-sm">
-              <thead class="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+              <thead class="bg-muted text-[11px] uppercase tracking-wide text-muted-foreground">
                 <tr><th class="px-2 py-1 text-left">Tipo</th><th class="px-2 py-1 text-left">Ingresos</th><th class="px-2 py-1 text-left">Gastos</th><th class="px-2 py-1 text-left">Total</th><th class="px-2 py-1 text-left">Acumulado</th></tr>
               </thead>
-              <tbody class="divide-y divide-slate-100">
-                <tr><td class="px-2 py-1 font-semibold text-slate-700">Real</td><td class="px-2 py-1">${badge(realInc)}</td><td class="px-2 py-1">${badge(realExp)}</td><td class="px-2 py-1">${badge(realNet)}</td><td class="px-2 py-1">${badge(realCum)}</td></tr>
-                <tr class="bg-slate-50"><td class="px-2 py-1 font-semibold text-slate-700">Plan</td><td class="px-2 py-1">${badge(planInc)}</td><td class="px-2 py-1">${badge(planExp)}</td><td class="px-2 py-1">${badge(planNet)}</td><td class="px-2 py-1">${badge(planCum)}</td></tr>
+              <tbody class="divide-y divide-border">
+                <tr><td class="px-2 py-1 font-semibold text-foreground">Real</td><td class="px-2 py-1">${badge(realInc)}</td><td class="px-2 py-1">${badge(realExp)}</td><td class="px-2 py-1">${badge(realNet)}</td><td class="px-2 py-1">${badge(realCum)}</td></tr>
+                <tr class="bg-muted"><td class="px-2 py-1 font-semibold text-foreground">Plan</td><td class="px-2 py-1">${badge(planInc)}</td><td class="px-2 py-1">${badge(planExp)}</td><td class="px-2 py-1">${badge(planNet)}</td><td class="px-2 py-1">${badge(planCum)}</td></tr>
               </tbody>
             </table>
           </div>`;
         if (bucket) {
           entry.metrics.innerHTML = metricsTable(bucket.real_income, -bucket.real_expense, bucket.net_real, cumulativeReal, bucket.planned_income, -bucket.planned_expense, bucket.net_planned, cumulativePlanned);
           const txItems = bucket.transactions.map((tx) =>
-            `<div class="flex items-center justify-between gap-2 rounded bg-slate-50 px-2 py-1">
-              <span class="font-semibold ${tx.type === "income" ? "text-emerald-700" : tx.type === "expense" ? "text-rose-700" : "text-slate-700"}">${tx.type === "income" ? "+" : tx.type === "expense" ? "-" : ""}${formatter.format(tx.amount)}</span>
-              <span class="truncate text-slate-700" title="${tx.description}">${tx.description}</span>
+            `<div class="flex items-center justify-between gap-2 rounded bg-muted px-2 py-1">
+              <span class="font-semibold ${tx.type === "income" ? "text-emerald-700" : tx.type === "expense" ? "text-rose-700" : "text-foreground"}">${tx.type === "income" ? "+" : tx.type === "expense" ? "-" : ""}${formatter.format(tx.amount)}</span>
+              <span class="truncate text-foreground" title="${tx.description}">${tx.description}</span>
             </div>`).join("");
           const plannedItems = bucket.planned_entries.map((pe) => {
             const payBtn = (pe.status !== "covered" && pe.status !== "cancelled")
               ? `<a href="/admin/planned_entries/${pe.id}/pay?return_to=/v2/tiempo" class="ml-2 shrink-0 rounded px-2 py-0.5 text-[11px] font-semibold bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 hover:bg-emerald-100 transition">Pagar</a>` : "";
             const selectBox = (pe.status !== "covered" && pe.status !== "cancelled")
-              ? `<input type="checkbox" data-timeline-bulk-pay value="${pe.id}" ${selectedPlannedEntries.has(pe.id) ? "checked" : ""} class="shrink-0 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" />` : "";
-            return `<div class="flex items-center justify-between gap-2 rounded border border-dashed border-slate-200 px-2 py-1">
+              ? `<input type="checkbox" data-timeline-bulk-pay value="${pe.id}" ${selectedPlannedEntries.has(pe.id) ? "checked" : ""} class="shrink-0 rounded border-border text-emerald-600 focus:ring-emerald-500" />` : "";
+            return `<div class="flex items-center justify-between gap-2 rounded border border-dashed border-border px-2 py-1">
               ${selectBox}
               <span class="font-semibold shrink-0 ${pe.flow_type === "income" ? "text-emerald-700" : "text-rose-700"}">${pe.flow_type === "income" ? "+" : "-"}${formatter.format(pe.amount_estimated)}</span>
-              <span class="truncate text-slate-700 flex-1" title="${pe.name} · ${pe.status}">${pe.name} · ${pe.status}</span>
+              <span class="truncate text-foreground flex-1" title="${pe.name} · ${pe.status}">${pe.name} · ${pe.status}</span>
               ${payBtn}
             </div>`;
           }).join("");
           const hasContent = txItems || plannedItems;
-          entry.items.innerHTML = hasContent ? `<div class="space-y-1">${txItems}${plannedItems}</div>` : `<div class="text-slate-400">Sin items</div>`;
+          entry.items.innerHTML = hasContent ? `<div class="space-y-1">${txItems}${plannedItems}</div>` : `<div class="text-muted-foreground">Sin items</div>`;
         } else {
           entry.metrics.innerHTML = metricsTable(0, 0, 0, cumulativeReal, 0, 0, 0, cumulativePlanned);
-          entry.items.innerHTML = `<div class="text-slate-400">Sin items</div>`;
+          entry.items.innerHTML = `<div class="text-muted-foreground">Sin items</div>`;
         }
       });
       renderChart(visiblePoints);
@@ -228,7 +228,7 @@ const TIEMPO_JS: &str = r##"
       const ptsSource = points && points.length ? points : lastChartPoints && lastChartPoints.length ? lastChartPoints : bucketList.map((b) => ({ real: b.cumulative_real, plan: b.cumulative_planned }));
       if (!ptsSource.length) {
         const emptyWidth = cells.length * CELL_WIDTH;
-        chart.innerHTML = `<div class="text-sm text-slate-500 px-4 py-2">Sin datos en rango</div>`;
+        chart.innerHTML = `<div class="text-sm text-muted-foreground px-4 py-2">Sin datos en rango</div>`;
         chart.style.width = `${emptyWidth}px`; chart.style.minWidth = `${emptyWidth}px`;
         return;
       }

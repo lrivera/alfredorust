@@ -218,7 +218,7 @@ pub fn OrdersPage() -> impl IntoView {
                             <CardContent>
                                 <form on:submit=submit class="grid gap-3 sm:grid-cols-3">
                                     <div class="space-y-1 sm:col-span-2">
-                                        <label class="block text-sm font-medium text-slate-700">"Título"</label>
+                                        <label class="block text-sm font-medium text-foreground">"Título"</label>
                                         <Input
                                             value=title
                                             on_input=Callback::new(move |v| title.set(v))
@@ -226,7 +226,7 @@ pub fn OrdersPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">"Estado"</label>
+                                        <label class="block text-sm font-medium text-foreground">"Estado"</label>
                                         <Select value=status>
                                             {STATUSES
                                                 .iter()
@@ -235,7 +235,7 @@ pub fn OrdersPage() -> impl IntoView {
                                         </Select>
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Cliente (opcional)"
                                         </label>
                                         <Select value=contact>
@@ -250,7 +250,7 @@ pub fn OrdersPage() -> impl IntoView {
                                         </Select>
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Categoría (opcional)"
                                         </label>
                                         <Select value=category>
@@ -265,7 +265,7 @@ pub fn OrdersPage() -> impl IntoView {
                                         </Select>
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Cuenta destino (opcional)"
                                         </label>
                                         <Select value=account>
@@ -280,7 +280,7 @@ pub fn OrdersPage() -> impl IntoView {
                                         </Select>
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Monto total"
                                         </label>
                                         <Input
@@ -291,7 +291,7 @@ pub fn OrdersPage() -> impl IntoView {
                                         />
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
+                                        <label class="block text-sm font-medium text-foreground">
                                             "Fecha (cita/entrega)"
                                         </label>
                                         <Input
@@ -304,7 +304,7 @@ pub fn OrdersPage() -> impl IntoView {
                                     // Line items.
                                     <div class="space-y-2 sm:col-span-3">
                                         <div class="flex items-center justify-between">
-                                            <label class="text-sm font-medium text-slate-700">"Conceptos"</label>
+                                            <label class="text-sm font-medium text-foreground">"Conceptos"</label>
                                             <Button variant=ButtonVariant::Outline on:click=move |_| add_line()>
                                                 "+ Agregar línea"
                                             </Button>
@@ -348,7 +348,7 @@ pub fn OrdersPage() -> impl IntoView {
                                     </div>
 
                                     <div class="space-y-1 sm:col-span-3">
-                                        <label class="block text-sm font-medium text-slate-700">"Notas"</label>
+                                        <label class="block text-sm font-medium text-foreground">"Notas"</label>
                                         <Input value=notes on_input=Callback::new(move |v| notes.set(v)) />
                                     </div>
                                     <div class="flex items-end gap-2">
@@ -395,18 +395,18 @@ pub fn OrdersPage() -> impl IntoView {
             }}
 
             {move || match items_data.get() {
-                None => view! { <p class="text-slate-500">"Cargando…"</p> }.into_any(),
+                None => view! { <p class="text-muted-foreground">"Cargando…"</p> }.into_any(),
                 Some(Err(_)) => {
                     view! { <p class="text-red-600">"No se pudieron cargar las órdenes."</p> }.into_any()
                 }
                 Some(Ok(list)) if list.is_empty() => {
-                    view! { <p class="text-slate-500">"Sin órdenes todavía."</p> }.into_any()
+                    view! { <p class="text-muted-foreground">"Sin órdenes todavía."</p> }.into_any()
                 }
                 Some(Ok(list)) => {
                     view! {
-                        <div class="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                        <div class="overflow-hidden rounded-xl border border-border bg-card">
                             <table class="w-full text-left text-sm">
-                                <thead class="bg-slate-50 text-slate-600">
+                                <thead class="bg-muted text-muted-foreground">
                                     <tr>
                                         <th class="px-4 py-2 font-medium">"Título"</th>
                                         <th class="px-4 py-2 font-medium">"Cliente"</th>
@@ -429,14 +429,14 @@ pub fn OrdersPage() -> impl IntoView {
                                             let cid = o.contact_id.clone();
                                             let sched = o.scheduled_at.as_deref().map(rfc3339_to_date).unwrap_or_default();
                                             view! {
-                                                <tr class="border-t border-slate-100">
+                                                <tr class="border-t border-border">
                                                     <td class="px-4 py-2">{o.title}</td>
-                                                    <td class="px-4 py-2 text-slate-500">
+                                                    <td class="px-4 py-2 text-muted-foreground">
                                                         {move || contact_name(&cid)}
                                                     </td>
                                                     <td class="px-4 py-2">{st}</td>
                                                     <td class="px-4 py-2">{money(o.amount)}</td>
-                                                    <td class="px-4 py-2 text-slate-500">{sched}</td>
+                                                    <td class="px-4 py-2 text-muted-foreground">{sched}</td>
                                                     <td class="px-4 py-2 text-right">
                                                         {move || {
                                                             if is_admin {

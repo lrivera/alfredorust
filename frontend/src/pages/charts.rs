@@ -41,7 +41,7 @@ pub(crate) fn line_area_chart(data: &[(String, f64, f64)]) -> String {
         .iter()
         .map(|t| {
             let y = yof(max * t);
-            format!(r##"<line x1="0" x2="{w}" y1="{y:.1}" y2="{y:.1}" stroke="#f1f5f9" stroke-width="1"/>"##)
+            format!(r##"<line x1="0" x2="{w}" y1="{y:.1}" y2="{y:.1}" stroke="currentColor" stroke-opacity="0.12" stroke-width="1"/>"##)
         })
         .collect();
     let labels: String = data
@@ -108,9 +108,9 @@ pub(crate) fn donut(segments: &[(String, f64, String)], center_value: &str, cent
         .collect();
     format!(
         r##"<svg viewBox="0 0 144 144" style="width:100%;height:100%">
-  <circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="#f1f5f9" stroke-width="{sw}"/>
+  <circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="currentColor" stroke-opacity="0.12" stroke-width="{sw}"/>
   {arcs}
-  <text x="{cx}" y="{ty:.0}" text-anchor="middle" style="font-size:18px;font-weight:700;fill:#1e293b">{center_value}</text>
+  <text x="{cx}" y="{ty:.0}" text-anchor="middle" style="font-size:18px;font-weight:700;fill:currentColor">{center_value}</text>
   <text x="{cx}" y="{sy:.0}" text-anchor="middle" style="font-size:10px;fill:#94a3b8">{center_label}</text>
 </svg>"##,
         ty = cy - 7.0,
