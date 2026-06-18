@@ -66,7 +66,7 @@ test.describe("staff permissions (live · test tenant · self-cleaning)", () => 
     try {
       const page = await ctx.newPage();
       await page.goto(`${test2Host}/v2/`);
-      await page.getByPlaceholder("tu@correo.com").fill(STAFF_EMAIL);
+      await page.locator('input[autocomplete="username"]').fill(STAFF_EMAIL);
       await page
         .locator('input[inputmode="numeric"]')
         .fill(authenticator.generate(STAFF_SECRET));

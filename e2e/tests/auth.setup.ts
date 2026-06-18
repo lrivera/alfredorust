@@ -19,7 +19,7 @@ setup("authenticate", async ({ page }) => {
   }
 
   await page.goto("/v2/");
-  await page.getByPlaceholder("tu@correo.com").fill(email);
+  await page.locator('input[autocomplete="username"]').fill(email);
   await page.locator('input[inputmode="numeric"]').fill(authenticator.generate(secret));
   await page.getByRole("button", { name: "Entrar" }).click();
 

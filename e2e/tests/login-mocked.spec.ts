@@ -33,7 +33,7 @@ test.describe("login flow (mocked API)", () => {
     });
 
     await page.goto("/v2/");
-    await page.getByPlaceholder("tu@correo.com").fill("demo@example.com");
+    await page.locator('input[autocomplete="username"]').fill("demo@example.com");
     await page.locator('input[inputmode="numeric"]').fill("123456");
     await page.getByRole("button", { name: "Entrar" }).click();
 
@@ -54,7 +54,7 @@ test.describe("login flow (mocked API)", () => {
     );
 
     await page.goto("/v2/");
-    await page.getByPlaceholder("tu@correo.com").fill("nobody@example.com");
+    await page.locator('input[autocomplete="username"]').fill("nobody@example.com");
     await page.locator('input[inputmode="numeric"]').fill("000000");
     await page.getByRole("button", { name: "Entrar" }).click();
 

@@ -134,6 +134,9 @@ pub fn UsersPage() -> impl IntoView {
                     reload();
                 }
                 Err(ApiError::Forbidden) => form_error.set(Some("No tienes permiso".into())),
+                Err(ApiError::Status(409)) => {
+                    form_error.set(Some("El nombre de usuario ya existe".into()))
+                }
                 Err(_) => form_error.set(Some("No se pudo guardar el usuario".into())),
             }
         }
@@ -143,7 +146,7 @@ pub fn UsersPage() -> impl IntoView {
     let submit = move |ev: web_sys::SubmitEvent| {
         ev.prevent_default();
         if email.get().trim().is_empty() {
-            form_error.set(Some("El email es obligatorio".into()));
+            form_error.set(Some("El nombre de usuario es obligatorio".into()));
             return;
         }
         if !memberships.get().iter().any(|m| m.included) {
@@ -205,14 +208,19 @@ pub fn UsersPage() -> impl IntoView {
                 <CardContent>
                     <form on:submit=submit class="space-y-4">
                         <div class="space-y-1">
-                            <label class="block text-sm font-medium text-slate-700">"Email"</label>
+                            <label class="block text-sm font-medium text-slate-700">
+                                "Nombre de usuario"
+                            </label>
                             <Input
                                 value=email
                                 on_input=Callback::new(move |v| email.set(v))
-                                r#type="email"
-                                autocomplete="email"
+                                autocomplete="username"
+                                placeholder="ej. alfredo@example.com"
                                 required=true
                             />
+                            <p class="text-xs text-slate-500">
+                                "Identificador de acceso. Debe ser único."
+                            </p>
                         </div>
                         <div class="space-y-1">
                             <label class="block text-sm font-medium text-slate-700">
@@ -324,7 +332,7 @@ pub fn UsersPage() -> impl IntoView {
                                 <table class="w-full text-left text-sm">
                                     <thead class="bg-slate-50 text-slate-600">
                                         <tr>
-                                            <th class="px-4 py-2 font-medium">"Email"</th>
+                                            <th class="px-4 py-2 font-medium">"Usuario"</th>
                                             <th class="px-4 py-2 font-medium">"Compañías"</th>
                                             <th class="px-4 py-2 font-medium">"Rol"</th>
                                             <th class="px-4 py-2"></th>

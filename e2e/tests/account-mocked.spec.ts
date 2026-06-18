@@ -33,7 +33,7 @@ test.describe("account (mocked API)", () => {
     // The "Mi cuenta" link is visible to non-admins too.
     await page.getByRole("link", { name: "Mi cuenta" }).click();
 
-    const emailInput = page.locator('input[type="email"]');
+    const emailInput = page.locator('input[autocomplete="username"]');
     await expect(emailInput).toHaveValue("staff@example.com");
 
     await emailInput.fill("staff2@example.com");
@@ -57,7 +57,7 @@ test.describe("account (mocked API)", () => {
     });
 
     await page.goto("/v2/account");
-    const emailInput = page.locator('input[type="email"]');
+    const emailInput = page.locator('input[autocomplete="username"]');
     await emailInput.fill("");
     await page.getByRole("button", { name: /Guardar cambios/ }).click();
 

@@ -67,12 +67,11 @@ pub fn AccountPage() -> impl IntoView {
                 <CardContent>
                     <form on:submit=submit class="space-y-4">
                         <div class="space-y-1">
-                            <label class="block text-sm font-medium text-slate-700">"Email"</label>
+                            <label class="block text-sm font-medium text-slate-700">"Usuario"</label>
                             <Input
                                 value=email
                                 on_input=Callback::new(move |v| email.set(v))
-                                r#type="email"
-                                autocomplete="email"
+                                autocomplete="username"
                                 required=true
                             />
                         </div>

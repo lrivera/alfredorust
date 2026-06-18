@@ -26,7 +26,7 @@ use crate::{
     session::SessionUser,
     state::{
         AppState, UserWithCompany, create_user_with_permissions, delete_user, get_user_by_id,
-        list_users, update_user_with_permissions,
+        list_users, update_user_with_permissions, username_taken,
     },
     totp::{DEFAULT_SECRET_BYTES, generate_base32_secret_n},
 };
@@ -247,7 +247,14 @@ pub async fn api_users_create(
 
     let email = payload.email.trim().to_string();
     if email.is_empty() {
-        return json_error(StatusCode::UNPROCESSABLE_ENTITY, "email is required");
+        return json_error(StatusCode::UNPROCESSABLE_ENTITY, "El nombre de usuario es obligatorio");
+    }
+
+    // Usernames are unique (they're the login identifier).
+    match username_taken(&state, &email, None).await {
+        Ok(true) => return json_error(StatusCode::CONFLICT, "El nombre de usuario ya existe"),
+        Ok(false) => {}
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 
     let company_roles = parse_memberships(&payload.memberships, &admin_companies);
@@ -327,7 +334,14 @@ pub async fn api_users_update(
 
     let email = payload.email.trim().to_string();
     if email.is_empty() {
-        return json_error(StatusCode::UNPROCESSABLE_ENTITY, "email is required");
+        return json_error(StatusCode::UNPROCESSABLE_ENTITY, "El nombre de usuario es obligatorio");
+    }
+
+    // Renaming to a username another user already holds is rejected.
+    match username_taken(&state, &email, Some(&object_id)).await {
+        Ok(true) => return json_error(StatusCode::CONFLICT, "El nombre de usuario ya existe"),
+        Ok(false) => {}
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 
     let company_roles = parse_memberships(&payload.memberships, &admin_companies);

@@ -108,12 +108,31 @@ pub async fn create_user(
     create_user_with_permissions(state, email, secret, &company_roles_permissions).await
 }
 
+/// Whether a user already exists with this username (stored in the `email`
+/// field). `exclude` skips a given user so an update can keep its own name.
+/// Usernames are the login identifier and must be unique.
+pub async fn username_taken(
+    state: &AppState,
+    username: &str,
+    exclude: Option<&ObjectId>,
+) -> Result<bool> {
+    let existing = state.users.find_one(doc! { "email": username }).await?;
+    Ok(match existing {
+        Some(user) => user.id.as_ref() != exclude,
+        None => false,
+    })
+}
+
 pub async fn create_user_with_permissions(
     state: &AppState,
     email: &str,
     secret: &str,
     company_roles_permissions: &[(ObjectId, UserRole, Vec<UserPermission>)],
 ) -> Result<ObjectId> {
+    // Usernames are unique — refuse to create a duplicate from any caller.
+    if username_taken(state, email, None).await? {
+        anyhow::bail!("username '{email}' already exists");
+    }
     let (primary, _) = company_roles_permissions
         .first()
         .map(|(id, role, _)| (id.clone(), role.clone()))

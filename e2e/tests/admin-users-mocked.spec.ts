@@ -142,6 +142,25 @@ test.describe("admin / users (mocked API)", () => {
     await expect(qr).toHaveAttribute("src", "/admin/users/u2/qrcode");
   });
 
+  test("duplicate username is reported", async ({ page }) => {
+    await page.route("**/api/me", (r) => r.fulfill({ json: ADMIN_ME }));
+    await page.route("**/api/admin/companies", (r) => r.fulfill({ json: COMPANIES }));
+    await page.route("**/api/admin/users", (route) => {
+      if (route.request().method() === "POST") {
+        return route.fulfill({ status: 409, json: { error: "El nombre de usuario ya existe" } });
+      }
+      return route.fulfill({ json: [] });
+    });
+
+    await page.goto("/v2/users");
+    await expect(page.getByText("Nombre de usuario")).toBeVisible();
+    const form = page.locator("form");
+    await form.getByRole("textbox").first().fill("alfredo@example.com");
+    await form.getByRole("checkbox", { name: "Acme" }).check();
+    await page.getByRole("button", { name: /Crear usuario|Guardando/ }).click();
+    await expect(page.getByText("El nombre de usuario ya existe")).toBeVisible();
+  });
+
   test("staff does not see the users nav link", async ({ page }) => {
     await page.route("**/api/me", (r) => r.fulfill({ json: STAFF_ME }));
     await page.goto("/v2/");

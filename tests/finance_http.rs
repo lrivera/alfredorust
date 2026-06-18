@@ -1903,3 +1903,36 @@ async fn user_update_persists_new_secret() {
 
     common::teardown(Some(ctx)).await;
 }
+/// Usernames (the login identifier, stored in `email`) must be unique: a second
+/// create with the same username is rejected.
+#[tokio::test]
+async fn duplicate_username_is_rejected() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+
+    let company = create_company(&state, "Uniq Co", "uniq-co", "MXN", true, None)
+        .await
+        .unwrap();
+    create_user_with_permissions(
+        &state,
+        "dup@example.com",
+        "SECRETAAAAAAAAAAAAAA",
+        &[(company.clone(), UserRole::Staff, vec![])],
+    )
+    .await
+    .unwrap();
+
+    let again = create_user_with_permissions(
+        &state,
+        "dup@example.com",
+        "OTHERSECRETBBBBBBBBBB",
+        &[(company.clone(), UserRole::Staff, vec![])],
+    )
+    .await;
+    assert!(again.is_err(), "a duplicate username must be rejected");
+
+    common::teardown(Some(ctx)).await;
+}
