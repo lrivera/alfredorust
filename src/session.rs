@@ -87,6 +87,25 @@ pub async fn require_session(
     }
 }
 
+/// Gate routes so they are only reachable when the active tenant is the test
+/// tenant. Must run AFTER `require_session` (it reads the `SessionData` that
+/// middleware inserts). Returns 404 elsewhere so the test-only surface (Swagger,
+/// test reports) is invisible on real tenants. The slug defaults to `test` and
+/// can be overridden with `TEST_TENANT_SLUG`.
+pub async fn require_test_tenant(request: Request, next: Next) -> Result<Response, Response> {
+    let expected = env::var("TEST_TENANT_SLUG").unwrap_or_else(|_| "test".to_string());
+    let is_test = request
+        .extensions()
+        .get::<SessionData>()
+        .map(|data| data.user.company_slug.eq_ignore_ascii_case(&expected))
+        .unwrap_or(false);
+    if is_test {
+        Ok(next.run(request).await)
+    } else {
+        Err((StatusCode::NOT_FOUND, "not found").into_response())
+    }
+}
+
 pub fn tenant_subdomain_from_host(host: &str) -> Option<&str> {
     let host_no_port = host.split(':').next().unwrap_or(host).trim_end_matches('.');
     if host_no_port.is_empty() || host_no_port.parse::<std::net::IpAddr>().is_ok() {

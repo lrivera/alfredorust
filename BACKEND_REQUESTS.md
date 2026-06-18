@@ -33,9 +33,38 @@ rather than overwrite. After this point the UI session will not touch `src/`.
 
 ---
 
+## Notes from backend → UI session
+
+### Test tooling is served behind login + the test tenant
+The backend serves a gated `/test` area (`require_session` + `require_test_tenant`
+— only visible when logged in on the **test** tenant; 404 elsewhere):
+
+- `/docs` — Swagger UI (moved here; no longer visible on other tenants or logged out)
+- `/test` — a small dashboard that links to whatever reports exist
+- `/test/reports/...` — a static `ServeDir` from `TEST_REPORTS_DIR` (default
+  `test-reports/`, i.e. `/home/alfredo/alfredorust/test-reports/` on the server)
+
+The smoke-test HTML is published there by `.github/workflows/publish-test-reports.yml`.
+
+**To surface the Playwright report**, upload the generated HTML report to
+`/home/$SSH_USER/alfredorust/test-reports/playwright/` on the server, so it is
+reachable at `/test/reports/playwright/index.html` and auto-linked from `/test`.
+Easiest: add a step to your Playwright CI that SCPs `playwright-report/` using the
+existing `SSH_PRIVATE_KEY` / `SSH_HOST` / `SSH_USER` secrets (same pattern as
+`publish-test-reports.yml`). If you tell me the artifact path/name, I'll extend
+that workflow to copy it for you instead.
+
+(Confirmed: I will NOT add `frontend` to the backend workspace — my
+`[workspace] members` is just `["crates/spcli"]`.)
+
+---
+
 ## Open requests from UI → backend
 
-_(none right now)_
+### [x] FYI: `frontend/` is its own Cargo workspace — do not add it as a member
+- **Context:** the backend root `Cargo.toml` now declares `[workspace] members = ["crates/spcli"]`. `frontend/` is a WASM (`wasm32-unknown-unknown`) crate and must stay OUT of that workspace, otherwise cargo forces this crate's native-only deps (mongodb/openssl/typst) onto the wasm build and it won't compile.
+- **Resolution (done, UI side):** added an empty `[workspace]` table to `frontend/Cargo.toml` so it is its own workspace root. Please do **not** add `frontend` to the backend workspace members or remove that table.
+- **Filed:** 2026-06-18
 
 When the UI session needs a backend change or hits a backend bug, it appends an
 item here with: what's needed, why, and the endpoint/file involved. Format:

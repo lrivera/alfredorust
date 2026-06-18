@@ -42,11 +42,6 @@ async fn main() {
     );
 
     let protected = Router::new()
-        // Swagger UI + OpenAPI JSON, gated by the session middleware below so the
-        // API docs are only reachable once logged in.
-        .merge(
-            SwaggerUi::new("/docs").url("/api-docs/openapi.json", ApiDoc::openapi()),
-        )
         .route("/setup", get(routes::setup))
         .route("/qrcode", get(routes::qrcode))
         .route("/secret", get(routes::secret_generate))
@@ -649,6 +644,21 @@ async fn main() {
             session::require_session,
         ));
 
+    // Test-only tooling: Swagger UI, the OpenAPI JSON, and a static reports
+    // directory (smoke test + Playwright HTML). Gated by require_session AND
+    // require_test_tenant, so it is invisible unless you are logged in on the
+    // test tenant. Reports dir is configurable via TEST_REPORTS_DIR.
+    let reports_dir = std::env::var("TEST_REPORTS_DIR").unwrap_or_else(|_| "test-reports".to_string());
+    let test_gated = Router::new()
+        .merge(SwaggerUi::new("/docs").url("/api-docs/openapi.json", ApiDoc::openapi()))
+        .route("/test", get(routes::test_dashboard))
+        .nest_service("/test/reports", ServeDir::new(&reports_dir))
+        .layer(middleware::from_fn(session::require_test_tenant))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            session::require_session,
+        ));
+
     // SPA static assets (Leptos CSR build). Unmatched, non-API paths fall back
     // to index.html so client-side routing owns the path space. The explicit
     // routes above and the `protected` router take precedence, so /api/*,
@@ -661,6 +671,7 @@ async fn main() {
         .route("/", get(routes::home))
         .route("/login", post(routes::login))
         .merge(protected)
+        .merge(test_gated)
         .fallback_service(spa_service)
         .with_state(state);
 

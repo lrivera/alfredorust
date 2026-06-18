@@ -1,0 +1,73 @@
+name: Publish test reports
+
+# Runs the spcli smoke test against the live server and uploads its HTML/JSON
+# report to the server's test-reports/ directory, where it is served (behind
+# login + the test tenant) at https://<test-tenant>/test/reports/smoke-report.html
+# and linked from /test.
+#
+# Manual trigger (Actions → Publish test reports → Run workflow) or on a schedule.
+#
+# Required repository secrets:
+#   SSH_PRIVATE_KEY, SSH_HOST, SSH_USER   (same as the deploy workflow)
+#   SPCLI_TOTP_SECRET                     (the test user's base32 TOTP secret)
+# Optional repository variables (with defaults):
+#   SPCLI_BASE_URL (https://app.alfredorivera.dev), SPCLI_EMAIL (test@email.com),
+#   SPCLI_TENANT (test)
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 7 * * 1" # weekly, Monday 07:00 UTC — adjust or remove as you like
+
+jobs:
+  smoke-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: spcli-x86_64-unknown-linux-gnu-${{ hashFiles('Cargo.lock') }}
+
+      - name: Build spcli
+        run: cargo build --release -p spcli
+
+      - name: Run smoke test (generates the report even if checks fail)
+        env:
+          SPCLI_TOTP_SECRET: ${{ secrets.SPCLI_TOTP_SECRET }}
+          SPCLI_BASE_URL: ${{ vars.SPCLI_BASE_URL || 'https://app.alfredorivera.dev' }}
+          SPCLI_EMAIL: ${{ vars.SPCLI_EMAIL || 'test@email.com' }}
+          SPCLI_TENANT: ${{ vars.SPCLI_TENANT || 'test' }}
+          SPCLI_SMOKE_SAT_PW: smoke
+          SPCLI_BIN: target/release/spcli
+          SPCLI_REPORT_HTML: smoke-report.html
+          SPCLI_REPORT_JSON: smoke-report.json
+        run: |
+          if [ -z "$SPCLI_TOTP_SECRET" ]; then
+            echo "::error::SPCLI_TOTP_SECRET secret is not set — add it in repo settings." && exit 1
+          fi
+          bash scripts/smoke-test-server.sh || echo "::warning::smoke had failures — publishing the report anyway"
+
+      - name: Upload report to the server
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no "$SSH_USER@$SSH_HOST" \
+            "mkdir -p /home/$SSH_USER/alfredorust/test-reports"
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            smoke-report.html smoke-report.json \
+            "$SSH_USER@$SSH_HOST:/home/$SSH_USER/alfredorust/test-reports/"
+          echo "Published → /test/reports/smoke-report.html (behind login on the test tenant)"

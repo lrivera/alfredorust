@@ -11,6 +11,7 @@ pub mod qrcode;
 pub mod sat;
 pub mod secret;
 pub mod setup;
+pub mod test_dashboard;
 pub mod tiempo;
 
 pub use admin::*;
@@ -23,4 +24,5 @@ pub use qrcode::qrcode;
 pub use sat::sat_cfdi_download;
 pub use secret::secret_generate;
 pub use setup::setup;
+pub use test_dashboard::test_dashboard;
 pub use tiempo::{tiempo_data, tiempo_page};

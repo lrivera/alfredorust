@@ -19,7 +19,7 @@ use alfredodev::{
         TransactionType, UserPermission, UserRole,
     },
     routes,
-    session::{SESSION_COOKIE_NAME, require_session},
+    session::{SESSION_COOKIE_NAME, require_session, require_test_tenant},
     state::{
         AppState, CfdiJob, CfdiJobStatus, add_user_to_company, create_account, create_category,
         create_company, create_concept_status, create_contact, create_forecast,
@@ -5725,6 +5725,69 @@ async fn me_endpoint_bootstraps_active_tenant_profile_and_companies() {
         StatusCode::UNAUTHORIZED,
         "/api/me without a session must be 401"
     );
+
+    common::teardown(Some(ctx)).await;
+}
+
+fn build_test_gated(state: Arc<AppState>) -> Router {
+    Router::new()
+        .route("/test", get(routes::test_dashboard))
+        .layer(middleware::from_fn(require_test_tenant))
+        .layer(middleware::from_fn_with_state(state.clone(), require_session))
+        .with_state(state)
+}
+
+#[tokio::test]
+async fn test_tooling_is_gated_to_login_and_the_test_tenant() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let shared = Arc::new(state.clone());
+
+    let test_co = create_company(&state, "Test Co", "test", "MXN", true, None)
+        .await
+        .unwrap();
+    let other_co = create_company(&state, "Other Co", "other-co", "MXN", true, None)
+        .await
+        .unwrap();
+    create_user_with_permissions(&state, "t-tenant@example.com", "S", &[(test_co, UserRole::Admin, vec![])])
+        .await
+        .unwrap();
+    create_user_with_permissions(&state, "o-tenant@example.com", "S", &[(other_co, UserRole::Admin, vec![])])
+        .await
+        .unwrap();
+    let t_token = create_session(&state, "t-tenant@example.com").await.unwrap();
+    let o_token = create_session(&state, "o-tenant@example.com").await.unwrap();
+
+    // Unauthenticated → 401 (require_session runs first).
+    let req = Request::builder()
+        .uri("/test")
+        .header("host", "test.miapp.local")
+        .body(Body::empty())
+        .unwrap();
+    let res = build_test_gated(shared.clone())
+        .oneshot(req)
+        .await
+        .expect("request failed");
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+
+    // Logged in on the test tenant → 200.
+    let (status, body) =
+        get_with_cookie(build_test_gated(shared.clone()), "test.miapp.local", "/test", &t_token).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(body.contains("Test tooling"));
+
+    // Logged in on a NON-test tenant → 404 (invisible).
+    let (status, _) = get_with_cookie(
+        build_test_gated(shared.clone()),
+        "other-co.miapp.local",
+        "/test",
+        &o_token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 
     common::teardown(Some(ctx)).await;
 }
