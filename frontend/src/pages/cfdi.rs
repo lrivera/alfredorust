@@ -185,8 +185,7 @@ pub fn CfdiPage() -> impl IntoView {
                     busy.set(true);
                     poll_jobs(cid_poll.clone(), jobs, busy);
                 }
-                Err(ApiError::Forbidden) => dl_error.set(Some("No tienes permiso".into())),
-                Err(_) => dl_error.set(Some("No se pudo iniciar la descarga".into())),
+                Err(e) => dl_error.set(Some(api::humanize(&e, "No se pudo iniciar la descarga"))),
             }
         }
     });

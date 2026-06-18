@@ -137,11 +137,9 @@ pub fn UsersPage() -> impl IntoView {
                     reset_form();
                     reload();
                 }
-                Err(ApiError::Forbidden) => form_error.set(Some("No tienes permiso".into())),
-                Err(ApiError::Status(409)) => {
-                    form_error.set(Some("El nombre de usuario ya existe".into()))
-                }
-                Err(_) => form_error.set(Some("No se pudo guardar el usuario".into())),
+                // The backend sends "El nombre de usuario ya existe" on 409, which
+                // humanize surfaces; other errors fall back.
+                Err(e) => form_error.set(Some(api::humanize(&e, "No se pudo guardar el usuario"))),
             }
         }
     });

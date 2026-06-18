@@ -102,11 +102,7 @@ pub fn AccountsPage() -> impl IntoView {
                     reset_form();
                     reload();
                 }
-                Err(ApiError::Status(400)) => {
-                    form_error.set(Some("Revisa los datos del formulario".into()))
-                }
-                Err(ApiError::Forbidden) => form_error.set(Some("No tienes permiso".into())),
-                Err(_) => form_error.set(Some("No se pudo guardar la cuenta".into())),
+                Err(e) => form_error.set(Some(api::humanize(&e, "No se pudo guardar la cuenta"))),
             }
         }
     });

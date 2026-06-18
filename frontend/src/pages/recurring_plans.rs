@@ -107,8 +107,7 @@ pub fn RecurringPlansPage() -> impl IntoView {
                     reset_form();
                     reload();
                 }
-                Err(ApiError::Forbidden) => form_error.set(Some("No tienes permiso".into())),
-                Err(_) => form_error.set(Some("No se pudo guardar el plan".into())),
+                Err(e) => form_error.set(Some(api::humanize(&e, "No se pudo guardar el plan"))),
             }
         }
     });
@@ -163,10 +162,13 @@ pub fn RecurringPlansPage() -> impl IntoView {
     let generated = RwSignal::new(None::<String>);
     let generate_one = move |id: String| {
         spawn_local(async move {
-            match api::post_action(&format!("/api/admin/recurring-plans/{id}/generate")).await {
+            match api::post_empty(&format!("/api/admin/recurring-plans/{id}/generate")).await {
                 Ok(()) => generated.set(Some("Entradas generadas".into())),
                 // Surface the server's reason (e.g. "recurring plan is inactive").
-                Err(msg) => generated.set(Some(format!("No se pudo generar: {msg}"))),
+                Err(e) => generated.set(Some(format!(
+                    "No se pudo generar: {}",
+                    api::humanize(&e, "intenta de nuevo")
+                ))),
             }
         });
     };

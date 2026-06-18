@@ -4,7 +4,7 @@
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
-use crate::api::{self, ApiError, ProfileData, ProfilePayload};
+use crate::api::{self, ProfileData, ProfilePayload};
 use crate::components::{Button, Card, CardContent, CardHeader, CardTitle, Input};
 
 #[component]
@@ -35,8 +35,7 @@ pub fn AccountPage() -> impl IntoView {
                     message.set(Some("Tu información se guardó correctamente".into()));
                     form_error.set(None);
                 }
-                Err(ApiError::Forbidden) => form_error.set(Some("No tienes permiso".into())),
-                Err(_) => form_error.set(Some("No se pudo guardar la información".into())),
+                Err(e) => form_error.set(Some(api::humanize(&e, "No se pudo guardar la información"))),
             }
         }
     });

@@ -7,7 +7,7 @@ use gloo_net::http::Request;
 use serde::{Deserialize, Serialize};
 use web_sys::{File, FormData};
 
-use super::{err_for, transport, ApiError};
+use super::{err_with_body, transport, ApiError};
 
 // --- companies ------------------------------------------------------------
 
@@ -136,7 +136,11 @@ pub async fn upload_sat_config(
         .send()
         .await
         .map_err(transport)?;
-    err_for(resp.status()).map_or(Ok(()), Err)
+    if (200..300).contains(&resp.status()) {
+        Ok(())
+    } else {
+        Err(err_with_body(resp).await)
+    }
 }
 
 // --- CFDI download jobs ----------------------------------------------------

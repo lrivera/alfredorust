@@ -102,11 +102,7 @@ pub fn CompaniesPage() -> impl IntoView {
                     reset_form();
                     reload();
                 }
-                Err(ApiError::Forbidden) => form_error.set(Some("No tienes permiso".into())),
-                Err(ApiError::Status(409)) => {
-                    form_error.set(Some("Ya existe una compañía con ese slug.".into()))
-                }
-                Err(_) => form_error.set(Some("No se pudo guardar la compañía".into())),
+                Err(e) => form_error.set(Some(api::humanize(&e, "No se pudo guardar la compañía"))),
             }
         }
     });

@@ -1,10 +1,9 @@
 //! Finance domain types: accounts, categories, contacts, forecasts, recurring
 //! plans, planned entries, transactions (+ their payloads and edit details).
 
-use gloo_net::http::Request;
 use serde::{Deserialize, Serialize};
 
-use super::{err_for, transport, ApiError};
+use super::ApiError;
 
 // --- accounts -------------------------------------------------------------
 
@@ -39,42 +38,19 @@ pub struct AccountDetail {
 }
 
 pub async fn list_accounts() -> Result<Vec<Account>, ApiError> {
-    let resp = Request::get("/api/admin/accounts")
-        .send()
-        .await
-        .map_err(transport)?;
-    if let Some(e) = err_for(resp.status()) {
-        return Err(e);
-    }
-    resp.json().await.map_err(transport)
+    super::get_json("/api/admin/accounts").await
 }
 
 pub async fn create_account(payload: &AccountPayload) -> Result<(), ApiError> {
-    let resp = Request::post("/api/admin/accounts")
-        .json(payload)
-        .map_err(transport)?
-        .send()
-        .await
-        .map_err(transport)?;
-    err_for(resp.status()).map_or(Ok(()), Err)
+    super::post_json("/api/admin/accounts", payload).await
 }
 
 pub async fn update_account(id: &str, payload: &AccountPayload) -> Result<(), ApiError> {
-    let resp = Request::post(&format!("/api/admin/accounts/{id}/update"))
-        .json(payload)
-        .map_err(transport)?
-        .send()
-        .await
-        .map_err(transport)?;
-    err_for(resp.status()).map_or(Ok(()), Err)
+    super::post_json(&format!("/api/admin/accounts/{id}/update"), payload).await
 }
 
 pub async fn delete_account(id: &str) -> Result<(), ApiError> {
-    let resp = Request::post(&format!("/api/admin/accounts/{id}/delete"))
-        .send()
-        .await
-        .map_err(transport)?;
-    err_for(resp.status()).map_or(Ok(()), Err)
+    super::post_empty(&format!("/api/admin/accounts/{id}/delete")).await
 }
 
 // --- categories -----------------------------------------------------------

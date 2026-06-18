@@ -54,8 +54,7 @@ pub fn SatConfigsPage() -> impl IntoView {
                     form_error.set(None);
                     reload();
                 }
-                Err(ApiError::Forbidden) => form_error.set(Some("No tienes permiso".into())),
-                Err(_) => form_error.set(Some("No se pudo subir la configuración".into())),
+                Err(e) => form_error.set(Some(api::humanize(&e, "No se pudo subir la configuración"))),
             }
         }
     });

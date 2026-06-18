@@ -107,8 +107,7 @@ pub fn PlannedEntriesPage() -> impl IntoView {
                     reset_form();
                     reload();
                 }
-                Err(ApiError::Forbidden) => form_error.set(Some("No tienes permiso".into())),
-                Err(_) => form_error.set(Some("No se pudo guardar la entrada".into())),
+                Err(e) => form_error.set(Some(api::humanize(&e, "No se pudo guardar la entrada"))),
             }
         }
     });
@@ -195,8 +194,7 @@ pub fn PlannedEntriesPage() -> impl IntoView {
                     paying.set(None);
                     reload();
                 }
-                Err(ApiError::Forbidden) => pay_error.set(Some("No tienes permiso".into())),
-                Err(_) => pay_error.set(Some("No se pudo registrar el pago".into())),
+                Err(e) => pay_error.set(Some(api::humanize(&e, "No se pudo registrar el pago"))),
             }
         }
     });
@@ -249,8 +247,7 @@ pub fn PlannedEntriesPage() -> impl IntoView {
                     selected.set(Vec::new());
                     reload();
                 }
-                Err(ApiError::Forbidden) => bulk_error.set(Some("No tienes permiso".into())),
-                Err(_) => bulk_error.set(Some("No se pudo registrar el pago".into())),
+                Err(e) => bulk_error.set(Some(api::humanize(&e, "No se pudo registrar el pago"))),
             }
         }
     });

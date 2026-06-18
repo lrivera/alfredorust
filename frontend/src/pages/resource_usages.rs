@@ -9,7 +9,7 @@ use leptos::task::spawn_local;
 use wasm_bindgen::JsCast;
 
 use super::{run_script, set_html};
-use crate::api::{self, ApiError, GridSavePayload, GridSelection, GridView, Me};
+use crate::api::{self, GridSavePayload, GridSelection, GridView, Me};
 use crate::components::{Button, Input, Select};
 
 fn today_str() -> String {
@@ -266,8 +266,7 @@ pub fn ResourceUsagesPage() -> impl IntoView {
                     saved_msg.set(Some("Guardado".into()));
                     reload.update(|n| *n += 1);
                 }
-                Err(ApiError::Forbidden) => saved_msg.set(Some("No tienes permiso".into())),
-                Err(_) => saved_msg.set(Some("No se pudo guardar".into())),
+                Err(e) => saved_msg.set(Some(api::humanize(&e, "No se pudo guardar"))),
             }
         }
     });

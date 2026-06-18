@@ -226,8 +226,7 @@ pub fn TransactionsPage() -> impl IntoView {
                     reset_form();
                     reload();
                 }
-                Err(ApiError::Forbidden) => form_error.set(Some("No tienes permiso".into())),
-                Err(_) => form_error.set(Some("No se pudo guardar el movimiento".into())),
+                Err(e) => form_error.set(Some(api::humanize(&e, "No se pudo guardar el movimiento"))),
             }
         }
     });

@@ -263,7 +263,13 @@ pub async fn company_create_api(
         Err(status) => return status.into_response(),
     };
     match slug_conflicts(&state, &slug, None).await {
-        Ok(true) => return StatusCode::CONFLICT.into_response(),
+        Ok(true) => {
+            return (
+                StatusCode::CONFLICT,
+                Json(serde_json::json!({ "error": "Ya existe una compañía con ese slug." })),
+            )
+                .into_response();
+        }
         Ok(false) => {}
         Err(status) => return status.into_response(),
     }
@@ -325,7 +331,13 @@ pub async fn company_update_api(
         Err(status) => return status.into_response(),
     };
     match slug_conflicts(&state, &slug, Some(&object_id)).await {
-        Ok(true) => return StatusCode::CONFLICT.into_response(),
+        Ok(true) => {
+            return (
+                StatusCode::CONFLICT,
+                Json(serde_json::json!({ "error": "Ya existe una compañía con ese slug." })),
+            )
+                .into_response();
+        }
         Ok(false) => {}
         Err(status) => return status.into_response(),
     }

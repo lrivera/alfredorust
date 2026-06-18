@@ -71,10 +71,43 @@ pub enum ApiError {
     Unauthorized,
     /// Authenticated but not allowed — show an explicit not-allowed state.
     Forbidden,
-    /// Any other non-success status.
-    Status(u16),
+    /// Any other non-success status, with the server's `{"error": ...}` message
+    /// when it sent one (so the UI can show the real reason).
+    Status { code: u16, message: Option<String> },
     /// Transport/parse failure.
     Transport(String),
+}
+
+/// Decide what to show the user for an error: the server's own message when it
+/// sent one, friendly text for auth/network, otherwise the per-call `fallback`.
+/// Centralizes the "which error do I show?" logic so screens don't each guess.
+pub fn humanize(err: &ApiError, fallback: &str) -> String {
+    match err {
+        ApiError::Forbidden => "No tienes permiso para esta acción".to_string(),
+        ApiError::Unauthorized => "Tu sesión expiró. Vuelve a iniciar sesión.".to_string(),
+        ApiError::Transport(_) => "Error de conexión. Intenta de nuevo.".to_string(),
+        ApiError::Status { message: Some(m), .. } if !m.trim().is_empty() => m.clone(),
+        ApiError::Status { .. } => fallback.to_string(),
+    }
+}
+
+/// Build an `ApiError` from a non-success response, reading the `{"error": ...}`
+/// body so the message isn't lost.
+pub(crate) async fn err_with_body(resp: gloo_net::http::Response) -> ApiError {
+    match resp.status() {
+        401 => ApiError::Unauthorized,
+        403 => ApiError::Forbidden,
+        code => {
+            let message = resp
+                .text()
+                .await
+                .ok()
+                .and_then(|body| serde_json::from_str::<serde_json::Value>(&body).ok())
+                .and_then(|v| v.get("error").and_then(|e| e.as_str()).map(str::to_string))
+                .filter(|s| !s.is_empty());
+            ApiError::Status { code, message }
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -103,7 +136,7 @@ pub async fn get_me() -> Result<Me, ApiError> {
             .map_err(|e| ApiError::Transport(e.to_string())),
         401 => Err(ApiError::Unauthorized),
         403 => Err(ApiError::Forbidden),
-        s => Err(ApiError::Status(s)),
+        code => Err(ApiError::Status { code, message: None }),
     }
 }
 
@@ -121,7 +154,7 @@ pub async fn login(username: &str, code: &str) -> Result<LoginOk, ApiError> {
             .await
             .map_err(|e| ApiError::Transport(e.to_string())),
         401 => Err(ApiError::Unauthorized),
-        s => Err(ApiError::Status(s)),
+        code => Err(ApiError::Status { code, message: None }),
     }
 }
 
@@ -140,27 +173,21 @@ pub(crate) fn transport(e: gloo_net::Error) -> ApiError {
     ApiError::Transport(e.to_string())
 }
 
-/// Maps an HTTP status to an error, or `None` when it is a success status.
-pub(crate) fn err_for(status: u16) -> Option<ApiError> {
-    match status {
-        200 | 201 | 202 | 204 => None,
-        401 => Some(ApiError::Unauthorized),
-        403 => Some(ApiError::Forbidden),
-        s => Some(ApiError::Status(s)),
-    }
+fn is_success(status: u16) -> bool {
+    matches!(status, 200 | 201 | 202 | 204)
 }
 
 /// GET a JSON resource. Unknown fields in the response are ignored, so SPA
 /// structs can declare just the fields they render.
 pub async fn get_json<T: DeserializeOwned>(url: &str) -> Result<T, ApiError> {
     let resp = Request::get(url).send().await.map_err(transport)?;
-    if let Some(e) = err_for(resp.status()) {
-        return Err(e);
+    if !is_success(resp.status()) {
+        return Err(err_with_body(resp).await);
     }
     resp.json().await.map_err(transport)
 }
 
-/// POST a JSON body, expecting a success status (ignores the response body).
+/// POST a JSON body. On failure carries the server's `{error}` message.
 pub async fn post_json<B: Serialize>(url: &str, body: &B) -> Result<(), ApiError> {
     let resp = Request::post(url)
         .json(body)
@@ -168,30 +195,22 @@ pub async fn post_json<B: Serialize>(url: &str, body: &B) -> Result<(), ApiError
         .send()
         .await
         .map_err(transport)?;
-    err_for(resp.status()).map_or(Ok(()), Err)
+    if is_success(resp.status()) {
+        Ok(())
+    } else {
+        Err(err_with_body(resp).await)
+    }
 }
 
-/// POST with no body (e.g. delete/generate endpoints).
+/// POST with no body (e.g. delete/generate endpoints). On failure carries the
+/// server's `{error}` message.
 pub async fn post_empty(url: &str) -> Result<(), ApiError> {
     let resp = Request::post(url).send().await.map_err(transport)?;
-    err_for(resp.status()).map_or(Ok(()), Err)
-}
-
-/// POST with no body, surfacing the server's `{"error": "..."}` message on
-/// failure so the UI can explain *why* (e.g. "recurring plan is inactive").
-pub async fn post_action(url: &str) -> Result<(), String> {
-    let resp = Request::post(url).send().await.map_err(|e| e.to_string())?;
-    let status = resp.status();
-    if (200..300).contains(&status) {
-        return Ok(());
+    if is_success(resp.status()) {
+        Ok(())
+    } else {
+        Err(err_with_body(resp).await)
     }
-    let body = resp.text().await.unwrap_or_default();
-    let msg = serde_json::from_str::<serde_json::Value>(&body)
-        .ok()
-        .and_then(|v| v.get("error").and_then(|e| e.as_str()).map(str::to_string))
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| format!("error {status}"));
-    Err(msg)
 }
 
 #[cfg(test)]
@@ -222,5 +241,31 @@ mod tests {
         let me = me_with(&["view_projects"]);
         assert!(!me.can("edit_resource_usage_today"));
         assert!(!me_with(&[]).can("view_projects"));
+    }
+
+    #[wasm_bindgen_test]
+    fn humanize_prefers_server_message_then_friendly_then_fallback() {
+        // Server's own message wins.
+        assert_eq!(
+            humanize(
+                &ApiError::Status { code: 400, message: Some("recurring plan is inactive".into()) },
+                "fallback"
+            ),
+            "recurring plan is inactive"
+        );
+        // No body → per-call fallback.
+        assert_eq!(
+            humanize(&ApiError::Status { code: 500, message: None }, "No se pudo guardar"),
+            "No se pudo guardar"
+        );
+        // Auth/transport get friendly text regardless of fallback.
+        assert_eq!(humanize(&ApiError::Forbidden, "x"), "No tienes permiso para esta acción");
+        assert!(humanize(&ApiError::Unauthorized, "x").contains("sesión"));
+        assert!(humanize(&ApiError::Transport("boom".into()), "x").contains("conexión"));
+        // Empty server message falls back too.
+        assert_eq!(
+            humanize(&ApiError::Status { code: 400, message: Some("  ".into()) }, "fb"),
+            "fb"
+        );
     }
 }
