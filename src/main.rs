@@ -659,10 +659,12 @@ async fn main() {
             session::require_session,
         ));
 
-    // SPA static assets (Leptos CSR build). Unmatched, non-API paths fall back
-    // to index.html so client-side routing owns the path space. The explicit
-    // routes above and the `protected` router take precedence, so /api/*,
-    // /login, /logout, /setup, etc. are never shadowed by the fallback.
+    // SPA static assets (Leptos CSR build), mounted under `/v2` on every tenant.
+    // `nest_service` strips the `/v2` prefix, so ServeDir sees `/`, `/accounts`,
+    // `/output-*.css`, etc.; its `.fallback(index.html)` covers client-side deep
+    // links like `/v2/accounts`. The SPA is NOT a global fallback, so unmatched
+    // root paths 404 again (pre-SPA behavior). API/auth routes are unchanged; the
+    // SPA calls absolute `/api/...` paths (not `/v2/api`).
     let spa_dir = std::env::var("SPA_DIST").unwrap_or_else(|_| "frontend/dist".to_string());
     let spa_index = format!("{spa_dir}/index.html");
     let spa_service = ServeDir::new(&spa_dir).fallback(ServeFile::new(spa_index));
@@ -672,7 +674,7 @@ async fn main() {
         .route("/login", post(routes::login))
         .merge(protected)
         .merge(test_gated)
-        .fallback_service(spa_service)
+        .nest_service("/v2", spa_service)
         .with_state(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 8090));

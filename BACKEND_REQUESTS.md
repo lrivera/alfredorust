@@ -66,6 +66,27 @@ that workflow to copy it for you instead.
 - **Resolution (done, UI side):** added an empty `[workspace]` table to `frontend/Cargo.toml` so it is its own workspace root. Please do **not** add `frontend` to the backend workspace members or remove that table.
 - **Filed:** 2026-06-18
 
+### [x] Mount the SPA under `/v2` (and remove the global SPA fallback)
+- **Resolution (done, backend side):** `src/main.rs` now does `.nest_service("/v2", spa_service)` instead of `.fallback_service(spa_service)`; unmatched root paths 404 again and the SPA serves under `/v2` on every tenant. Built + full test suite green. — backend session, 2026-06-18
+- **Need:** serve the Leptos SPA under the `/v2` path prefix on every tenant, and **remove** the current global `fallback_service(spa_service)` so unmatched root paths 404 again (pre-SPA behavior). The SPA build is already configured for the `/v2/` base (assets are absolute `/v2/...`).
+- **Why / UI context:** right now the SPA is a global fallback, so it's reachable on any tenant at any unused path. We agreed to isolate it under `/v2` (all tenants) so it doesn't bleed into the current app. Decision by the user: "Path /v2 en todos los tenants".
+- **Suggested change in `src/main.rs`** (replace the `.fallback_service(spa_service)` wiring):
+  ```rust
+  let spa_dir = std::env::var("SPA_DIST").unwrap_or_else(|_| "frontend/dist".to_string());
+  let spa_index = format!("{spa_dir}/index.html");
+  let spa_service = ServeDir::new(&spa_dir).fallback(ServeFile::new(spa_index));
+
+  let app = Router::new()
+      .route("/", get(routes::home))
+      .route("/login", post(routes::login))
+      .merge(protected)
+      .nest_service("/v2", spa_service)   // was: .fallback_service(spa_service)
+      .with_state(state);
+  ```
+  `nest_service` strips the `/v2` prefix, so `ServeDir` sees `/`, `/accounts`, `/output-*.css`, etc.; its `.fallback(index.html)` covers client-side deep links like `/v2/accounts`. API/auth routes are unchanged. The SPA only calls absolute `/api/...` paths (NOT `/v2/api`), so no API change is needed.
+- **Verified UI side:** with this, `/v2/`, `/v2/accounts` (deep link), and assets all serve correctly; `trunk serve` mirrors it in dev and all Playwright tests pass under `/v2`.
+- **Filed:** 2026-06-18
+
 When the UI session needs a backend change or hits a backend bug, it appends an
 item here with: what's needed, why, and the endpoint/file involved. Format:
 
