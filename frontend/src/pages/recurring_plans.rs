@@ -2,8 +2,8 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 
 use super::{
-    date_to_rfc3339, flow_label, load_account_options, load_category_options, load_contact_options,
-    money, rfc3339_to_date, Options,
+    bool_badge, date_to_rfc3339, flow_badge, load_account_options, load_category_options,
+    load_contact_options, money, rfc3339_to_date, Options,
 };
 use crate::api::{self, ApiError, Me, RecurringPlan, RecurringPlanPayload};
 use crate::components::{
@@ -408,13 +408,11 @@ pub fn RecurringPlansPage() -> impl IntoView {
                                             view! {
                                                 <tr class="border-t border-border">
                                                     <td class="px-4 py-2">{p.name}</td>
-                                                    <td class="px-4 py-2">
-                                                        {flow_label(&p.flow_type).to_string()}
-                                                    </td>
+                                                    <td class="px-4 py-2">{flow_badge(&p.flow_type)}</td>
                                                     <td class="px-4 py-2">{money(p.amount_estimated)}</td>
                                                     <td class="px-4 py-2">{p.frequency}</td>
                                                     <td class="px-4 py-2">
-                                                        {if p.is_active { "Sí" } else { "No" }}
+                                                        {bool_badge(p.is_active, "Sí", "No")}
                                                     </td>
                                                     <td class="px-4 py-2 text-right">
                                                         {move || {

@@ -1,6 +1,7 @@
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
+use super::bool_badge;
 use crate::api::{self, ApiError, ConceptStatusFull, ConceptStatusPayload, Me};
 use crate::components::{Button, ButtonVariant, Card, CardContent, CardHeader, CardTitle, Checkbox, Input};
 
@@ -231,7 +232,7 @@ pub fn ConceptStatusesPage() -> impl IntoView {
                                                     <td class="px-4 py-2">{s.name}</td>
                                                     <td class="px-4 py-2">{if s.is_initial { "Sí" } else { "" }}</td>
                                                     <td class="px-4 py-2">{if s.is_terminal { "Sí" } else { "" }}</td>
-                                                    <td class="px-4 py-2">{if s.is_active { "Sí" } else { "No" }}</td>
+                                                    <td class="px-4 py-2">{bool_badge(s.is_active, "Sí", "No")}</td>
                                                     <td class="px-4 py-2 text-right">
                                                         {move || {
                                                             if is_admin {

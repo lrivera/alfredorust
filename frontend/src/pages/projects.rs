@@ -1,7 +1,10 @@
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
-use super::{date_to_rfc3339, load_category_options, load_contact_options, money, rfc3339_to_date, Options};
+use super::{
+    date_to_rfc3339, load_category_options, load_contact_options, money, priority_badge,
+    rfc3339_to_date, status_badge, Options,
+};
 use crate::api::{self, ApiError, Me, ProjectPayload, ProjectRow};
 use crate::components::{Button, ButtonVariant, Card, CardContent, CardHeader, CardTitle, Input, Select};
 
@@ -317,6 +320,7 @@ pub fn ProjectsPage() -> impl IntoView {
                                             } else {
                                                 p.status_label.clone()
                                             };
+                                            let prio_value = p.priority.clone();
                                             let prio = if p.priority_label.is_empty() {
                                                 p.priority.clone()
                                             } else {
@@ -327,8 +331,8 @@ pub fn ProjectsPage() -> impl IntoView {
                                             view! {
                                                 <tr class="border-t border-border">
                                                     <td class="px-4 py-2">{p.title}</td>
-                                                    <td class="px-4 py-2">{status}</td>
-                                                    <td class="px-4 py-2">{prio}</td>
+                                                    <td class="px-4 py-2">{status_badge(&status)}</td>
+                                                    <td class="px-4 py-2">{priority_badge(&prio_value, &prio)}</td>
                                                     {can_money
                                                         .then(|| view! { <td class="px-4 py-2">{budget}</td> })}
                                                     <td class="px-4 py-2 text-muted-foreground">{sched}</td>

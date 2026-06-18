@@ -50,6 +50,7 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 
 use crate::api;
+use crate::components::{Badge, BadgeTone};
 
 /// An `(id, label)` option for a `<select>`.
 pub(crate) type Options = Vec<(String, String)>;
@@ -136,6 +137,96 @@ pub(crate) fn flow_label(value: &str) -> &str {
         "expense" => "Egreso",
         other => other,
     }
+}
+
+// --- badge helpers --------------------------------------------------------
+// Small reusable renderers so status/type/flow columns read as colored pills
+// consistently across screens. Tone is chosen from the value, not the label,
+// where possible.
+
+/// Income (green) / expense (rose) flow as a badge.
+pub(crate) fn flow_badge(value: &str) -> AnyView {
+    let tone = match value {
+        "income" => BadgeTone::Success,
+        "expense" => BadgeTone::Danger,
+        _ => BadgeTone::Neutral,
+    };
+    let label = flow_label(value).to_string();
+    view! { <Badge tone=tone>{label}</Badge> }.into_any()
+}
+
+/// Boolean flag (active/confirmed/…) with caller-supplied labels so wording and
+/// grammatical gender stay correct per screen. True → success, false → neutral.
+pub(crate) fn bool_badge(on: bool, yes: &str, no: &str) -> AnyView {
+    let (tone, label) = if on {
+        (BadgeTone::Success, yes)
+    } else {
+        (BadgeTone::Neutral, no)
+    };
+    let label = label.to_string();
+    view! { <Badge tone=tone>{label}</Badge> }.into_any()
+}
+
+/// A workflow status (planned/order/project). Tone is inferred from Spanish
+/// keywords; unknown custom statuses fall back to neutral so they still render.
+pub(crate) fn status_badge(label: &str) -> AnyView {
+    let l = label.to_lowercase();
+    let tone = if l.contains("cancel") {
+        BadgeTone::Neutral
+    } else if l.contains("vencid") || l.contains("atras") || l.contains("overdue") {
+        BadgeTone::Danger
+    } else if l.contains("parcial") || l.contains("partial") {
+        BadgeTone::Warning
+    } else if l.contains("cubiert")
+        || l.contains("pagad")
+        || l.contains("complet")
+        || l.contains("termin")
+        || l.contains("cerrad")
+        || l.contains("listo")
+    {
+        BadgeTone::Success
+    } else if l.contains("plan") || l.contains("pendiente") || l.contains("proceso") {
+        BadgeTone::Info
+    } else {
+        BadgeTone::Neutral
+    };
+    let label = label.to_string();
+    view! { <Badge tone=tone>{label}</Badge> }.into_any()
+}
+
+/// Project priority. Tone from the canonical value (low/medium/high); the label
+/// is whatever the screen resolved (e.g. "Alta").
+pub(crate) fn priority_badge(value: &str, label: &str) -> AnyView {
+    let tone = match value {
+        "high" | "urgent" => BadgeTone::Danger,
+        "medium" => BadgeTone::Warning,
+        "low" => BadgeTone::Neutral,
+        _ => BadgeTone::Info,
+    };
+    let label = label.to_string();
+    view! { <Badge tone=tone>{label}</Badge> }.into_any()
+}
+
+/// User role: admin highlighted (info), staff neutral.
+pub(crate) fn role_badge(role: &str) -> AnyView {
+    let tone = if role == "admin" {
+        BadgeTone::Info
+    } else {
+        BadgeTone::Neutral
+    };
+    let role = role.to_string();
+    view! {
+        <Badge tone=tone class="uppercase">
+            {role}
+        </Badge>
+    }
+    .into_any()
+}
+
+/// A non-status classifier (account type, etc.) shown as a subtle info pill.
+pub(crate) fn type_badge(label: &str) -> AnyView {
+    let label = label.to_string();
+    view! { <Badge tone=BadgeTone::Info>{label}</Badge> }.into_any()
 }
 
 /// Format a currency/value amount for display: `$1,232,543.90`, with thousands

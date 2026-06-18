@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
-use super::{flow_label, load_category_options, Options};
+use super::{flow_badge, load_category_options, Options};
 use crate::api::{self, ApiError, Category, CategoryPayload, Me};
 use crate::components::{Button, ButtonVariant, Card, CardContent, CardHeader, CardTitle, Input, Select};
 
@@ -237,9 +237,7 @@ pub fn CategoriesPage() -> impl IntoView {
                                             view! {
                                                 <tr class="border-t border-border">
                                                     <td class="px-4 py-2">{c.name}</td>
-                                                    <td class="px-4 py-2">
-                                                        {flow_label(&c.flow_type).to_string()}
-                                                    </td>
+                                                    <td class="px-4 py-2">{flow_badge(&c.flow_type)}</td>
                                                     <td class="px-4 py-2 text-muted-foreground">{c.parent}</td>
                                                     <td class="px-4 py-2 text-right">
                                                         {move || {

@@ -3,7 +3,7 @@ use leptos::task::spawn_local;
 
 use super::{
     date_to_rfc3339, load_account_options, load_category_options, load_contact_options, money,
-    rfc3339_to_date, Options,
+    rfc3339_to_date, status_badge, Options,
 };
 use crate::api::{self, ApiError, Me, Order, OrderItem, OrderPayload};
 use crate::components::{Button, ButtonVariant, Card, CardContent, CardHeader, CardTitle, Input, Select};
@@ -434,7 +434,7 @@ pub fn OrdersPage() -> impl IntoView {
                                                     <td class="px-4 py-2 text-muted-foreground">
                                                         {move || contact_name(&cid)}
                                                     </td>
-                                                    <td class="px-4 py-2">{st}</td>
+                                                    <td class="px-4 py-2">{status_badge(&st)}</td>
                                                     <td class="px-4 py-2">{money(o.amount)}</td>
                                                     <td class="px-4 py-2 text-muted-foreground">{sched}</td>
                                                     <td class="px-4 py-2 text-right">

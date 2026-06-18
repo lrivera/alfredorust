@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
-use super::{load_concept_status_options, money, Options};
+use super::{bool_badge, load_concept_status_options, money, Options};
 use crate::api::{self, ApiError, Me, Resource, ResourcePayload};
 use crate::components::{Button, ButtonVariant, Card, CardContent, CardHeader, CardTitle, Checkbox, Input, Select};
 
@@ -305,7 +305,7 @@ pub fn ResourcesPage() -> impl IntoView {
                                                     <td class="px-4 py-2">{r.currency}</td>
                                                     <td class="px-4 py-2 text-muted-foreground">{n_status}</td>
                                                     <td class="px-4 py-2">
-                                                        {if r.is_active { "Sí" } else { "No" }}
+                                                        {bool_badge(r.is_active, "Sí", "No")}
                                                     </td>
                                                     <td class="px-4 py-2 text-right">
                                                         {move || {

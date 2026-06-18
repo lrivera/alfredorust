@@ -5,6 +5,7 @@
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
+use super::bool_badge;
 use crate::api::{self, ApiError, CompanyData, CompanyPayload};
 use crate::components::{
     Button, ButtonVariant, Card, CardContent, CardHeader, CardTitle, Checkbox, Input,
@@ -346,7 +347,7 @@ pub fn CompaniesPage() -> impl IntoView {
                                                         {c.default_currency}
                                                     </td>
                                                     <td class="px-4 py-2">
-                                                        {if c.is_active { "Activa" } else { "Inactiva" }}
+                                                        {bool_badge(c.is_active, "Activa", "Inactiva")}
                                                     </td>
                                                     <td class="px-4 py-2 text-right">
                                                         <Button

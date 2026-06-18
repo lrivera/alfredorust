@@ -1,6 +1,7 @@
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
+use super::{bool_badge, type_badge};
 use crate::api::{self, Account, AccountPayload, ApiError, Me};
 use crate::components::{
     Button, ButtonVariant, Card, CardContent, CardHeader, CardTitle, Checkbox, Input, Select,
@@ -287,11 +288,11 @@ pub fn AccountsPage() -> impl IntoView {
                                                 <tr class="border-t border-border">
                                                     <td class="px-4 py-2">{acc.name}</td>
                                                     <td class="px-4 py-2">
-                                                        {account_type_label(&acc.account_type).to_string()}
+                                                        {type_badge(account_type_label(&acc.account_type))}
                                                     </td>
                                                     <td class="px-4 py-2">{acc.currency}</td>
                                                     <td class="px-4 py-2">
-                                                        {if acc.is_active { "Activa" } else { "Inactiva" }}
+                                                        {bool_badge(acc.is_active, "Activa", "Inactiva")}
                                                     </td>
                                                     <td class="px-4 py-2 text-right">
                                                         {move || {

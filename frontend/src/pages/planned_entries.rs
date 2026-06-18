@@ -2,8 +2,8 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 
 use super::{
-    date_to_rfc3339, flow_label, load_account_options, load_category_options, load_contact_options,
-    load_project_options, money, rfc3339_to_date, Options,
+    date_to_rfc3339, flow_badge, load_account_options, load_category_options, load_contact_options,
+    load_project_options, money, rfc3339_to_date, status_badge, Options,
 };
 use crate::api::{
     self, ApiError, Me, PlannedEntry, PlannedEntryBulkPayPayload, PlannedEntryPayPayload,
@@ -702,12 +702,10 @@ pub fn PlannedEntriesPage() -> impl IntoView {
                                                         }}
                                                     </td>
                                                     <td class="px-4 py-2">{e.name}</td>
-                                                    <td class="px-4 py-2">
-                                                        {flow_label(&e.flow_type).to_string()}
-                                                    </td>
+                                                    <td class="px-4 py-2">{flow_badge(&e.flow_type)}</td>
                                                     <td class="px-4 py-2">{money(e.amount_estimated)}</td>
                                                     <td class="px-4 py-2 text-muted-foreground">{e.due_date}</td>
-                                                    <td class="px-4 py-2">{status}</td>
+                                                    <td class="px-4 py-2">{status_badge(&status)}</td>
                                                     <td class="px-4 py-2 text-right">
                                                         {move || {
                                                             if is_admin {

@@ -10,7 +10,8 @@ use super::{
 };
 use crate::api::{self, ApiError, Me, Transaction, TransactionPayload};
 use crate::components::{
-    Button, ButtonVariant, Card, CardContent, CardHeader, CardTitle, Checkbox, Input, Select,
+    Badge, BadgeTone, Button, ButtonVariant, Card, CardContent, CardHeader, CardTitle, Checkbox,
+    Input, Select,
 };
 
 const TX_TYPES: &[(&str, &str)] = &[
@@ -21,6 +22,18 @@ const TX_TYPES: &[(&str, &str)] = &[
 
 fn tx_label(value: &str) -> &str {
     TX_TYPES.iter().find(|(v, _)| *v == value).map(|(_, l)| *l).unwrap_or(value)
+}
+
+/// Transaction type as a colored pill: income green, expense rose, transfer blue.
+fn tx_badge(value: &str) -> impl IntoView {
+    let tone = match value {
+        "income" => BadgeTone::Success,
+        "expense" => BadgeTone::Danger,
+        "transfer" => BadgeTone::Info,
+        _ => BadgeTone::Neutral,
+    };
+    let label = tx_label(value).to_string();
+    view! { <Badge tone=tone>{label}</Badge> }
 }
 
 fn opt_id(value: String) -> Option<String> {
@@ -503,7 +516,7 @@ pub fn TransactionsPage() -> impl IntoView {
                                                 <tr class="border-t border-border">
                                                     <td class="px-4 py-2 text-muted-foreground">{t.date}</td>
                                                     <td class="px-4 py-2">{t.description}</td>
-                                                    <td class="px-4 py-2">{tx_label(&t.tx_type).to_string()}</td>
+                                                    <td class="px-4 py-2">{tx_badge(&t.tx_type)}</td>
                                                     <td class="px-4 py-2">{money(t.amount)}</td>
                                                     <td class="px-4 py-2 text-muted-foreground">{t.category}</td>
                                                     <td class="px-4 py-2 text-right">

@@ -5,6 +5,7 @@
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
+use super::role_badge;
 use crate::api::{
     self, ApiError, CompanyData, Me, UserMembershipPayload, UserPayload, UserRowData,
 };
@@ -370,7 +371,7 @@ pub fn UsersPage() -> impl IntoView {
                                                         <td class="px-4 py-2 text-muted-foreground">
                                                             {u.companies.join(", ")}
                                                         </td>
-                                                        <td class="px-4 py-2 uppercase">{u.role}</td>
+                                                        <td class="px-4 py-2">{role_badge(&u.role)}</td>
                                                         <td class="px-4 py-2 text-right">
                                                             <Button
                                                                 variant=ButtonVariant::Ghost
