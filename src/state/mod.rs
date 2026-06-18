@@ -110,14 +110,23 @@ pub async fn init_state_with_db_name(uri: &str, db_name: &str) -> Result<AppStat
 
     // One-time migration: the user login identifier moved from `email` to
     // `username` (it was never a validated address, just a unique handle).
-    // Idempotent — only touches docs that still carry the old field.
-    let _ = db
-        .collection::<Document>("users")
-        .update_many(
-            mongodb::bson::doc! { "email": { "$exists": true } },
-            mongodb::bson::doc! { "$rename": { "email": "username" } },
-        )
-        .await;
+    // Idempotent and safe: rename only email-only docs, and drop any stray
+    // `email` left on docs that already have a `username`.
+    {
+        let users = db.collection::<Document>("users");
+        let _ = users
+            .update_many(
+                mongodb::bson::doc! { "email": { "$exists": true }, "username": { "$exists": false } },
+                mongodb::bson::doc! { "$rename": { "email": "username" } },
+            )
+            .await;
+        let _ = users
+            .update_many(
+                mongodb::bson::doc! { "email": { "$exists": true }, "username": { "$exists": true } },
+                mongodb::bson::doc! { "$unset": { "email": "" } },
+            )
+            .await;
+    }
 
     // Only seed when the database is effectively empty (no users).
     if seed::is_database_empty(&db).await? {

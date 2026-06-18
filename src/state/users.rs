@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use data_encoding::BASE32_NOPAD;
 use futures::stream::TryStreamExt;
-use mongodb::bson::{DateTime, doc, oid::ObjectId};
+use mongodb::bson::{DateTime, Document, doc, from_document, oid::ObjectId};
 use rand::RngCore;
 use slug::slugify;
 use std::time::{Duration, SystemTime};
@@ -81,10 +81,20 @@ pub async fn find_user_by_session(
 }
 
 pub async fn list_users(state: &AppState) -> Result<Vec<UserWithCompany>> {
-    let mut cursor = state.users.find(doc! {}).await?;
+    // Read as raw documents and tolerate any single bad/legacy doc so the whole
+    // listing never fails because of one record.
+    let mut cursor = state
+        .users
+        .clone_with_type::<Document>()
+        .find(doc! {})
+        .await?;
     let mut users = Vec::new();
-    while let Some(user) = cursor.try_next().await? {
-        users.push(build_user_with_company(state, user).await?);
+    while let Some(doc) = cursor.try_next().await? {
+        if let Ok(user) = from_document::<User>(doc) {
+            if let Ok(with_company) = build_user_with_company(state, user).await {
+                users.push(with_company);
+            }
+        }
     }
     Ok(users)
 }

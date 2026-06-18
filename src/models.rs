@@ -124,6 +124,9 @@ pub struct User {
     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
     pub id: Option<ObjectId>,
     /// Login identifier — a unique handle, not a validated email address.
+    /// Accepts the legacy `email` key so docs not yet touched by the rename
+    /// migration still load.
+    #[serde(alias = "email")]
     pub username: String,
     pub secret: String,
 
