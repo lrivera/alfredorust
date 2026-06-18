@@ -24,6 +24,13 @@ web-sys = { version = "0.3", features = [
     "File",
     "FileList",
     "HtmlInputElement",
+    "Document",
+    "Element",
+    "Node",
+    "NodeList",
+    "HtmlElement",
+    "HtmlScriptElement",
+    "HtmlCollection",
 ] }
 console_error_panic_hook = "0.1"
 js-sys = "0.3"

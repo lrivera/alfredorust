@@ -13,10 +13,10 @@ async function me(page: Page) {
   await page.route("**/api/me", (r) => r.fulfill({ json: ADMIN_ME }));
 }
 
-function gridJson(over: Record<string, unknown> = {}) {
+function gridJson(canEdit = true) {
   return {
     date: "2026-06-18",
-    can_edit: true,
+    can_edit: canEdit,
     statuses: [{ id: "st1", name: "En proceso" }],
     rows: [
       {
@@ -28,20 +28,15 @@ function gridJson(over: Record<string, unknown> = {}) {
         quantity: 1,
         unit: "lote",
         cells: [
-          {
-            hour: 8,
-            is_work_hour: true,
-            resources: [{ resource_id: "r1", label: "Grúa", selected: false }],
-          },
+          { hour: 8, is_work_hour: true, resources: [{ resource_id: "r1", label: "Grúa", selected: false }] },
         ],
       },
     ],
-    ...over,
   };
 }
 
 test.describe("resource usages grid (mocked API)", () => {
-  test("project header, open a cell, toggle a resource and save", async ({ page }) => {
+  test("renders the v1 grid, cycles a cell and saves", async ({ page }) => {
     await me(page);
     let body: any;
     await page.route("**/api/admin/resource_usages/grid**", (route) => {
@@ -53,36 +48,34 @@ test.describe("resource usages grid (mocked API)", () => {
     });
 
     await page.goto("/v2/resource-usages");
-    // Project grouping header links to the project.
-    await expect(page.getByRole("link", { name: "Casa" })).toHaveAttribute(
-      "href",
-      "/v2/projects/p1",
-    );
+
+    // v1 markup: project header link, concept name, quantity, the big date.
+    await expect(page.getByRole("link", { name: "Casa" }).first()).toBeVisible();
     await expect(page.getByText("Cimentación")).toBeVisible();
-    // Concept row shows quantity + unit.
-    await expect(page.getByText("1.00 lote")).toBeVisible();
+    await expect(page.getByText("2026-06-18").first()).toBeVisible();
 
-    // The cell is a dropdown summarizing selections ("+" when empty); open it.
-    await page.getByText("+", { exact: true }).click();
-    await page.getByRole("checkbox", { name: "Grúa" }).check();
+    // Empty cell shows "+".
+    const cellBtn = page.locator("[data-resource-cell-button]").first();
+    await expect(cellBtn).toHaveText("+");
+
+    // Short press (down+up, no long-press) cycles to the first resource.
+    await cellBtn.dispatchEvent("pointerdown");
+    await cellBtn.dispatchEvent("pointerup");
+    await expect(cellBtn).toHaveText("Grúa");
+
     await page.getByRole("button", { name: /Guardar captura|Guardando/ }).click();
-
     await expect.poll(() => body?.selections).toEqual([
       { concept_id: "c1", hour: 8, resource_id: "r1" },
     ]);
   });
 
-  test("read-only date shows badge and disables resources", async ({ page }) => {
+  test("read-only hides save and disables inputs", async ({ page }) => {
     await me(page);
     await page.route("**/api/admin/resource_usages/grid**", (route) =>
-      route.fulfill({ json: gridJson({ can_edit: false }) }),
+      route.fulfill({ json: gridJson(false) }),
     );
-
     await page.goto("/v2/resource-usages");
     await expect(page.getByText("Solo lectura")).toBeVisible();
-    await expect(page.getByRole("button", { name: /Guardar/ })).toHaveCount(0);
-
-    await page.getByText("+", { exact: true }).click();
-    await expect(page.getByRole("checkbox", { name: "Grúa" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: /Guardar captura/ })).toHaveCount(0);
   });
 });

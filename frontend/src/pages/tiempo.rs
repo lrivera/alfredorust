@@ -1,293 +1,337 @@
-//! Financial timeline: buckets the user's real and planned cash flow by
-//! day/week/month/year. Mirrors the v1 "tiempo" screen — a cumulative
-//! real-vs-planned chart, per-bucket Real and Plan rows (income / expense /
-//! net / cumulative), and a drill-down into the transactions and planned
-//! entries that fall in each period. The horizontal infinite-scroll of v1 is
-//! presented here as a granularity toggle plus an explicit date range.
+//! Financial timeline. This is the v1 horizontal infinite-scroll widget ported
+//! verbatim into the SPA: the proven markup + vanilla JS (which fetches
+//! `/api/tiempo`, recycles a 200-cell strip, lazy-loads per visible range, and
+//! draws the cumulative real/plan SVG chart) are rendered and run on mount. We
+//! keep the original behavior exactly rather than re-deriving it in Rust.
 
 use leptos::prelude::*;
-use leptos::task::spawn_local;
 
-use super::{date_to_rfc3339, peso, rfc3339_to_date};
-use crate::api::{self, ApiError, Me, TimelineBucket};
-use crate::components::{Button, ButtonVariant, Input};
+use super::{run_script, set_html};
 
-const MODES: &[(&str, &str)] = &[
-    ("day", "Día"),
-    ("week", "Semana"),
-    ("month", "Mes"),
-    ("year", "Año"),
-];
+const TIEMPO_HTML: &str = r##"
+  <div class="flex items-center justify-between pb-6">
+    <div>
+      <h1 class="text-2xl font-semibold text-slate-800">Tiempo</h1>
+      <p class="mt-1 text-sm text-slate-500">Línea de tiempo horizontal con navegación infinita.</p>
+    </div>
+  </div>
 
-fn current_year() -> i32 {
-    js_sys::Date::new_0().get_full_year() as i32
-}
+  <div class="mb-4 flex flex-wrap items-center gap-3">
+    <div class="inline-flex rounded-md border border-slate-200 bg-white shadow-sm">
+      <button data-mode="day" class="mode-btn px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 first:rounded-l-md last:rounded-r-md">Día</button>
+      <button data-mode="week" class="mode-btn px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 first:rounded-l-md last:rounded-r-md">Semana</button>
+      <button data-mode="month" class="mode-btn px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 first:rounded-l-md last:rounded-r-md">Mes</button>
+      <button data-mode="year" class="mode-btn px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 first:rounded-l-md last:rounded-r-md">Año</button>
+    </div>
+    <button id="btnHoy" class="rounded-md bg-sky-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2">Ir a hoy</button>
+    <button id="bulkPayTimelineBtn" class="hidden rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700">Pagar seleccionados</button>
+  </div>
 
-/// Tailwind text color for a signed amount: positive green, negative red, zero
-/// muted.
-fn sign_class(n: f64) -> &'static str {
-    if n > 0.0 {
-        "text-emerald-700"
-    } else if n < 0.0 {
-        "text-rose-700"
-    } else {
-        "text-slate-400"
+  <div class="relative w-full flex flex-1 min-h-[24rem] max-h-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm flex-col">
+    <div id="chartLegend" class="pointer-events-none sticky top-0 left-0 z-20 flex flex-wrap items-center gap-3 bg-white px-4 py-3 border-b border-slate-200">
+      <span class="flex items-center gap-2 text-xs font-semibold text-slate-700"><span class="h-2.5 w-4 rounded-sm bg-sky-500"></span> Real acumulado</span>
+      <span class="flex items-center gap-2 text-xs font-semibold text-slate-700"><span class="h-2.5 w-4 rounded-sm bg-purple-500"></span> Plan acumulado</span>
+    </div>
+    <div id="timelineViewport" class="relative w-full h-full overflow-x-auto overflow-y-hidden border-t border-slate-100 flex-1">
+      <div id="timelineChart" class="sticky top-0 z-10 h-40 pointer-events-none bg-white"></div>
+      <div id="timelineStrip" class="flex h-full min-h-[24rem] w-full"></div>
+    </div>
+  </div>
+"##;
+
+const TIEMPO_JS: &str = r##"
+  (() => {
+    const CELL_WIDTH = 560;
+    const TOTAL = 200;
+    const BUFFER = 40;
+    const MIDDLE = Math.floor(TOTAL / 2);
+    const formatter = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 0 });
+    const selectedPlannedEntries = new Set();
+    const bulkPayTimelineBtn = document.getElementById("bulkPayTimelineBtn");
+
+    const updateBulkPayButton = () => {
+      if (!bulkPayTimelineBtn) return;
+      const count = selectedPlannedEntries.size;
+      bulkPayTimelineBtn.classList.toggle("hidden", count === 0);
+      bulkPayTimelineBtn.textContent = count === 1 ? "Pagar seleccionado" : `Pagar seleccionados (${count})`;
+    };
+
+    const fmt = (d, opts) => new Intl.DateTimeFormat("es-MX", { ...opts, timeZone: "UTC" }).format(d);
+
+    const modes = {
+      day: { step: 1, label: "Día",
+        add: (date, n) => { const d = new Date(date); d.setDate(d.getDate() + n); return d; },
+        format: (d) => `${fmt(d, { weekday: "short" })} ${fmt(d, { day: "2-digit" })} ${fmt(d, { month: "short" })} ${fmt(d, { year: "numeric" })}`,
+      },
+      week: { step: 7, label: "Semana",
+        add: (date, n) => { const d = new Date(date); d.setDate(d.getDate() + n * 7); return d; },
+        format: (start) => { const end = new Date(start); end.setDate(end.getDate() + 6); return `Sem ${fmt(start, { day: "2-digit", month: "short" })} - ${fmt(end, { day: "2-digit", month: "short", year: "numeric" })}`; },
+      },
+      month: { step: 1, label: "Mes",
+        add: (date, n) => { const d = new Date(date); d.setMonth(d.getMonth() + n); return d; },
+        format: (d) => `${fmt(d, { month: "long" })} ${fmt(d, { year: "numeric" })}`,
+      },
+      year: { step: 1, label: "Año",
+        add: (date, n) => { const d = new Date(date); d.setFullYear(d.getFullYear() + n); return d; },
+        format: (d) => `${fmt(d, { year: "numeric" })}`,
+      },
+    };
+
+    let mode = "month";
+    let origin = 0;
+    let baseDate = new Date();
+    let bucketData = new Map();
+    let bucketList = [];
+    let lastChartPoints = [];
+
+    const viewport = document.getElementById("timelineViewport");
+    const strip = document.getElementById("timelineStrip");
+    if (!viewport || !strip) return;
+
+    const cells = [];
+    for (let i = 0; i < TOTAL; i++) {
+      const cell = document.createElement("div");
+      cell.className = "flex min-w-[560px] flex-col border-r border-slate-200 px-6 py-4 text-center transition";
+      cell.style.width = `${CELL_WIDTH}px`;
+      const label = document.createElement("div");
+      label.className = "text-sm font-semibold uppercase tracking-wide text-slate-600";
+      const value = document.createElement("div");
+      value.className = "mt-1 text-base font-semibold text-slate-800";
+      const metrics = document.createElement("div");
+      metrics.className = "mt-2 text-xs leading-snug text-slate-600";
+      const items = document.createElement("div");
+      items.className = "mt-3 space-y-1 text-sm leading-snug text-slate-700 w-full";
+      cell.appendChild(label);
+      cell.appendChild(value);
+      cell.appendChild(metrics);
+      cell.appendChild(items);
+      strip.appendChild(cell);
+      cells.push({ cell, label, value, metrics, items });
     }
-}
+
+    const startOfBucket = (date, mode) => {
+      const d = new Date(date);
+      switch (mode) {
+        case "day": d.setUTCHours(0, 0, 0, 0); return d;
+        case "week": { const day = d.getUTCDay(); const delta = (day + 6) % 7; d.setUTCDate(d.getUTCDate() - delta); d.setUTCHours(0, 0, 0, 0); return d; }
+        case "month": d.setUTCDate(1); d.setUTCHours(0, 0, 0, 0); return d;
+        case "year": d.setUTCMonth(0, 1); d.setUTCHours(0, 0, 0, 0); return d;
+        default: return d;
+      }
+    };
+
+    const addStep = (date, mode, steps) => {
+      const d = new Date(date);
+      switch (mode) {
+        case "day": d.setUTCDate(d.getUTCDate() + steps); return d;
+        case "week": d.setUTCDate(d.getUTCDate() + steps * 7); return d;
+        case "month": d.setUTCMonth(d.getUTCMonth() + steps); return d;
+        case "year": d.setUTCFullYear(d.getUTCFullYear() + steps); return d;
+        default: return d;
+      }
+    };
+
+    const renderCells = () => {
+      const config = modes[mode];
+      const visiblePoints = [];
+      cells.forEach((entry, idx) => {
+        const offset = idx - MIDDLE;
+        const target = config.add(baseDate, origin + offset);
+        const bucketStartDate = startOfBucket(target, mode);
+        const bucketStart = bucketStartDate.toISOString();
+        const bucket = bucketData.get(bucketStart);
+        entry.label.textContent = config.label;
+        if (mode === "week") {
+          entry.value.textContent = config.format(bucket ? new Date(bucket.start) : bucketStartDate);
+        } else {
+          entry.value.textContent = config.format(bucket ? new Date(bucket.start) : target);
+        }
+        entry.cell.classList.remove("bg-slate-50", "bg-white", "bg-sky-100", "ring", "ring-sky-300", "shadow");
+        const startBucket = startOfBucket(target, mode);
+        const nowBucket = startOfBucket(new Date(), mode);
+        const isTodayBucket = startBucket.getTime() === nowBucket.getTime();
+        if (isTodayBucket) {
+          entry.cell.classList.add("bg-sky-100", "ring", "ring-sky-300", "shadow");
+        } else {
+          entry.cell.classList.add(idx % 2 === 0 ? "bg-white" : "bg-slate-50");
+        }
+        const cumulativeReal = bucket?.cumulative_real ?? (bucketList.length ? bucketList[bucketList.length - 1].cumulative_real : 0);
+        const cumulativePlanned = bucket?.cumulative_planned ?? (bucketList.length ? bucketList[bucketList.length - 1].cumulative_planned : 0);
+        visiblePoints.push({ real: cumulativeReal, plan: cumulativePlanned });
+        const badge = (value) => {
+          if (value === 0) {
+            return `<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold bg-slate-100 text-slate-700 ring-1 ring-slate-200">${formatter.format(value)}</span>`;
+          }
+          const positive = value > 0;
+          return `<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${positive ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200" : "bg-rose-50 text-rose-700 ring-1 ring-rose-200"}">${formatter.format(value)}</span>`;
+        };
+        const metricsTable = (realInc, realExp, realNet, realCum, planInc, planExp, planNet, planCum) => `
+          <div class="overflow-hidden rounded-md ring-1 ring-slate-200">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+                <tr><th class="px-2 py-1 text-left">Tipo</th><th class="px-2 py-1 text-left">Ingresos</th><th class="px-2 py-1 text-left">Gastos</th><th class="px-2 py-1 text-left">Total</th><th class="px-2 py-1 text-left">Acumulado</th></tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100">
+                <tr><td class="px-2 py-1 font-semibold text-slate-700">Real</td><td class="px-2 py-1">${badge(realInc)}</td><td class="px-2 py-1">${badge(realExp)}</td><td class="px-2 py-1">${badge(realNet)}</td><td class="px-2 py-1">${badge(realCum)}</td></tr>
+                <tr class="bg-slate-50"><td class="px-2 py-1 font-semibold text-slate-700">Plan</td><td class="px-2 py-1">${badge(planInc)}</td><td class="px-2 py-1">${badge(planExp)}</td><td class="px-2 py-1">${badge(planNet)}</td><td class="px-2 py-1">${badge(planCum)}</td></tr>
+              </tbody>
+            </table>
+          </div>`;
+        if (bucket) {
+          entry.metrics.innerHTML = metricsTable(bucket.real_income, -bucket.real_expense, bucket.net_real, cumulativeReal, bucket.planned_income, -bucket.planned_expense, bucket.net_planned, cumulativePlanned);
+          const txItems = bucket.transactions.map((tx) =>
+            `<div class="flex items-center justify-between gap-2 rounded bg-slate-50 px-2 py-1">
+              <span class="font-semibold ${tx.type === "income" ? "text-emerald-700" : tx.type === "expense" ? "text-rose-700" : "text-slate-700"}">${tx.type === "income" ? "+" : tx.type === "expense" ? "-" : ""}${formatter.format(tx.amount)}</span>
+              <span class="truncate text-slate-700" title="${tx.description}">${tx.description}</span>
+            </div>`).join("");
+          const plannedItems = bucket.planned_entries.map((pe) => {
+            const payBtn = (pe.status !== "covered" && pe.status !== "cancelled")
+              ? `<a href="/admin/planned_entries/${pe.id}/pay?return_to=/v2/tiempo" class="ml-2 shrink-0 rounded px-2 py-0.5 text-[11px] font-semibold bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 hover:bg-emerald-100 transition">Pagar</a>` : "";
+            const selectBox = (pe.status !== "covered" && pe.status !== "cancelled")
+              ? `<input type="checkbox" data-timeline-bulk-pay value="${pe.id}" ${selectedPlannedEntries.has(pe.id) ? "checked" : ""} class="shrink-0 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" />` : "";
+            return `<div class="flex items-center justify-between gap-2 rounded border border-dashed border-slate-200 px-2 py-1">
+              ${selectBox}
+              <span class="font-semibold shrink-0 ${pe.flow_type === "income" ? "text-emerald-700" : "text-rose-700"}">${pe.flow_type === "income" ? "+" : "-"}${formatter.format(pe.amount_estimated)}</span>
+              <span class="truncate text-slate-700 flex-1" title="${pe.name} · ${pe.status}">${pe.name} · ${pe.status}</span>
+              ${payBtn}
+            </div>`;
+          }).join("");
+          const hasContent = txItems || plannedItems;
+          entry.items.innerHTML = hasContent ? `<div class="space-y-1">${txItems}${plannedItems}</div>` : `<div class="text-slate-400">Sin items</div>`;
+        } else {
+          entry.metrics.innerHTML = metricsTable(0, 0, 0, cumulativeReal, 0, 0, 0, cumulativePlanned);
+          entry.items.innerHTML = `<div class="text-slate-400">Sin items</div>`;
+        }
+      });
+      renderChart(visiblePoints);
+      updateBulkPayButton();
+    };
+
+    document.addEventListener("change", (event) => {
+      const target = event.target;
+      if (!target || !target.matches || !target.matches("[data-timeline-bulk-pay]")) return;
+      if (target.checked) { selectedPlannedEntries.add(target.value); } else { selectedPlannedEntries.delete(target.value); }
+      updateBulkPayButton();
+    });
+
+    if (bulkPayTimelineBtn) {
+      bulkPayTimelineBtn.addEventListener("click", () => {
+        const ids = Array.from(selectedPlannedEntries);
+        if (ids.length === 0) return;
+        window.location.href = `/admin/planned_entries/bulk_pay?ids=${encodeURIComponent(ids.join(","))}&return_to=/v2/tiempo`;
+      });
+    }
+
+    const renderChart = (points) => {
+      const chart = document.getElementById("timelineChart");
+      if (!chart) return;
+      const ptsSource = points && points.length ? points : lastChartPoints && lastChartPoints.length ? lastChartPoints : bucketList.map((b) => ({ real: b.cumulative_real, plan: b.cumulative_planned }));
+      if (!ptsSource.length) {
+        const emptyWidth = cells.length * CELL_WIDTH;
+        chart.innerHTML = `<div class="text-sm text-slate-500 px-4 py-2">Sin datos en rango</div>`;
+        chart.style.width = `${emptyWidth}px`; chart.style.minWidth = `${emptyWidth}px`;
+        return;
+      }
+      const pts = ptsSource;
+      lastChartPoints = pts;
+      const width = cells.length * CELL_WIDTH;
+      chart.style.width = `${width}px`; chart.style.minWidth = `${width}px`;
+      const height = 180; const paddingY = 28;
+      const xs = pts.map((_, idx) => idx * CELL_WIDTH + CELL_WIDTH / 2);
+      const ysReal = pts.map((b) => b.real);
+      const ysPlan = pts.map((b) => b.plan);
+      let minY = Math.min(...ysReal, ...ysPlan);
+      let maxY = Math.max(...ysReal, ...ysPlan);
+      if (minY === maxY) { minY -= 1; maxY += 1; }
+      const span = maxY - minY || 1;
+      const scaleY = (v) => height - paddingY - ((v - minY) / span) * (height - paddingY * 2);
+      const path = (ys) => ys.map((y, i) => `${i === 0 ? "M" : "L"} ${xs[i]} ${scaleY(y)}`).join(" ");
+      const ticks = 4;
+      const tickValues = Array.from({ length: ticks + 1 }, (_v, i) => minY + (span * i) / ticks);
+      const planColor = { bg: "#f3e8ff", text: "#7e22ce" };
+      const realColor = { bg: "#e0f2fe", text: "#0369a1" };
+      const clampLabelY = (y) => Math.min(height - 10, Math.max(12, y));
+      const labelSvg = (x, y, text, color) => {
+        const w = Math.max(text.length * 7 + 12, 48); const h = 18; const rx = 8;
+        const rectX = x - w / 2; const rectY = y - h / 2;
+        return `<rect x="${rectX}" y="${rectY}" width="${w}" height="${h}" rx="${rx}" fill="${color.bg}" stroke="${color.text}" stroke-width="0.5" /><text x="${x}" y="${y + 3}" text-anchor="middle" class="text-[10px]" fill="${color.text}">${text}</text>`;
+      };
+      chart.innerHTML = `
+        <svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" preserveAspectRatio="none" class="w-full h-full">
+          <rect x="0" y="${paddingY}" width="${width}" height="${height - paddingY * 2}" fill="none" stroke="#e2e8f0" stroke-width="1" rx="6" />
+          ${tickValues.map((v) => { const y = scaleY(v); return `<line x1="0" x2="${width}" y1="${y}" y2="${y}" stroke="#f1f5f9" stroke-width="1" /><text x="6" y="${y + 4}" text-anchor="start" class="text-[11px] fill-slate-500">${formatter.format(v)}</text>`; }).join("")}
+          <path d="${path(ysPlan)}" fill="none" stroke="#a855f7" stroke-width="2" />
+          <path d="${path(ysReal)}" fill="none" stroke="#0ea5e9" stroke-width="2" />
+          ${pts.map((_p, i) => {
+            const realY = scaleY(ysReal[i]); const planY = scaleY(ysPlan[i]);
+            const realAbove = ysReal[i] >= ysPlan[i]; const planAbove = !realAbove;
+            const realLabelY = clampLabelY(realAbove ? realY - 22 : realY + 22);
+            const planLabelY = clampLabelY(planAbove ? planY - 22 : planY + 22);
+            return `<circle cx="${xs[i]}" cy="${planY}" r="3" fill="#a855f7" />${labelSvg(xs[i], planLabelY, formatter.format(ysPlan[i]), planColor)}<circle cx="${xs[i]}" cy="${realY}" r="3" fill="#0ea5e9" />${labelSvg(xs[i], realLabelY, formatter.format(ysReal[i]), realColor)}`;
+          }).join("")}
+        </svg>`;
+    };
+
+    const recenter = () => { viewport.scrollLeft = MIDDLE * CELL_WIDTH; };
+
+    const handleScroll = () => {
+      const scrollIndex = Math.floor(viewport.scrollLeft / CELL_WIDTH);
+      if (scrollIndex < BUFFER) {
+        const delta = MIDDLE - scrollIndex; origin -= delta; renderCells(); viewport.scrollLeft += delta * CELL_WIDTH; void loadData();
+      } else if (scrollIndex > TOTAL - BUFFER) {
+        const delta = scrollIndex - MIDDLE; origin += delta; renderCells(); viewport.scrollLeft -= delta * CELL_WIDTH; void loadData();
+      }
+    };
+    viewport.addEventListener("scroll", handleScroll, { passive: true });
+
+    const updateModeButtons = () => {
+      document.querySelectorAll(".mode-btn").forEach((btn) => {
+        const isActive = btn.dataset.mode === mode;
+        btn.classList.toggle("bg-sky-100", isActive); btn.classList.toggle("text-sky-700", isActive);
+        btn.classList.toggle("ring-1", isActive); btn.classList.toggle("ring-sky-300", isActive); btn.classList.toggle("shadow-inner", isActive);
+      });
+    };
+
+    const setMode = async (nextMode) => {
+      const currentConfig = modes[mode];
+      const anchorDate = currentConfig.add(baseDate, origin);
+      mode = nextMode; baseDate = anchorDate; origin = 0; bucketData = new Map(); bucketList = [];
+      renderCells(); updateModeButtons(); await loadData(); recenter();
+    };
+
+    document.querySelectorAll(".mode-btn").forEach((btn) => { btn.addEventListener("click", () => setMode(btn.dataset.mode)); });
+    const btnHoy = document.getElementById("btnHoy");
+    if (btnHoy) btnHoy.addEventListener("click", () => { baseDate = new Date(); origin = 0; bucketData = new Map(); bucketList = []; renderCells(); recenter(); void loadData(); });
+
+    const loadData = async () => {
+      const config = modes[mode];
+      const firstTarget = config.add(baseDate, origin - MIDDLE);
+      const lastTarget = config.add(baseDate, origin + (TOTAL - MIDDLE));
+      const start = startOfBucket(firstTarget < lastTarget ? firstTarget : lastTarget, mode);
+      const endBucket = startOfBucket(firstTarget > lastTarget ? firstTarget : lastTarget, mode);
+      const end = addStep(endBucket, mode, 1);
+      const params = new URLSearchParams({ mode, from: start.toISOString(), to: end.toISOString() });
+      try {
+        const res = await fetch(`/api/tiempo?${params.toString()}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        bucketList = data; bucketData = new Map(data.map((b) => [b.start, b])); renderCells();
+      } catch (_e) {}
+    };
+
+    void setMode(mode);
+  })();
+"##;
 
 #[component]
 pub fn TiempoPage() -> impl IntoView {
-    // Any authenticated user; the ViewTimeline permission is enforced server-side.
-    let _me = use_context::<Me>();
-    let year = current_year();
-
-    let mode = RwSignal::new("month".to_string());
-    let from = RwSignal::new(format!("{year}-01-01"));
-    let to = RwSignal::new(format!("{year}-12-31"));
-    let data = RwSignal::new(None::<Result<Vec<TimelineBucket>, ApiError>>);
-
-    let load = move || {
-        let url = format!(
-            "/api/tiempo?mode={}&from={}&to={}",
-            mode.get_untracked(),
-            date_to_rfc3339(&from.get_untracked()),
-            date_to_rfc3339(&to.get_untracked()),
-        );
-        data.set(None);
-        spawn_local(async move {
-            data.set(Some(api::get_json::<Vec<TimelineBucket>>(&url).await));
-        });
-    };
-    load();
-
-    let set_mode = move |m: &str| {
-        mode.set(m.to_string());
-        load();
-    };
-    let go_today = move |_| {
-        let y = current_year();
-        from.set(format!("{y}-01-01"));
-        to.set(format!("{y}-12-31"));
-        load();
-    };
-    let apply = move |ev: web_sys::SubmitEvent| {
-        ev.prevent_default();
-        load();
-    };
-
-    view! {
-        <div class="space-y-6">
-            <h1 class="text-xl font-semibold">"Tiempo"</h1>
-
-            <div class="flex flex-wrap items-end gap-3">
-                <div class="space-y-1">
-                    <label class="block text-sm font-medium text-slate-700">"Agrupar por"</label>
-                    <div class="inline-flex overflow-hidden rounded-md border border-slate-300">
-                        {MODES
-                            .iter()
-                            .map(|(v, l)| {
-                                let val = *v;
-                                let cls = move || {
-                                    let active = mode.get() == val;
-                                    let base = "px-3 py-1.5 text-sm border-r border-slate-200 last:border-r-0";
-                                    if active {
-                                        format!("{base} bg-sky-100 font-semibold text-sky-700")
-                                    } else {
-                                        format!("{base} bg-white text-slate-600 hover:bg-slate-50")
-                                    }
-                                };
-                                view! {
-                                    <button type="button" class=cls on:click=move |_| set_mode(val)>
-                                        {*l}
-                                    </button>
-                                }
-                            })
-                            .collect::<Vec<_>>()}
-                    </div>
-                </div>
-                <form on:submit=apply class="flex flex-wrap items-end gap-3">
-                    <div class="space-y-1">
-                        <label class="block text-sm font-medium text-slate-700">"Desde"</label>
-                        <Input value=from on_input=Callback::new(move |v| from.set(v)) r#type="date" />
-                    </div>
-                    <div class="space-y-1">
-                        <label class="block text-sm font-medium text-slate-700">"Hasta"</label>
-                        <Input value=to on_input=Callback::new(move |v| to.set(v)) r#type="date" />
-                    </div>
-                    <Button r#type="submit">"Actualizar"</Button>
-                    <Button variant=ButtonVariant::Outline on:click=go_today>
-                        "Ir a hoy"
-                    </Button>
-                </form>
-            </div>
-
-            {move || match data.get() {
-                None => view! { <p class="text-slate-500">"Cargando…"</p> }.into_any(),
-                Some(Err(_)) => {
-                    view! { <p class="text-red-600">"No se pudo cargar la línea de tiempo."</p> }
-                        .into_any()
-                }
-                Some(Ok(list)) if list.is_empty() => {
-                    view! { <p class="text-slate-500">"Sin datos en el rango."</p> }.into_any()
-                }
-                Some(Ok(list)) => {
-                    view! {
-                        <div class="space-y-4">
-                            {cumulative_chart(&list)}
-                            <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                                {list.into_iter().map(bucket_card).collect::<Vec<_>>()}
-                            </div>
-                        </div>
-                    }
-                        .into_any()
-                }
-            }}
-        </div>
-    }
-}
-
-/// SVG line chart of cumulative real vs planned across the buckets.
-fn cumulative_chart(buckets: &[TimelineBucket]) -> AnyView {
-    let n = buckets.len();
-    if n < 2 {
-        return ().into_any();
-    }
-    let reals: Vec<f64> = buckets.iter().map(|b| b.cumulative_real).collect();
-    let plans: Vec<f64> = buckets.iter().map(|b| b.cumulative_planned).collect();
-    let (mut lo, mut hi) = (f64::MAX, f64::MIN);
-    for v in reals.iter().chain(plans.iter()) {
-        lo = lo.min(*v);
-        hi = hi.max(*v);
-    }
-    if (hi - lo).abs() < 1.0 {
-        hi = lo + 1.0;
-    }
-    let step = 60.0;
-    let pad = 24.0;
-    let h = 180.0;
-    let w = pad * 2.0 + (n as f64 - 1.0) * step;
-    let x = |i: usize| pad + (i as f64) * step;
-    let y = |v: f64| h - pad - (v - lo) / (hi - lo) * (h - 2.0 * pad);
-    let points = |series: &[f64]| {
-        series
-            .iter()
-            .enumerate()
-            .map(|(i, v)| format!("{:.1},{:.1}", x(i), y(*v)))
-            .collect::<Vec<_>>()
-            .join(" ")
-    };
-    let real_pts = points(&reals);
-    let plan_pts = points(&plans);
-
-    view! {
-        <div class="overflow-x-auto rounded-xl border border-slate-200 bg-white p-3">
-            <div class="mb-2 flex gap-4 text-xs text-slate-600">
-                <span class="inline-flex items-center gap-1">
-                    <span class="inline-block h-2 w-3 rounded-sm bg-sky-500"></span>
-                    "Real acumulado"
-                </span>
-                <span class="inline-flex items-center gap-1">
-                    <span class="inline-block h-2 w-3 rounded-sm bg-purple-500"></span>
-                    "Plan acumulado"
-                </span>
-            </div>
-            <svg width=w height=h viewBox=format!("0 0 {w} {h}") class="block">
-                <polyline points=plan_pts fill="none" stroke="#a855f7" stroke-width="2" stroke-dasharray="4 3" />
-                <polyline points=real_pts fill="none" stroke="#0ea5e9" stroke-width="2" />
-            </svg>
-        </div>
-    }
-    .into_any()
-}
-
-/// One bucket card: period label, a Real and a Plan metric row, and the
-/// transactions / planned entries that fall in the period.
-fn bucket_card(b: TimelineBucket) -> AnyView {
-    let period = format!("{} → {}", rfc3339_to_date(&b.start), rfc3339_to_date(&b.end));
-    view! {
-        <div class="rounded-xl border border-slate-200 bg-white p-3">
-            <p class="mb-2 text-sm font-semibold text-slate-700">{period}</p>
-            <table class="w-full text-right text-xs">
-                <thead class="text-slate-500">
-                    <tr>
-                        <th class="py-1 text-left font-medium">"Tipo"</th>
-                        <th class="py-1 font-medium">"Ingresos"</th>
-                        <th class="py-1 font-medium">"Gastos"</th>
-                        <th class="py-1 font-medium">"Total"</th>
-                        <th class="py-1 font-medium">"Acum."</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr class="border-t border-slate-100">
-                        <td class="py-1 text-left font-medium">"Real"</td>
-                        <td class="py-1 text-emerald-700">{peso(b.real_income)}</td>
-                        <td class="py-1 text-rose-700">{peso(-b.real_expense)}</td>
-                        <td class=format!("py-1 font-medium {}", sign_class(b.net_real))>
-                            {peso(b.net_real)}
-                        </td>
-                        <td class="py-1 font-medium">{peso(b.cumulative_real)}</td>
-                    </tr>
-                    <tr class="border-t border-slate-100 text-slate-500">
-                        <td class="py-1 text-left font-medium">"Plan"</td>
-                        <td class="py-1">{peso(b.planned_income)}</td>
-                        <td class="py-1">{peso(-b.planned_expense)}</td>
-                        <td class=format!("py-1 font-medium {}", sign_class(b.net_planned))>
-                            {peso(b.net_planned)}
-                        </td>
-                        <td class="py-1 font-medium">{peso(b.cumulative_planned)}</td>
-                    </tr>
-                </tbody>
-            </table>
-
-            {(!b.transactions.is_empty() || !b.planned_entries.is_empty())
-                .then(|| {
-                    let txs = b.transactions.clone();
-                    let plans = b.planned_entries.clone();
-                    view! {
-                        <details class="mt-2 text-xs">
-                            <summary class="cursor-pointer text-slate-500">
-                                {format!(
-                                    "{} movimientos · {} planificadas",
-                                    txs.len(),
-                                    plans.len(),
-                                )}
-                            </summary>
-                            <ul class="mt-1 space-y-0.5">
-                                {txs
-                                    .into_iter()
-                                    .map(|t| {
-                                        let income = t.tx_type == "income";
-                                        let cls = if income { "text-emerald-700" } else { "text-rose-700" };
-                                        let sign = if income { "+" } else { "-" };
-                                        view! {
-                                            <li class="rounded bg-slate-50 px-2 py-0.5">
-                                                <span class=cls>{format!("{sign}{}", peso(t.amount))}</span>
-                                                " " {t.description}
-                                            </li>
-                                        }
-                                    })
-                                    .collect::<Vec<_>>()}
-                                {plans
-                                    .into_iter()
-                                    .map(|p| {
-                                        let income = p.flow_type == "income";
-                                        let cls = if income { "text-emerald-700" } else { "text-rose-700" };
-                                        let sign = if income { "+" } else { "-" };
-                                        view! {
-                                            <li class="rounded border border-dashed border-slate-200 px-2 py-0.5">
-                                                <span class=cls>
-                                                    {format!("{sign}{}", peso(p.amount_estimated))}
-                                                </span>
-                                                " " {p.name} " · " <span class="text-slate-400">{p.status}</span>
-                                            </li>
-                                        }
-                                    })
-                                    .collect::<Vec<_>>()}
-                            </ul>
-                        </details>
-                    }
-                })}
-        </div>
-    }
-    .into_any()
+    // Host the v1 widget: render its markup, then run its JS against it.
+    let host = NodeRef::<leptos::html::Div>::new();
+    Effect::new(move |_| {
+        if let Some(el) = host.get() {
+            set_html(&el, TIEMPO_HTML);
+            run_script(TIEMPO_JS);
+        }
+    });
+    view! { <div node_ref=host class="flex h-[calc(100vh-8rem)] flex-col"></div> }
 }
