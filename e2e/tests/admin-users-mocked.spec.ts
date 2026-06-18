@@ -103,6 +103,45 @@ test.describe("admin / users (mocked API)", () => {
     expect(lastPost.memberships[0].company_id).toBe("c1");
   });
 
+  test("editing a user shows the TOTP QR code", async ({ page }) => {
+    const users = [
+      {
+        id: "u2",
+        email: "worker@example.com",
+        role: "staff",
+        companies: ["Acme"],
+        memberships: [
+          { company_id: "c1", company_name: "Acme", role: "staff", permissions: [] },
+        ],
+      },
+    ];
+    // 1x1 transparent PNG.
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+      "base64",
+    );
+
+    await page.route("**/api/me", (r) => r.fulfill({ json: ADMIN_ME }));
+    await page.route("**/api/admin/companies", (r) => r.fulfill({ json: COMPANIES }));
+    await page.route("**/admin/users/*/qrcode", (r) =>
+      r.fulfill({ contentType: "image/png", body: png }),
+    );
+    await page.route("**/api/admin/users", (r) => r.fulfill({ json: users }));
+    // Detail GET wins for the single-segment path (registered last).
+    await page.route("**/api/admin/users/*", (r) => r.fulfill({ json: users[0] }));
+
+    await page.goto("/v2/users");
+    await page
+      .getByRole("row", { name: /worker@example.com/ })
+      .getByRole("button", { name: "Editar" })
+      .click();
+    await expect(page.getByText("Editar usuario")).toBeVisible();
+
+    const qr = page.getByRole("img", { name: "Código QR TOTP" });
+    await expect(qr).toBeVisible();
+    await expect(qr).toHaveAttribute("src", "/admin/users/u2/qrcode");
+  });
+
   test("staff does not see the users nav link", async ({ page }) => {
     await page.route("**/api/me", (r) => r.fulfill({ json: STAFF_ME }));
     await page.goto("/v2/");

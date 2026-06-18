@@ -159,10 +159,24 @@ pub fn RecurringPlansPage() -> impl IntoView {
             }
         });
     };
+    // Materialize planned entries from the plan (idempotent per its version).
+    let generated = RwSignal::new(None::<String>);
+    let generate_one = move |id: String| {
+        spawn_local(async move {
+            match api::post_empty(&format!("/api/admin/recurring-plans/{id}/generate")).await {
+                Ok(()) => generated.set(Some("Entradas generadas".into())),
+                Err(_) => generated.set(Some("No se pudo generar".into())),
+            }
+        });
+    };
 
     view! {
         <div class="space-y-6">
             <h1 class="text-xl font-semibold">"Planes recurrentes"</h1>
+
+            {move || {
+                generated.get().map(|m| view! { <p class="text-sm text-green-700">{m}</p> })
+            }}
 
             {move || {
                 if is_admin {
@@ -403,8 +417,15 @@ pub fn RecurringPlansPage() -> impl IntoView {
                                                         {move || {
                                                             if is_admin {
                                                                 let eid = id.clone();
+                                                                let gid = id.clone();
                                                                 let did = id.clone();
                                                                 view! {
+                                                                    <Button
+                                                                        variant=ButtonVariant::Ghost
+                                                                        on:click=move |_| generate_one(gid.clone())
+                                                                    >
+                                                                        "Generar"
+                                                                    </Button>
                                                                     <Button
                                                                         variant=ButtonVariant::Ghost
                                                                         on:click=move |_| begin_edit(eid.clone())

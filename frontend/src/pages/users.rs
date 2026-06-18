@@ -248,6 +248,28 @@ pub fn UsersPage() -> impl IntoView {
                         </div>
 
                         {move || {
+                            editing
+                                .get()
+                                .map(|id| {
+                                    view! {
+                                        <div class="space-y-1">
+                                            <p class="text-sm font-medium text-slate-700">
+                                                "Código QR (autenticador)"
+                                            </p>
+                                            <img
+                                                src=format!("/admin/users/{id}/qrcode")
+                                                alt="Código QR TOTP"
+                                                class="h-40 w-40 rounded border border-slate-200 bg-white p-1"
+                                            />
+                                            <p class="text-xs text-slate-500">
+                                                "El usuario escanea este código para configurar su autenticador."
+                                            </p>
+                                        </div>
+                                    }
+                                })
+                        }}
+
+                        {move || {
                             form_error
                                 .get()
                                 .map(|m| view! { <p class="text-sm text-red-600">{m}</p> })
