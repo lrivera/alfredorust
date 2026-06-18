@@ -54,6 +54,24 @@ pub(crate) fn load_contact_options(target: RwSignal<Options>) {
     });
 }
 
+/// Load project options (id → title) into `target` on mount.
+pub(crate) fn load_project_options(target: RwSignal<Options>) {
+    spawn_local(async move {
+        if let Ok(v) = api::get_json::<Vec<api::Project>>("/api/admin/projects").await {
+            target.set(v.into_iter().map(|p| (p.id, p.title)).collect());
+        }
+    });
+}
+
+/// Load planned-entry options (id → name) into `target` on mount.
+pub(crate) fn load_planned_entry_options(target: RwSignal<Options>) {
+    spawn_local(async move {
+        if let Ok(v) = api::get_json::<Vec<api::PlannedEntry>>("/api/admin/planned-entries").await {
+            target.set(v.into_iter().map(|e| (e.id, e.name)).collect());
+        }
+    });
+}
+
 /// URL for another tenant: swap the leftmost host label for the company slug,
 /// preserving protocol and port. Company switching is a full navigation.
 pub(crate) fn switch_company_href(slug: &str) -> String {

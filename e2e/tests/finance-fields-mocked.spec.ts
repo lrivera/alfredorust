@@ -42,6 +42,26 @@ async function options(page: Page) {
       return route.fulfill({ json: [{ id: "ct1", name: "Cliente1", kind: "customer", email: "" }] });
     return route.fallback();
   });
+  await page.route("**/api/admin/projects", (route) =>
+    route.fulfill({ json: [{ id: "pr1", title: "Proyecto 1" }] }),
+  );
+  await page.route("**/api/admin/planned-entries", (route) => {
+    if (route.request().method() === "GET")
+      return route.fulfill({
+        json: [
+          {
+            id: "pe1",
+            name: "Compromiso 1",
+            flow_type: "expense",
+            amount_estimated: 0,
+            due_date: "2026-01-01T00:00:00Z",
+            status: "planned",
+            status_label: "Planificado",
+          },
+        ],
+      });
+    return route.fallback();
+  });
 }
 
 test.describe("finance new fields (mocked API)", () => {
@@ -179,12 +199,48 @@ test.describe("finance new fields (mocked API)", () => {
     await group(page, "Fecha").getByRole("textbox").fill("2026-01-01");
     await group(page, "Descripción").getByRole("textbox").fill("Pago");
     await group(page, "Categoría").getByRole("combobox").selectOption("c1");
+    await group(page, "Compromiso ligado (opcional)").getByRole("combobox").selectOption("pe1");
     await group(page, "Notas").getByRole("textbox").fill("ref-1");
     await page.getByRole("checkbox", { name: "Confirmado" }).uncheck();
     await page.getByRole("button", { name: /Crear movimiento|Guardando/ }).click();
 
     await expect.poll(() => body?.notes).toBe("ref-1");
     expect(body.is_confirmed).toBe(false);
+    expect(body.planned_entry_id).toBe("pe1");
+  });
+
+  test("planned entries: bulk pay selected rows", async ({ page }) => {
+    await me(page);
+    await options(page);
+    let bulkBody: any;
+    await page.route("**/api/admin/planned-entries/bulk-pay", (route) => {
+      bulkBody = JSON.parse(route.request().postData() || "{}");
+      return route.fulfill({ json: { ok: true } });
+    });
+    // Override the list with two payable rows (wins over options()).
+    await page.route("**/api/admin/planned-entries", (route) => {
+      if (route.request().method() === "GET")
+        return route.fulfill({
+          json: [
+            { id: "p1", name: "Renta", flow_type: "expense", amount_estimated: 100, due_date: "2026-01-01T00:00:00Z", status: "planned", status_label: "Planificado" },
+            { id: "p2", name: "Luz", flow_type: "expense", amount_estimated: 50, due_date: "2026-01-02T00:00:00Z", status: "planned", status_label: "Planificado" },
+          ],
+        });
+      return route.fallback();
+    });
+
+    await page.goto("/v2/planned-entries");
+    // Select both rows.
+    await page.getByRole("row", { name: /Renta/ }).getByRole("checkbox").check();
+    await page.getByRole("row", { name: /Luz/ }).getByRole("checkbox").check();
+    await page.getByRole("button", { name: "Pagar seleccionadas" }).click();
+    await group(page, "Fecha de pago").getByRole("textbox").fill("2026-01-20");
+    await group(page, "Cuenta").getByRole("combobox").selectOption("a1");
+    await page.getByRole("button", { name: /Confirmar pago|Pagando/ }).click();
+
+    await expect.poll(() => bulkBody?.entry_ids).toEqual(["p1", "p2"]);
+    expect(bulkBody.account_id).toBe("a1");
+    expect(bulkBody.paid_at).toContain("2026-01-20");
   });
 
   test("planned entries: contact + notes, and the Pagar flow", async ({ page }) => {
@@ -224,9 +280,11 @@ test.describe("finance new fields (mocked API)", () => {
     await group(page, "Cuenta esperada").getByRole("combobox").selectOption("a1");
     await group(page, "Vencimiento").getByRole("textbox").fill("2026-02-01");
     await group(page, "Contacto (opcional)").getByRole("combobox").selectOption("ct1");
+    await group(page, "Proyecto (opcional)").getByRole("combobox").selectOption("pr1");
     await group(page, "Notas").getByRole("textbox").fill("contrato");
     await page.getByRole("button", { name: /Crear entrada|Guardando/ }).click();
     await expect.poll(() => createBody?.contact_id).toBe("ct1");
+    expect(createBody.project_id).toBe("pr1");
     expect(createBody.notes).toBe("contrato");
 
     // Pay flow on the seeded row.

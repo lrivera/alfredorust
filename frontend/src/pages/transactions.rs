@@ -2,7 +2,8 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 
 use super::{
-    date_to_rfc3339, load_account_options, load_category_options, money, rfc3339_to_date, Options,
+    date_to_rfc3339, load_account_options, load_category_options, load_planned_entry_options, money,
+    rfc3339_to_date, Options,
 };
 use crate::api::{self, ApiError, Me, Transaction, TransactionPayload};
 use crate::components::{
@@ -41,8 +42,10 @@ pub fn TransactionsPage() -> impl IntoView {
 
     let categories = RwSignal::new(Options::new());
     let accounts = RwSignal::new(Options::new());
+    let planned = RwSignal::new(Options::new());
     load_category_options(categories);
     load_account_options(accounts);
+    load_planned_entry_options(planned);
 
     let editing = RwSignal::new(None::<String>);
     let date = RwSignal::new(String::new());
@@ -52,6 +55,7 @@ pub fn TransactionsPage() -> impl IntoView {
     let account_from = RwSignal::new(String::new());
     let account_to = RwSignal::new(String::new());
     let amount = RwSignal::new(String::new());
+    let planned_entry = RwSignal::new(String::new());
     let is_confirmed = RwSignal::new(true);
     let notes = RwSignal::new(String::new());
     let form_error = RwSignal::new(None::<String>);
@@ -65,6 +69,7 @@ pub fn TransactionsPage() -> impl IntoView {
         account_from.set(String::new());
         account_to.set(String::new());
         amount.set(String::new());
+        planned_entry.set(String::new());
         is_confirmed.set(true);
         notes.set(String::new());
         form_error.set(None);
@@ -72,6 +77,7 @@ pub fn TransactionsPage() -> impl IntoView {
 
     let save = Action::new_local(move |_: &()| {
         let notes_val = notes.get_untracked();
+        let planned_val = planned_entry.get_untracked();
         let payload = TransactionPayload {
             date: date_to_rfc3339(&date.get_untracked()),
             description: description.get_untracked().trim().to_string(),
@@ -80,6 +86,7 @@ pub fn TransactionsPage() -> impl IntoView {
             account_from_id: opt_id(account_from.get_untracked()),
             account_to_id: opt_id(account_to.get_untracked()),
             amount: amount.get_untracked().trim().parse().unwrap_or(0.0),
+            planned_entry_id: (!planned_val.is_empty()).then_some(planned_val),
             is_confirmed: is_confirmed.get_untracked(),
             notes: (!notes_val.trim().is_empty()).then_some(notes_val),
         };
@@ -133,6 +140,7 @@ pub fn TransactionsPage() -> impl IntoView {
                 account_from.set(d.account_from_id.unwrap_or_default());
                 account_to.set(d.account_to_id.unwrap_or_default());
                 amount.set(format!("{}", d.amount));
+                planned_entry.set(d.planned_entry_id.unwrap_or_default());
                 is_confirmed.set(d.is_confirmed);
                 notes.set(d.notes.unwrap_or_default());
                 editing.set(Some(id));
@@ -254,6 +262,23 @@ pub fn TransactionsPage() -> impl IntoView {
                                             <option value="">"— Ninguna —"</option>
                                             {move || {
                                                 accounts
+                                                    .get()
+                                                    .into_iter()
+                                                    .map(|(id, label)| {
+                                                        view! { <option value=id>{label}</option> }
+                                                    })
+                                                    .collect::<Vec<_>>()
+                                            }}
+                                        </Select>
+                                    </div>
+                                    <div class="space-y-1">
+                                        <label class="block text-sm font-medium text-slate-700">
+                                            "Compromiso ligado (opcional)"
+                                        </label>
+                                        <Select value=planned_entry>
+                                            <option value="">"— Ninguno —"</option>
+                                            {move || {
+                                                planned
                                                     .get()
                                                     .into_iter()
                                                     .map(|(id, label)| {

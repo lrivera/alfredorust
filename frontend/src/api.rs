@@ -366,16 +366,36 @@ pub struct PlannedEntryPayload {
     pub amount_estimated: f64,
     pub due_date: String,
     pub status: String,
+    pub project_id: Option<String>,
     pub notes: Option<String>,
 }
 
-/// Payload for paying a planned entry. Mirrors `PlannedEntryPayPayload`.
+/// Payload for paying a single planned entry. Mirrors `PlannedEntryPayPayload`.
 #[derive(Clone, Debug, Serialize)]
 pub struct PlannedEntryPayPayload {
     pub paid_at: String,
     pub amount: f64,
     pub account_id: String,
+    pub project_id: Option<String>,
     pub notes: Option<String>,
+}
+
+/// Payload for paying several planned entries at once. Mirrors
+/// `PlannedEntryBulkPayPayload`.
+#[derive(Clone, Debug, Serialize)]
+pub struct PlannedEntryBulkPayPayload {
+    pub entry_ids: Vec<String>,
+    pub paid_at: String,
+    pub account_id: String,
+    pub project_id: Option<String>,
+    pub notes: Option<String>,
+}
+
+/// A project, for option pickers. `/api/admin/projects` returns `title`.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct Project {
+    pub id: String,
+    pub title: String,
 }
 
 // --- transactions ---------------------------------------------------------
@@ -405,6 +425,7 @@ pub struct TransactionPayload {
     pub account_from_id: Option<String>,
     pub account_to_id: Option<String>,
     pub amount: f64,
+    pub planned_entry_id: Option<String>,
     pub is_confirmed: bool,
     pub notes: Option<String>,
 }
@@ -481,6 +502,7 @@ pub struct PlannedEntryDetail {
     pub amount_estimated: f64,
     pub due_date: String,
     pub status: String,
+    pub project_id: Option<String>,
     pub notes: Option<String>,
 }
 
@@ -493,6 +515,7 @@ pub struct TransactionDetail {
     pub account_from_id: Option<String>,
     pub account_to_id: Option<String>,
     pub amount: f64,
+    pub planned_entry_id: Option<String>,
     pub is_confirmed: bool,
     pub notes: Option<String>,
 }

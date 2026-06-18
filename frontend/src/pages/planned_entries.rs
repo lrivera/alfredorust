@@ -3,9 +3,12 @@ use leptos::task::spawn_local;
 
 use super::{
     date_to_rfc3339, flow_label, load_account_options, load_category_options, load_contact_options,
-    money, rfc3339_to_date, Options,
+    load_project_options, money, rfc3339_to_date, Options,
 };
-use crate::api::{self, ApiError, Me, PlannedEntry, PlannedEntryPayPayload, PlannedEntryPayload};
+use crate::api::{
+    self, ApiError, Me, PlannedEntry, PlannedEntryBulkPayPayload, PlannedEntryPayPayload,
+    PlannedEntryPayload,
+};
 use crate::components::{Button, ButtonVariant, Card, CardContent, CardHeader, CardTitle, Input, Select};
 
 const STATUSES: &[(&str, &str)] = &[
@@ -35,9 +38,11 @@ pub fn PlannedEntriesPage() -> impl IntoView {
     let categories = RwSignal::new(Options::new());
     let accounts = RwSignal::new(Options::new());
     let contacts = RwSignal::new(Options::new());
+    let projects = RwSignal::new(Options::new());
     load_category_options(categories);
     load_account_options(accounts);
     load_contact_options(contacts);
+    load_project_options(projects);
 
     let editing = RwSignal::new(None::<String>);
     let name = RwSignal::new(String::new());
@@ -45,6 +50,7 @@ pub fn PlannedEntriesPage() -> impl IntoView {
     let category = RwSignal::new(String::new());
     let account = RwSignal::new(String::new());
     let contact = RwSignal::new(String::new());
+    let project = RwSignal::new(String::new());
     let amount = RwSignal::new(String::new());
     let due = RwSignal::new(String::new());
     let status = RwSignal::new("planned".to_string());
@@ -58,6 +64,7 @@ pub fn PlannedEntriesPage() -> impl IntoView {
         category.set(String::new());
         account.set(String::new());
         contact.set(String::new());
+        project.set(String::new());
         amount.set(String::new());
         due.set(String::new());
         status.set("planned".to_string());
@@ -67,6 +74,7 @@ pub fn PlannedEntriesPage() -> impl IntoView {
 
     let save = Action::new_local(move |_: &()| {
         let contact_val = contact.get_untracked();
+        let project_val = project.get_untracked();
         let notes_val = notes.get_untracked();
         let payload = PlannedEntryPayload {
             name: name.get_untracked().trim().to_string(),
@@ -77,6 +85,7 @@ pub fn PlannedEntriesPage() -> impl IntoView {
             amount_estimated: amount.get_untracked().trim().parse().unwrap_or(0.0),
             due_date: date_to_rfc3339(&due.get_untracked()),
             status: status.get_untracked(),
+            project_id: (!project_val.is_empty()).then_some(project_val),
             notes: (!notes_val.trim().is_empty()).then_some(notes_val),
         };
         let editing = editing.get_untracked();
@@ -133,6 +142,7 @@ pub fn PlannedEntriesPage() -> impl IntoView {
                 due.set(rfc3339_to_date(&d.due_date));
                 status.set(d.status);
                 contact.set(d.contact_id.unwrap_or_default());
+                project.set(d.project_id.unwrap_or_default());
                 notes.set(d.notes.unwrap_or_default());
                 editing.set(Some(id));
                 form_error.set(None);
@@ -172,6 +182,7 @@ pub fn PlannedEntriesPage() -> impl IntoView {
             paid_at: date_to_rfc3339(&pay_date.get_untracked()),
             amount: pay_amount.get_untracked().trim().parse().unwrap_or(0.0),
             account_id: pay_account.get_untracked(),
+            project_id: None,
             notes: (!notes_val.trim().is_empty()).then_some(notes_val),
         };
         async move { api::post_json(&format!("/api/admin/planned-entries/{id}/pay"), &payload).await }
@@ -199,6 +210,60 @@ pub fn PlannedEntriesPage() -> impl IntoView {
         }
         pay_error.set(None);
         pay_action.dispatch(());
+    };
+
+    // --- bulk pay: select several entries and pay them together ----------
+    let selected = RwSignal::new(Vec::<String>::new());
+    let toggle_sel = move |id: String| {
+        selected.update(|s| {
+            if let Some(pos) = s.iter().position(|x| *x == id) {
+                s.remove(pos);
+            } else {
+                s.push(id);
+            }
+        });
+    };
+    let bulk_open = RwSignal::new(false);
+    let bulk_date = RwSignal::new(String::new());
+    let bulk_account = RwSignal::new(String::new());
+    let bulk_notes = RwSignal::new(String::new());
+    let bulk_error = RwSignal::new(None::<String>);
+
+    let bulk_action = Action::new_local(move |_: &()| {
+        let notes_val = bulk_notes.get_untracked();
+        let payload = PlannedEntryBulkPayPayload {
+            entry_ids: selected.get_untracked(),
+            paid_at: date_to_rfc3339(&bulk_date.get_untracked()),
+            account_id: bulk_account.get_untracked(),
+            project_id: None,
+            notes: (!notes_val.trim().is_empty()).then_some(notes_val),
+        };
+        async move { api::post_json("/api/admin/planned-entries/bulk-pay", &payload).await }
+    });
+
+    Effect::new(move |_| {
+        if let Some(r) = bulk_action.value().get() {
+            match r {
+                Ok(()) => {
+                    bulk_open.set(false);
+                    selected.set(Vec::new());
+                    reload();
+                }
+                Err(ApiError::Forbidden) => bulk_error.set(Some("No tienes permiso".into())),
+                Err(_) => bulk_error.set(Some("No se pudo registrar el pago".into())),
+            }
+        }
+    });
+
+    let bulk_pending = bulk_action.pending();
+    let bulk_submit = move |ev: web_sys::SubmitEvent| {
+        ev.prevent_default();
+        if bulk_date.get().trim().is_empty() || bulk_account.get().is_empty() {
+            bulk_error.set(Some("Completa fecha y cuenta".into()));
+            return;
+        }
+        bulk_error.set(None);
+        bulk_action.dispatch(());
     };
 
     view! {
@@ -316,6 +381,23 @@ pub fn PlannedEntriesPage() -> impl IntoView {
                                             <option value="">"— Ninguno —"</option>
                                             {move || {
                                                 contacts
+                                                    .get()
+                                                    .into_iter()
+                                                    .map(|(id, label)| {
+                                                        view! { <option value=id>{label}</option> }
+                                                    })
+                                                    .collect::<Vec<_>>()
+                                            }}
+                                        </Select>
+                                    </div>
+                                    <div class="space-y-1">
+                                        <label class="block text-sm font-medium text-slate-700">
+                                            "Proyecto (opcional)"
+                                        </label>
+                                        <Select value=project>
+                                            <option value="">"— Ninguno —"</option>
+                                            {move || {
+                                                projects
                                                     .get()
                                                     .into_iter()
                                                     .map(|(id, label)| {
@@ -466,6 +548,106 @@ pub fn PlannedEntriesPage() -> impl IntoView {
                     })
             }}
 
+            // Bulk-pay bar: appears when rows are selected.
+            {move || {
+                let n = selected.get().len();
+                (is_admin && n > 0 && !bulk_open.get())
+                    .then(|| {
+                        view! {
+                            <div class="flex items-center gap-3 rounded-md bg-slate-100 px-4 py-2 text-sm">
+                                <span>{format!("{n} seleccionadas")}</span>
+                                <Button
+                                    on:click=move |_| {
+                                        bulk_date.set(String::new());
+                                        bulk_account.set(String::new());
+                                        bulk_notes.set(String::new());
+                                        bulk_error.set(None);
+                                        bulk_open.set(true);
+                                    }
+                                >
+                                    "Pagar seleccionadas"
+                                </Button>
+                            </div>
+                        }
+                    })
+            }}
+
+            // Bulk-pay form.
+            {move || {
+                bulk_open
+                    .get()
+                    .then(|| {
+                        view! {
+                            <Card class="max-w-2xl border-emerald-300">
+                                <CardHeader>
+                                    <CardTitle>
+                                        {format!("Pagar {} entradas", selected.get().len())}
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <form on:submit=bulk_submit class="grid gap-3 sm:grid-cols-2">
+                                        <div class="space-y-1">
+                                            <label class="block text-sm font-medium text-slate-700">
+                                                "Fecha de pago"
+                                            </label>
+                                            <Input
+                                                value=bulk_date
+                                                on_input=Callback::new(move |v| bulk_date.set(v))
+                                                r#type="date"
+                                                required=true
+                                            />
+                                        </div>
+                                        <div class="space-y-1">
+                                            <label class="block text-sm font-medium text-slate-700">
+                                                "Cuenta"
+                                            </label>
+                                            <Select value=bulk_account>
+                                                <option value="">"— Selecciona —"</option>
+                                                {move || {
+                                                    accounts
+                                                        .get()
+                                                        .into_iter()
+                                                        .map(|(id, label)| {
+                                                            view! { <option value=id>{label}</option> }
+                                                        })
+                                                        .collect::<Vec<_>>()
+                                                }}
+                                            </Select>
+                                        </div>
+                                        <div class="space-y-1 sm:col-span-2">
+                                            <label class="block text-sm font-medium text-slate-700">
+                                                "Notas"
+                                            </label>
+                                            <Input
+                                                value=bulk_notes
+                                                on_input=Callback::new(move |v| bulk_notes.set(v))
+                                            />
+                                        </div>
+                                        <div class="flex items-end gap-2 sm:col-span-2">
+                                            <Button disabled=bulk_pending>
+                                                {move || {
+                                                    if bulk_pending.get() { "Pagando…" } else { "Confirmar pago" }
+                                                }}
+                                            </Button>
+                                            <Button
+                                                variant=ButtonVariant::Outline
+                                                on:click=move |_| bulk_open.set(false)
+                                            >
+                                                "Cancelar"
+                                            </Button>
+                                            {move || {
+                                                bulk_error
+                                                    .get()
+                                                    .map(|m| view! { <p class="text-sm text-red-600">{m}</p> })
+                                            }}
+                                        </div>
+                                    </form>
+                                </CardContent>
+                            </Card>
+                        }
+                    })
+            }}
+
             {move || match items.get() {
                 None => view! { <p class="text-slate-500">"Cargando…"</p> }.into_any(),
                 Some(Err(_)) => {
@@ -481,6 +663,7 @@ pub fn PlannedEntriesPage() -> impl IntoView {
                             <table class="w-full text-left text-sm">
                                 <thead class="bg-slate-50 text-slate-600">
                                     <tr>
+                                        <th class="px-4 py-2"></th>
                                         <th class="px-4 py-2 font-medium">"Nombre"</th>
                                         <th class="px-4 py-2 font-medium">"Flujo"</th>
                                         <th class="px-4 py-2 font-medium">"Monto"</th>
@@ -494,6 +677,7 @@ pub fn PlannedEntriesPage() -> impl IntoView {
                                         .into_iter()
                                         .map(|e| {
                                             let id = e.id.clone();
+                                            let sid = e.id.clone();
                                             let status = if e.status_label.is_empty() {
                                                 e.status.clone()
                                             } else {
@@ -501,6 +685,25 @@ pub fn PlannedEntriesPage() -> impl IntoView {
                                             };
                                             view! {
                                                 <tr class="border-t border-slate-100">
+                                                    <td class="px-4 py-2">
+                                                        {move || {
+                                                            if is_admin {
+                                                                let sid = sid.clone();
+                                                                let cid = sid.clone();
+                                                                view! {
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        class="h-4 w-4 rounded border-slate-300"
+                                                                        prop:checked=move || selected.get().contains(&cid)
+                                                                        on:change=move |_| toggle_sel(sid.clone())
+                                                                    />
+                                                                }
+                                                                    .into_any()
+                                                            } else {
+                                                                ().into_any()
+                                                            }
+                                                        }}
+                                                    </td>
                                                     <td class="px-4 py-2">{e.name}</td>
                                                     <td class="px-4 py-2">
                                                         {flow_label(&e.flow_type).to_string()}
