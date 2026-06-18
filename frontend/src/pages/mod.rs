@@ -123,6 +123,27 @@ pub(crate) fn money(n: f64) -> String {
     format!("{n:.2}")
 }
 
+/// Format a peso amount like the v1 timeline: thousands grouped, no decimals,
+/// leading `$` (and `-` before the `$` for negatives). `$0` for zero.
+pub(crate) fn peso(n: f64) -> String {
+    let neg = n.round() < 0.0;
+    let digits = (n.abs().round() as i64).to_string();
+    let bytes = digits.as_bytes();
+    let len = bytes.len();
+    let mut grouped = String::new();
+    for (i, b) in bytes.iter().enumerate() {
+        if i > 0 && (len - i) % 3 == 0 {
+            grouped.push(',');
+        }
+        grouped.push(*b as char);
+    }
+    if neg {
+        format!("-${grouped}")
+    } else {
+        format!("${grouped}")
+    }
+}
+
 /// Backend datetime fields are parsed as RFC3339. `<input type="date">` yields
 /// `YYYY-MM-DD`, so append a midnight-UTC time when needed.
 pub(crate) fn date_to_rfc3339(date: &str) -> String {
@@ -213,5 +234,14 @@ mod tests {
         assert_eq!(flow_label("weird"), "weird");
         assert_eq!(money(1234.5), "1234.50");
         assert_eq!(money(0.0), "0.00");
+    }
+
+    #[wasm_bindgen_test]
+    fn peso_groups_thousands_and_signs() {
+        assert_eq!(peso(0.0), "$0");
+        assert_eq!(peso(5000.0), "$5,000");
+        assert_eq!(peso(1234567.0), "$1,234,567");
+        assert_eq!(peso(-2100.4), "-$2,100");
+        assert_eq!(peso(999.0), "$999");
     }
 }

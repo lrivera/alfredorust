@@ -14,28 +14,77 @@ async function me(page: Page) {
 }
 
 test.describe("tiempo timeline (mocked API)", () => {
-  test("renders buckets from /api/tiempo", async ({ page }) => {
+  test("renders bucket cards with real/plan rows and drill-down", async ({ page }) => {
     await me(page);
     await page.route("**/api/tiempo*", (r) =>
       r.fulfill({
         json: [
           {
             start: "2026-01-01T00:00:00Z",
-            end: "2026-01-31T00:00:00Z",
+            end: "2026-02-01T00:00:00Z",
             real_income: 1000,
             real_expense: 400,
+            planned_income: 1200,
+            planned_expense: 300,
             net_real: 600,
-            net_planned: 500,
+            net_planned: 900,
             cumulative_real: 600,
-            cumulative_planned: 500,
+            cumulative_planned: 900,
+            transactions: [
+              { id: "t1", description: "Anticipo", amount: 1000, date: "2026-01-10T00:00:00Z", type: "income" },
+            ],
+            planned_entries: [
+              {
+                id: "p1",
+                name: "Renta",
+                amount_estimated: 300,
+                due_date: "2026-01-05T00:00:00Z",
+                flow_type: "expense",
+                status: "planned",
+              },
+            ],
+          },
+          {
+            start: "2026-02-01T00:00:00Z",
+            end: "2026-03-01T00:00:00Z",
+            real_income: 0,
+            real_expense: 200,
+            planned_income: 0,
+            planned_expense: 0,
+            net_real: -200,
+            net_planned: 0,
+            cumulative_real: 400,
+            cumulative_planned: 900,
+            transactions: [],
+            planned_entries: [],
           },
         ],
       }),
     );
 
     await page.goto("/v2/tiempo");
-    await expect(page.getByRole("cell", { name: /2026-01-01/ })).toBeVisible();
-    await expect(page.getByRole("cell", { name: "1000.00" })).toBeVisible();
-    await expect(page.getByRole("cell", { name: "600.00" }).first()).toBeVisible();
+
+    // Period label and currency-formatted, sign-aware amounts.
+    await expect(page.getByText(/2026-01-01 → 2026-02-01/)).toBeVisible();
+    await expect(page.getByText("$1,000", { exact: true })).toBeVisible();
+    await expect(page.getByText("-$400", { exact: true })).toBeVisible();
+
+    // Drill-down lists the underlying transaction and planned entry.
+    await page.getByText(/1 movimientos · 1 planificadas/).click();
+    await expect(page.getByText("Anticipo")).toBeVisible();
+    await expect(page.getByText(/Renta/)).toBeVisible();
+  });
+
+  test("granularity toggle reloads with the chosen mode", async ({ page }) => {
+    await me(page);
+    let lastUrl = "";
+    await page.route("**/api/tiempo*", (route) => {
+      lastUrl = route.request().url();
+      return route.fulfill({ json: [] });
+    });
+
+    await page.goto("/v2/tiempo");
+    await page.getByRole("button", { name: "Semana" }).click();
+    await expect.poll(() => lastUrl).toContain("mode=week");
   });
 });

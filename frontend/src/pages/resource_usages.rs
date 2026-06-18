@@ -1,6 +1,14 @@
+//! Hourly resource-usage grid: rows are project concepts (grouped by project),
+//! columns are the 24 hours of a day, and each cell holds the resources
+//! assigned to that concept at that hour. Mirrors the v1 grid — work-hour
+//! emphasis, per-cell multi-resource selection (via a dropdown, the SPA's
+//! equivalent of v1's long-press menu), a read-only state when the date is
+//! outside the staff edit window, and a status filter.
+
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
+use super::money;
 use crate::api::{self, ApiError, GridSavePayload, GridSelection, GridView, Me};
 use crate::components::{Button, Input, Select};
 
@@ -16,8 +24,9 @@ type Key = (String, i32, String);
 
 #[component]
 pub fn ResourceUsagesPage() -> impl IntoView {
-    let me = use_context::<Me>().expect("Me context");
-    let is_admin = me.role == "admin";
+    // Edit affordances follow the API's `can_edit` (it already accounts for the
+    // staff "edit today" window); admin role isn't sufficient on its own here.
+    let _me = use_context::<Me>().expect("Me context");
 
     let date = RwSignal::new(today_str());
     let status = RwSignal::new("all".to_string());
@@ -34,7 +43,6 @@ pub fn ResourceUsagesPage() -> impl IntoView {
         spawn_local(async move {
             let result = api::get_json::<GridView>(&url).await;
             if let Ok(view) = &result {
-                // Seed the selection from the cells already marked selected.
                 let mut sel = Vec::new();
                 for row in &view.rows {
                     for cell in &row.cells {
@@ -122,15 +130,21 @@ pub fn ResourceUsagesPage() -> impl IntoView {
                 </div>
                 <Button r#type="submit">"Cargar"</Button>
                 {move || {
-                    if is_admin {
+                    let editable = grid.get().and_then(|r| r.ok()).map(|v| v.can_edit).unwrap_or(false);
+                    if editable {
                         view! {
                             <Button disabled=saving on:click=move |_| { save.dispatch(()); }>
-                                {move || if saving.get() { "Guardando…" } else { "Guardar grid" }}
+                                {move || if saving.get() { "Guardando…" } else { "Guardar captura" }}
                             </Button>
                         }
                             .into_any()
                     } else {
-                        ().into_any()
+                        view! {
+                            <span class="rounded bg-slate-100 px-2 py-1 text-sm text-slate-500">
+                                "Solo lectura"
+                            </span>
+                        }
+                            .into_any()
                     }
                 }}
                 {move || {
@@ -144,13 +158,16 @@ pub fn ResourceUsagesPage() -> impl IntoView {
                     view! { <p class="text-red-600">"No se pudo cargar el grid."</p> }.into_any()
                 }
                 Some(Ok(view)) if view.rows.is_empty() => {
-                    view! { <p class="text-slate-500">"Sin conceptos para esta fecha/estado."</p> }
+                    view! {
+                        <p class="text-slate-500">"No hay conceptos activos para esta fecha/estado."</p>
+                    }
                         .into_any()
                 }
                 Some(Ok(view)) => {
+                    let editable = view.can_edit;
                     view! {
                         <div class="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-                            <table class="text-left text-xs">
+                            <table class="min-w-[1200px] text-left text-xs">
                                 <thead class="bg-slate-50 text-slate-600">
                                     <tr>
                                         <th class="sticky left-0 z-10 bg-slate-50 px-3 py-2 font-medium">
@@ -158,69 +175,18 @@ pub fn ResourceUsagesPage() -> impl IntoView {
                                         </th>
                                         {(0..24)
                                             .map(|h| {
-                                                view! {
-                                                    <th class="px-2 py-2 text-center font-medium">
-                                                        {format!("{h:02}")}
-                                                    </th>
-                                                }
+                                                let work = (7..=22).contains(&h);
+                                                let cls = if work {
+                                                    "px-2 py-2 text-center font-black text-slate-950"
+                                                } else {
+                                                    "px-2 py-2 text-center font-medium text-slate-300 bg-slate-50"
+                                                };
+                                                view! { <th class=cls>{format!("{h:02}")}</th> }
                                             })
                                             .collect::<Vec<_>>()}
                                     </tr>
                                 </thead>
-                                <tbody>
-                                    {view
-                                        .rows
-                                        .into_iter()
-                                        .map(|row| {
-                                            let concept_id = row.concept_id.clone();
-                                            view! {
-                                                <tr class="border-t border-slate-100 align-top">
-                                                    <td class="sticky left-0 z-10 bg-white px-3 py-2 whitespace-nowrap">
-                                                        <div class="font-medium">{row.concept_name}</div>
-                                                        <div class="text-slate-400">
-                                                            {row.project_title} " · " {row.status_name}
-                                                        </div>
-                                                    </td>
-                                                    {row
-                                                        .cells
-                                                        .into_iter()
-                                                        .map(|cell| {
-                                                            let cid = concept_id.clone();
-                                                            let bg = if cell.is_work_hour { "" } else { "bg-slate-50" };
-                                                            view! {
-                                                                <td class=format!("px-2 py-1 {bg}")>
-                                                                    {cell
-                                                                        .resources
-                                                                        .into_iter()
-                                                                        .map(|r| {
-                                                                            let key: Key = (
-                                                                                cid.clone(),
-                                                                                cell.hour,
-                                                                                r.resource_id.clone(),
-                                                                            );
-                                                                            let k2 = key.clone();
-                                                                            view! {
-                                                                                <label class="flex items-center gap-1 whitespace-nowrap">
-                                                                                    <input
-                                                                                        type="checkbox"
-                                                                                        class="h-3 w-3 rounded border-slate-300"
-                                                                                        prop:checked=move || selected.get().contains(&key)
-                                                                                        on:change=move |_| toggle(k2.clone())
-                                                                                    />
-                                                                                    <span>{r.label}</span>
-                                                                                </label>
-                                                                            }
-                                                                        })
-                                                                        .collect::<Vec<_>>()}
-                                                                </td>
-                                                            }
-                                                        })
-                                                        .collect::<Vec<_>>()}
-                                                </tr>
-                                            }
-                                        })
-                                        .collect::<Vec<_>>()}
-                                </tbody>
+                                <tbody>{grid_rows(view.rows, selected, toggle, editable)}</tbody>
                             </table>
                         </div>
                     }
@@ -229,4 +195,145 @@ pub fn ResourceUsagesPage() -> impl IntoView {
             }}
         </div>
     }
+}
+
+/// Build the table body: a project header row before each new project group,
+/// then one row per concept.
+fn grid_rows(
+    rows: Vec<api::GridRow>,
+    selected: RwSignal<Vec<Key>>,
+    toggle: impl Fn(Key) + Copy + 'static,
+    editable: bool,
+) -> Vec<AnyView> {
+    let mut out = Vec::new();
+    let mut last_project = String::new();
+    for row in rows {
+        if row.project_id != last_project {
+            last_project = row.project_id.clone();
+            let pid = row.project_id.clone();
+            let title = row.project_title.clone();
+            out.push(
+                view! {
+                    <tr class="bg-slate-100/80">
+                        <td colspan="25" class="px-3 py-1">
+                            <a
+                                href=format!("/v2/projects/{pid}")
+                                class="font-semibold text-sky-700 hover:underline"
+                            >
+                                {title}
+                            </a>
+                        </td>
+                    </tr>
+                }
+                .into_any(),
+            );
+        }
+        out.push(concept_row(row, selected, toggle, editable));
+    }
+    out
+}
+
+/// One concept row: a sticky label cell (concept + status + quantity) and 24
+/// hour cells, each a dropdown of allowed resources with the selected ones
+/// summarized in the cell.
+fn concept_row(
+    row: api::GridRow,
+    selected: RwSignal<Vec<Key>>,
+    toggle: impl Fn(Key) + Copy + 'static,
+    editable: bool,
+) -> AnyView {
+    let concept_id = row.concept_id.clone();
+    let qty = format!("{} {}", money(row.quantity), row.unit);
+    view! {
+        <tr class="border-t border-slate-100 align-top">
+            <td class="sticky left-0 z-10 bg-white px-3 py-2 whitespace-nowrap">
+                <div class="font-medium">{row.concept_name}</div>
+                <div class="text-slate-400">{row.status_name} " · " {qty}</div>
+            </td>
+            {row
+                .cells
+                .into_iter()
+                .map(|cell| {
+                    let cid = concept_id.clone();
+                    let hour = cell.hour;
+                    let resources = cell.resources.clone();
+                    let res_for_summary = resources.clone();
+                    let cid_sum = cid.clone();
+
+                    // Reactive summary of the cell: comma-joined selected labels,
+                    // or "+" when empty.
+                    let summary = move || {
+                        let sel = selected.get();
+                        let chosen: Vec<String> = res_for_summary
+                            .iter()
+                            .filter(|r| {
+                                sel.contains(&(cid_sum.clone(), hour, r.resource_id.clone()))
+                            })
+                            .map(|r| r.label.clone())
+                            .collect();
+                        if chosen.is_empty() { "+".to_string() } else { chosen.join(", ") }
+                    };
+                    let has_sel = {
+                        let res = resources.clone();
+                        let cid_h = cid.clone();
+                        move || {
+                            let sel = selected.get();
+                            res.iter()
+                                .any(|r| sel.contains(&(cid_h.clone(), hour, r.resource_id.clone())))
+                        }
+                    };
+                    let work = cell.is_work_hour;
+                    let td_cls = move || {
+                        let bg = if has_sel() {
+                            "bg-sky-50"
+                        } else if work {
+                            ""
+                        } else {
+                            "bg-slate-50/70"
+                        };
+                        format!("px-1 py-1 align-top {bg}")
+                    };
+
+                    view! {
+                        <td class=td_cls>
+                            {if resources.is_empty() {
+                                view! { <span class="text-slate-300">"—"</span> }.into_any()
+                            } else {
+                                view! {
+                                    <details class="group">
+                                        <summary class="cursor-pointer list-none whitespace-nowrap text-slate-700">
+                                            {summary}
+                                        </summary>
+                                        <div class="mt-1 space-y-1 rounded border border-slate-200 bg-white p-1 shadow">
+                                            {resources
+                                                .into_iter()
+                                                .map(|r| {
+                                                    let key: Key = (cid.clone(), hour, r.resource_id.clone());
+                                                    let k2 = key.clone();
+                                                    view! {
+                                                        <label class="flex items-center gap-1 whitespace-nowrap">
+                                                            <input
+                                                                type="checkbox"
+                                                                class="h-3 w-3 rounded border-slate-300"
+                                                                prop:checked=move || selected.get().contains(&key)
+                                                                prop:disabled=!editable
+                                                                on:change=move |_| toggle(k2.clone())
+                                                            />
+                                                            <span>{r.label}</span>
+                                                        </label>
+                                                    }
+                                                })
+                                                .collect::<Vec<_>>()}
+                                        </div>
+                                    </details>
+                                }
+                                    .into_any()
+                            }}
+                        </td>
+                    }
+                })
+                .collect::<Vec<_>>()}
+        </tr>
+    }
+    .into_any()
 }

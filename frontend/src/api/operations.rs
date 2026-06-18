@@ -278,6 +278,8 @@ pub struct GridCell {
 pub struct GridRow {
     pub concept_id: String,
     #[serde(default)]
+    pub project_id: String,
+    #[serde(default)]
     pub project_title: String,
     #[serde(default)]
     pub status_name: String,
