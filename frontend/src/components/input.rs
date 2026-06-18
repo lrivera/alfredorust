@@ -3,7 +3,7 @@ use leptos::prelude::*;
 use super::merge_classes;
 
 const INPUT_BASE: &str = "w-full rounded-md border border-slate-300 px-3 py-2 text-sm \
-     outline-none transition-colors focus:border-slate-500 focus:ring-2 focus:ring-slate-200 \
+     outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-200 \
      disabled:cursor-not-allowed disabled:opacity-50";
 
 /// Controlled text input. `value`/`on_input` make it controlled; the remaining
