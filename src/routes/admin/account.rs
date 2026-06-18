@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     session::SessionUser,
-    state::{AppState, update_user},
+    state::{AppState, get_user_by_id, update_user},
 };
 
 fn render<T: Template>(tpl: T) -> Result<Html<String>, StatusCode> {
@@ -49,6 +49,9 @@ pub struct AccountData {
 #[derive(Deserialize, utoipa::ToSchema)]
 pub struct AccountPayload {
     email: String,
+    /// New TOTP secret. The endpoint never returns the current secret, so a
+    /// blank value here means "keep the existing one" — letting a client save
+    /// an email-only change without knowing or rotating the authenticator.
     secret: String,
 }
 
@@ -116,11 +119,23 @@ pub async fn account_profile_update_api(
     Json(payload): Json<AccountPayload>,
 ) -> impl IntoResponse {
     let email = payload.email.trim().to_string();
-    let secret = payload.secret.trim().to_string();
-    if email.is_empty() || secret.is_empty() {
+    if email.is_empty() {
         return StatusCode::BAD_REQUEST.into_response();
     }
     let user = session_user.user();
+    // Blank secret keeps the existing one (the endpoint never reveals it). Read
+    // it fresh from the DB — the session cache can be stale after a prior edit.
+    let secret = {
+        let provided = payload.secret.trim();
+        if provided.is_empty() {
+            match get_user_by_id(&state, session_user.user_id()).await {
+                Ok(Some(current)) => current.secret,
+                _ => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+            }
+        } else {
+            provided.to_string()
+        }
+    };
     let company_roles: Vec<_> = user
         .company_ids
         .iter()

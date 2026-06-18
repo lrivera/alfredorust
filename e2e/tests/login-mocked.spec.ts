@@ -38,7 +38,9 @@ test.describe("login flow (mocked API)", () => {
     await page.getByRole("button", { name: "Entrar" }).click();
 
     await expect(page.getByRole("button", { name: "Salir" })).toBeVisible();
-    await expect(page.getByText("Compañías")).toBeVisible();
+    // The dashboard company-switcher heading (a nav link of the same name now
+    // also exists, so target the heading specifically).
+    await expect(page.getByRole("heading", { name: "Compañías" })).toBeVisible();
     // Both memberships render; the inactive one is a good unique assertion.
     await expect(page.getByText("Globex")).toBeVisible();
   });

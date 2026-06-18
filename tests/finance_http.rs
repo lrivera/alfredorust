@@ -62,6 +62,52 @@ async fn account_json_profile_redacts_secret_and_updates_from_payload() {
     common::teardown(Some(ctx)).await;
 }
 
+/// A blank `secret` on the account update keeps the existing one, so a user can
+/// save an email change without knowing or rotating their TOTP secret.
+#[tokio::test]
+async fn account_json_blank_secret_keeps_existing() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+    let shared = Arc::new(state.clone());
+
+    let company = create_company(&state, "Account Keep Co", "account-keep-co", "MXN", true, None)
+        .await
+        .unwrap();
+    let user_id = create_user_with_permissions(
+        &state,
+        "account-keep@example.com",
+        "KEEPME",
+        &[(company.clone(), UserRole::Admin, vec![])],
+    )
+    .await
+    .unwrap();
+    let token = create_session(&state, "account-keep@example.com")
+        .await
+        .unwrap();
+    let host = "account-keep-co.miapp.local";
+
+    let (status, body) = post_json_with_cookie(
+        build_app(shared.clone()),
+        host,
+        "/api/account",
+        &token,
+        serde_json::json!({
+            "email": "account-keep-renamed@example.com",
+            "secret": ""
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let updated = get_user_by_id(&state, &user_id).await.unwrap().unwrap();
+    assert_eq!(updated.email, "account-keep-renamed@example.com");
+    assert_eq!(updated.secret, "KEEPME", "blank secret must keep the old one");
+
+    common::teardown(Some(ctx)).await;
+}
+
 
 #[tokio::test]
 async fn company_admin_json_endpoints_enforce_admin_and_update_metadata() {

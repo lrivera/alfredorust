@@ -12,15 +12,18 @@
 //!   - [`operations`] — orders, projects, resources, resource logs, concept
 //!     statuses, project concepts, the hourly grid.
 //!   - [`misc`] — timeline (tiempo) and CFDIs.
+//!   - [`admin`] — companies, users, SAT configs, own account profile.
 
 use gloo_net::http::Request;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
+mod admin;
 mod finance;
 mod misc;
 mod operations;
 
+pub use admin::*;
 pub use finance::*;
 pub use misc::*;
 pub use operations::*;

@@ -46,13 +46,19 @@ The backend serves a gated `/test` area (`require_session` + `require_test_tenan
 
 The smoke-test HTML is published there by `.github/workflows/publish-test-reports.yml`.
 
-**To surface the Playwright report**, upload the generated HTML report to
-`/home/$SSH_USER/alfredorust/test-reports/playwright/` on the server, so it is
-reachable at `/test/reports/playwright/index.html` and auto-linked from `/test`.
-Easiest: add a step to your Playwright CI that SCPs `playwright-report/` using the
-existing `SSH_PRIVATE_KEY` / `SSH_HOST` / `SSH_USER` secrets (same pattern as
-`publish-test-reports.yml`). If you tell me the artifact path/name, I'll extend
-that workflow to copy it for you instead.
+**To surface the Playwright report** (decided: **manual for now** — we publish on
+demand, no CI/cron):
+1. `e2e/playwright.config.ts` currently uses `reporter: [["list"]]`, which writes
+   **no HTML**. Add an HTML reporter so a report folder is produced, e.g.
+   `reporter: [["list"], ["html", { outputFolder: "playwright-report", open: "never" }]]`.
+2. Run the suite — that generates `e2e/playwright-report/`.
+3. Tell me (or leave it on disk) and I'll `scp` that folder to
+   `/home/alfredo/alfredorust/test-reports/playwright/` so it's reachable at
+   `/test/reports/playwright/index.html` and auto-linked from `/test`.
+
+The smoke-test report is already published this way (run manually by the backend
+session and `scp`-ed to `test-reports/`). If you'd rather automate it later via CI,
+the `publish-test-reports.yml` workflow can be extended to copy your artifact too.
 
 (Confirmed: I will NOT add `frontend` to the backend workspace — my
 `[workspace] members` is just `["crates/spcli"]`.)

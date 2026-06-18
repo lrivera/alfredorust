@@ -1,9 +1,11 @@
 //! Routed screens. Each page reads `Me` from context and talks to the backend
 //! through the typed `api` client.
 
+mod account;
 mod accounts;
 mod categories;
 mod cfdi;
+mod companies;
 mod concept_statuses;
 mod contacts;
 mod dashboard;
@@ -16,12 +18,16 @@ mod recurring_plans;
 mod resource_logs;
 mod resource_usages;
 mod resources;
+mod sat_configs;
 mod tiempo;
 mod transactions;
+mod users;
 
+pub use account::AccountPage;
 pub use accounts::AccountsPage;
 pub use categories::CategoriesPage;
 pub use cfdi::CfdiPage;
+pub use companies::CompaniesPage;
 pub use concept_statuses::ConceptStatusesPage;
 pub use contacts::ContactsPage;
 pub use dashboard::Dashboard;
@@ -34,8 +40,10 @@ pub use recurring_plans::RecurringPlansPage;
 pub use resource_logs::ResourceLogsPage;
 pub use resource_usages::ResourceUsagesPage;
 pub use resources::ResourcesPage;
+pub use sat_configs::SatConfigsPage;
 pub use tiempo::TiempoPage;
 pub use transactions::TransactionsPage;
+pub use users::UsersPage;
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;

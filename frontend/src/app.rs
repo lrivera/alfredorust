@@ -9,10 +9,10 @@ use leptos_router::path;
 use crate::api::{self, ApiError, Me};
 use crate::components::{Button, ButtonVariant, Card, CardContent, CardHeader, CardTitle, Input};
 use crate::pages::{
-    AccountsPage, CategoriesPage, CfdiPage, ConceptStatusesPage, ContactsPage, Dashboard,
-    ForecastsPage, OrdersPage, PlannedEntriesPage, ProjectDetailPage, ProjectsPage,
-    RecurringPlansPage, ResourceLogsPage, ResourceUsagesPage, ResourcesPage, TiempoPage,
-    TransactionsPage,
+    AccountPage, AccountsPage, CategoriesPage, CfdiPage, CompaniesPage, ConceptStatusesPage,
+    ContactsPage, Dashboard, ForecastsPage, OrdersPage, PlannedEntriesPage, ProjectDetailPage,
+    ProjectsPage, RecurringPlansPage, ResourceLogsPage, ResourceUsagesPage, ResourcesPage,
+    SatConfigsPage, TiempoPage, TransactionsPage, UsersPage,
 };
 
 #[derive(Clone)]
@@ -187,6 +187,10 @@ fn AuthedApp(me: Me, auth: RwSignal<Auth>) -> impl IntoView {
                             <Route path=path!("/resource-usages") view=ResourceUsagesPage />
                             <Route path=path!("/tiempo") view=TiempoPage />
                             <Route path=path!("/cfdi") view=CfdiPage />
+                            <Route path=path!("/companies") view=CompaniesPage />
+                            <Route path=path!("/users") view=UsersPage />
+                            <Route path=path!("/sat-configs") view=SatConfigsPage />
+                            <Route path=path!("/account") view=AccountPage />
                         </Routes>
                     </main>
                 </div>
@@ -214,6 +218,9 @@ fn Sidebar() -> impl IntoView {
                 </A>
                 <A href="/v2/tiempo" attr:class=link>
                     "Tiempo"
+                </A>
+                <A href="/v2/account" attr:class=link>
+                    "Mi cuenta"
                 </A>
                 {move || {
                     if is_admin {
@@ -268,6 +275,18 @@ fn Sidebar() -> impl IntoView {
                             </p>
                             <A href="/v2/cfdi" attr:class=link>
                                 "CFDIs"
+                            </A>
+                            <A href="/v2/sat-configs" attr:class=link>
+                                "Config. SAT"
+                            </A>
+                            <p class="px-3 pt-3 pb-1 text-xs font-semibold uppercase text-slate-400">
+                                "Administración"
+                            </p>
+                            <A href="/v2/companies" attr:class=link>
+                                "Compañías"
+                            </A>
+                            <A href="/v2/users" attr:class=link>
+                                "Usuarios"
                             </A>
                         }
                             .into_any()

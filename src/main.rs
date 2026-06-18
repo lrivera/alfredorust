@@ -96,6 +96,10 @@ async fn main() {
             "/api/admin/companies/{id}/update",
             post(routes::company_update_api),
         )
+        .route(
+            "/api/admin/companies/{id}/delete",
+            post(routes::company_delete_api),
+        )
         .route("/admin/companies/new", get(routes::companies_new))
         .route("/admin/companies/{id}/edit", get(routes::companies_edit))
         .route(

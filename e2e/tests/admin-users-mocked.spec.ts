@@ -1,0 +1,111 @@
+import { test, expect } from "@playwright/test";
+
+/**
+ * Hermetic users-admin tests: API mocked with `page.route`, no backend. Covers
+ * the list (with self-delete suppression), and creating a user with a per-company
+ * membership through the compound form.
+ */
+
+const ADMIN_ME = {
+  email: "admin@example.com",
+  company: "Acme",
+  company_slug: "acme",
+  role: "admin",
+  permissions: [],
+  companies: [{ id: "c1", name: "Acme", slug: "acme", active: true }],
+};
+
+const STAFF_ME = { ...ADMIN_ME, email: "staff@example.com", role: "staff" };
+
+const COMPANIES = [
+  {
+    id: "c1",
+    name: "Acme",
+    slug: "acme",
+    default_currency: "MXN",
+    is_active: true,
+    notes: null,
+    is_current: true,
+  },
+];
+
+test.describe("admin / users (mocked API)", () => {
+  test("admin lists users; own row has no delete", async ({ page }) => {
+    const users = [
+      {
+        id: "u1",
+        email: "admin@example.com",
+        role: "admin",
+        companies: ["Acme"],
+        memberships: [
+          { company_id: "c1", company_name: "Acme", role: "admin", permissions: [] },
+        ],
+      },
+      {
+        id: "u2",
+        email: "worker@example.com",
+        role: "staff",
+        companies: ["Acme"],
+        memberships: [
+          { company_id: "c1", company_name: "Acme", role: "staff", permissions: ["view_projects"] },
+        ],
+      },
+    ];
+
+    await page.route("**/api/me", (r) => r.fulfill({ json: ADMIN_ME }));
+    await page.route("**/api/admin/companies", (r) => r.fulfill({ json: COMPANIES }));
+    await page.route("**/api/admin/users", (r) => r.fulfill({ json: users }));
+
+    await page.goto("/v2/users");
+    await expect(page.getByRole("cell", { name: "worker@example.com" })).toBeVisible();
+
+    // Own user (admin@example.com) cannot be deleted.
+    await expect(
+      page.getByRole("row", { name: /admin@example.com/ }).getByRole("button", { name: "Eliminar" }),
+    ).toHaveCount(0);
+    // Another user can be deleted.
+    await expect(
+      page.getByRole("row", { name: /worker@example.com/ }).getByRole("button", { name: "Eliminar" }),
+    ).toBeVisible();
+  });
+
+  test("admin can create a user with a company membership", async ({ page }) => {
+    const users: any[] = [];
+    let lastPost: any = null;
+
+    await page.route("**/api/me", (r) => r.fulfill({ json: ADMIN_ME }));
+    await page.route("**/api/admin/companies", (r) => r.fulfill({ json: COMPANIES }));
+    await page.route("**/api/admin/users", (route) => {
+      const req = route.request();
+      if (req.method() === "POST") {
+        lastPost = JSON.parse(req.postData() || "{}");
+        users.push({
+          id: "u9",
+          email: lastPost.email,
+          role: "staff",
+          companies: ["Acme"],
+          memberships: lastPost.memberships,
+        });
+        return route.fulfill({ status: 201, json: { id: "u9" } });
+      }
+      return route.fulfill({ json: users });
+    });
+
+    await page.goto("/v2/users");
+    const form = page.locator("form");
+    await form.getByRole("textbox").first().fill("new@example.com");
+    await form.getByRole("checkbox", { name: "Acme" }).check();
+    await page.getByRole("button", { name: /Crear usuario|Guardando/ }).click();
+
+    await expect(page.getByRole("cell", { name: "new@example.com" })).toBeVisible();
+    expect(lastPost.email).toBe("new@example.com");
+    expect(lastPost.memberships).toHaveLength(1);
+    expect(lastPost.memberships[0].company_id).toBe("c1");
+  });
+
+  test("staff does not see the users nav link", async ({ page }) => {
+    await page.route("**/api/me", (r) => r.fulfill({ json: STAFF_ME }));
+    await page.goto("/v2/");
+    await expect(page.getByRole("link", { name: "Usuarios" })).toHaveCount(0);
+  });
+});

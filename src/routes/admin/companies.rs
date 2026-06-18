@@ -345,6 +345,41 @@ pub async fn company_update_api(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/companies/{id}/delete",
+    tag = "admin",
+    params(("id" = String, Path, description = "Record id")),
+    responses(
+        (status = 200, description = "Company deleted"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden — not an admin, or the active company"),
+        (status = 400, description = "Invalid id")
+    ),
+    security(("session" = []))
+)]
+pub async fn company_delete_api(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let object_id = match ObjectId::from_str(&id) {
+        Ok(id) => id,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    // Mirror the HTML handler: never delete the session's active company.
+    if &object_id == session_user.active_company_id() {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    if !has_admin_role_for(&session_user, &object_id) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    match delete_company(&state, &object_id).await {
+        Ok(_) => Json(serde_json::json!({ "ok": true })).into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
 pub async fn companies_index(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,

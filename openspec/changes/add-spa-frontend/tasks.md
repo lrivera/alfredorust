@@ -29,11 +29,11 @@ For each category: build SPA routes/screens over the existing JSON API → reach
 - [x] **orders** — service orders incl. complete + dynamic line items.
 - [x] **projects** — projects CRUD + advance. (Concept detail page pending below.)
 - [x] **resources** — resources (allowed statuses), resource logs (incl. end). (Hourly grid pending below.)
-- [ ] **resource usages** — hourly grid + allocations (the heaviest screen).
-- [ ] **project detail** — concepts, concept statuses, status summary, per-concept advance.
-- [ ] **cfdi** — CFDI reads + download jobs.
-- [ ] **tiempo** — time timeline (read view).
-- [ ] **admin** — users, companies, SAT configs (incl. multipart `.cer`/`.key` upload).
+- [x] **resource usages** — hourly grid + allocations (the heaviest screen).
+- [x] **project detail** — concepts, concept statuses, status summary, per-concept advance.
+- [x] **cfdi** — CFDI reads + download jobs.
+- [x] **tiempo** — time timeline (read view).
+- [x] **admin** — users (per-company memberships + staff permissions), companies (CRUD + JSON delete, slug validation), SAT configs (multipart `.cer`/`.key` upload). Plus own-account profile (`/account`, blank secret = keep). Unit + Playwright coverage; v1 parity.
 
 > **ON HOLD — `pdf` (PDF preview):** intentionally deferred at the user's request
 > (not in use for now). Resume when needed: migrate `/pdf` (editor) + `POST
