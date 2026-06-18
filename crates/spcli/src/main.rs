@@ -198,6 +198,12 @@ enum AdminCompanyCommand {
     Get { id: String },
     Create(CompanyWriteArgs),
     Update(CompanyUpdateArgs),
+    /// Delete a company (cannot be the active one).
+    Delete(DeleteArgs),
+    /// Danger zone: delete ALL CFDIs of a company.
+    DeleteAllCfdis(DeleteArgs),
+    /// Danger zone: delete ALL transactions of a company.
+    DeleteAllTransactions(DeleteArgs),
 }
 
 #[derive(Args)]
@@ -431,10 +437,27 @@ enum CfdiCommand {
     Get {
         uuid: String,
     },
+    /// Start a SAT download for the active company (one job per month).
+    Download(CfdiDownloadArgs),
     Jobs {
         #[command(subcommand)]
         command: CfdiJobsCommand,
     },
+}
+
+#[derive(Args)]
+struct CfdiDownloadArgs {
+    #[arg(long)]
+    sat_config_id: String,
+    #[arg(long)]
+    start: String,
+    #[arg(long)]
+    end: String,
+    /// issued | received | both
+    #[arg(long, default_value = "both")]
+    download_type: String,
+    #[arg(long, default_value_t = false)]
+    auto_create_payments: bool,
 }
 
 #[derive(Subcommand)]
@@ -1120,6 +1143,15 @@ async fn run(cli: Cli) -> Result<()> {
                 }
                 AdminCompanyCommand::Create(args) => admin_company_create(args, cli.json).await,
                 AdminCompanyCommand::Update(args) => admin_company_update(args, cli.json).await,
+                AdminCompanyCommand::Delete(args) => {
+                    delete_command("/api/admin/companies", args, cli.json, "company").await
+                }
+                AdminCompanyCommand::DeleteAllCfdis(args) => {
+                    company_delete_all("cfdis", args, cli.json).await
+                }
+                AdminCompanyCommand::DeleteAllTransactions(args) => {
+                    company_delete_all("transactions", args, cli.json).await
+                }
             },
             AdminCommand::Users { command } => match command {
                 AdminUsersCommand::List => {
@@ -1269,6 +1301,7 @@ async fn run(cli: Cli) -> Result<()> {
         Command::Cfdi { command } => match command {
             CfdiCommand::List => json_get_command("/api/admin/cfdis/data", cli.json, "CFDIs").await,
             CfdiCommand::Get { uuid } => cfdi_get(&uuid, cli.json).await,
+            CfdiCommand::Download(args) => cfdi_download(args, cli.json).await,
             CfdiCommand::Jobs { command } => match command {
                 CfdiJobsCommand::List => cfdi_jobs_list(cli.json).await,
                 CfdiJobsCommand::Status { job_id } => cfdi_job_status(&job_id, cli.json).await,
@@ -1493,7 +1526,7 @@ async fn status(json_output: bool) -> Result<()> {
     } else {
         println!(
             "Authenticated: {}",
-            value["email"].as_str().unwrap_or("unknown")
+            value["username"].as_str().unwrap_or("unknown")
         );
         println!(
             "Company: {}",
@@ -1603,7 +1636,9 @@ async fn account_profile_update(args: AccountProfileUpdateArgs, json_output: boo
     let value = authenticated_post_json(
         &mut state,
         "/api/account",
-        &json!({ "email": args.email, "secret": secret }),
+        // The login identifier is now `username` server-side (the CLI flag is
+        // still --email and holds that value).
+        &json!({ "username": args.email, "secret": secret }),
     )
     .await?;
     state.email = args.email;
@@ -1672,7 +1707,7 @@ fn user_payload(args: &UserCreateArgs) -> Result<Value> {
         .context("--company-id is required (or pass --input with a full JSON body)")?;
     validate_object_id(company_id, "company-id")?;
     let mut body = json!({
-        "email": args.email,
+        "username": args.email,
         "memberships": [{
             "company_id": company_id,
             "role": args.role,
@@ -2642,6 +2677,45 @@ fn resource_usage_allocations_payload(
     Ok(json!({ "allocations": parsed }))
 }
 
+/// Danger zone: delete all CFDIs or transactions of a company. `kind` is
+/// `cfdis` or `transactions`.
+async fn company_delete_all(kind: &str, args: DeleteArgs, json_output: bool) -> Result<()> {
+    if !args.yes {
+        bail!("deleting all {kind} is destructive; rerun with --yes to confirm");
+    }
+    validate_object_id(&args.id, "id")?;
+    let path = format!("/api/admin/companies/{}/{kind}/delete_all", args.id);
+    let mut state = load_state()?;
+    let value = authenticated_post_json(&mut state, &path, &json!({})).await?;
+    save_state(&state)?;
+    print_ok_output(&value, json_output, &format!("all {kind} deleted"))
+}
+
+/// Start a CFDI SAT download for the active company (backend splits it into one
+/// job per month). Returns the started job ids.
+async fn cfdi_download(args: CfdiDownloadArgs, json_output: bool) -> Result<()> {
+    validate_object_id(&args.sat_config_id, "sat-config-id")?;
+    validate_non_empty(&args.start, "start")?;
+    validate_non_empty(&args.end, "end")?;
+    let mut state = load_state()?;
+    let company_id = selected_company_id(&mut state).await?;
+    let path = format!("/api/admin/companies/{company_id}/cfdi/download");
+    let value = authenticated_post_json(
+        &mut state,
+        &path,
+        &json!({
+            "sat_config_id": args.sat_config_id,
+            "start": args.start,
+            "end": args.end,
+            "download_type": args.download_type,
+            "auto_create_payments": args.auto_create_payments,
+        }),
+    )
+    .await?;
+    save_state(&state)?;
+    print_value_output(&value, json_output, "CFDI download jobs")
+}
+
 async fn cfdi_jobs_list(json_output: bool) -> Result<()> {
     let mut state = load_state()?;
     let company_id = selected_company_id(&mut state).await?;
@@ -2735,6 +2809,9 @@ fn print_manifest(json_output: bool) -> Result<()> {
             { "name": "admin companies get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "company" },
             { "name": "admin companies create", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--name", "--slug", "--default-currency", "--inactive", "--notes"], "output_schema": "created_id" },
             { "name": "admin companies update", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id", "--name", "--slug", "--default-currency", "--inactive", "--notes"], "output_schema": "ok" },
+            { "name": "admin companies delete", "auth_required": true, "company_required": true, "destructive": true, "arguments": ["id", "--yes"], "output_schema": "ok" },
+            { "name": "admin companies delete-all-cfdis", "auth_required": true, "company_required": true, "destructive": true, "arguments": ["id", "--yes"], "output_schema": "ok" },
+            { "name": "admin companies delete-all-transactions", "auth_required": true, "company_required": true, "destructive": true, "arguments": ["id", "--yes"], "output_schema": "ok" },
             { "name": "admin users list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "users" },
             { "name": "admin users get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["id"], "output_schema": "user" },
             { "name": "admin users create", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--email", "--secret-env", "--company-id", "--role", "--permission", "--input"], "output_schema": "created_id" },
@@ -2782,6 +2859,7 @@ fn print_manifest(json_output: bool) -> Result<()> {
             { "name": "finance transactions delete", "auth_required": true, "company_required": true, "destructive": true, "confirmation_flag": "--yes", "arguments": ["id"], "output_schema": "ok_with_side_effects" },
             { "name": "cfdi list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "cfdi_data" },
             { "name": "cfdi get", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["uuid"], "output_schema": "cfdi_detail" },
+            { "name": "cfdi download", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["--sat-config-id", "--start", "--end", "--download-type", "--auto-create-payments"], "output_schema": "cfdi_jobs" },
             { "name": "cfdi jobs list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "cfdi_jobs" },
             { "name": "cfdi jobs status", "auth_required": true, "company_required": true, "destructive": false, "arguments": ["job-id"], "output_schema": "cfdi_job" },
             { "name": "sat configs list", "auth_required": true, "company_required": true, "destructive": false, "output_schema": "sat_configs" },

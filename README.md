@@ -68,12 +68,57 @@ This repository uses OpenSpec-style spec-driven workflow for non-trivial changes
 
 The harness is local: isolated MongoDB databases, in-memory Axum routers, safe fixtures, and integration tests. It does not use Harness.io.
 
-## CLI
+## CLI / Claude skill (`spcli`)
 
-The repository includes `spcli`, a command-line client for authenticated API access:
+`spcli` is the first-party command-line client for the platform. It logs in once
+with a TOTP secret, keeps an encrypted local session, and exposes ~115 commands
+with stable JSON output. It powers a **Claude skill** so you (and your teammates)
+can just ask Claude things like *"list my accounts"*, *"create a transaction"*,
+or *"what CFDIs do I have"* and Claude runs `spcli` for you.
 
+Full command reference: [`docs/spcli.md`](docs/spcli.md). In-repo copy of the
+binary + skill: [`resources/spcli/`](resources/spcli/).
+
+### Install the skill (per OS)
+
+The skill is two files (`SKILL.md`, `reference.md`) copied into
+`~/.claude/skills/spcli/`, plus the `spcli` binary on your `PATH`.
+
+**macOS (Apple Silicon)** — use the in-repo binary:
 ```bash
-cargo run --bin spcli -- --help
+cd resources/spcli
+mkdir -p ~/.local/bin && cp bin/macos-arm64/spcli ~/.local/bin/ && chmod +x ~/.local/bin/spcli
+xattr -d com.apple.quarantine ~/.local/bin/spcli 2>/dev/null || true
+mkdir -p ~/.claude/skills/spcli && cp SKILL.md reference.md ~/.claude/skills/spcli/
+grep -q '.local/bin' ~/.zshrc || echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
 ```
 
-See `docs/spcli.md` for authentication, company selection, JSON output, and credential storage details.
+**Linux / Intel Mac / Windows** — download the prebuilt bundle for your OS from
+the repo's **Releases** (tags `spcli-v*`, built by CI), extract it, and run the
+included installer (`./install.sh`, or on Windows
+`powershell -ExecutionPolicy Bypass -File .\install.ps1`). It puts `spcli` on
+your `PATH` and installs the skill automatically.
+
+**Any OS — from source:**
+```bash
+cargo build --release -p spcli      # binary at target/release/spcli
+mkdir -p ~/.claude/skills/spcli && cp resources/spcli/SKILL.md resources/spcli/reference.md ~/.claude/skills/spcli/
+```
+
+### Use it
+
+Open Claude in any project and ask a platform question. The **first time**,
+Claude asks for the login URL (`https://app.alfredorivera.dev`), your **usuario**
+(login id — the CLI flag is still `--email`), and your **TOTP secret**; it logs
+in once and remembers the session. Or drive it directly:
+
+```bash
+spcli --json status
+spcli --json login --base-url https://app.alfredorivera.dev --email you@example.com --totp-secret YOURSECRET
+spcli --json company use <your-company-slug>
+spcli --json finance accounts list
+spcli --json manifest          # full machine-readable command catalog
+```
+
+See [`docs/spcli.md`](docs/spcli.md) for full auth, company selection, and
+credential-storage details.

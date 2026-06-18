@@ -51,9 +51,11 @@ cargo run --bin spcli -- admin companies list
 cargo run --bin spcli -- admin companies get 64f000000000000000000000
 cargo run --bin spcli -- admin companies create --name "Acme" --slug acme --default-currency MXN
 cargo run --bin spcli -- admin companies update 64f000000000000000000000 --name "Acme" --slug acme --default-currency MXN
+# Destructive (require --yes). A company cannot be deleted while it is the active tenant.
+cargo run --bin spcli -- admin companies delete 64f000000000000000000000 --yes
+cargo run --bin spcli -- admin companies delete-all-cfdis 64f000000000000000000000 --yes
+cargo run --bin spcli -- admin companies delete-all-transactions 64f000000000000000000000 --yes
 ```
-
-Company delete and company-wide maintenance deletes are intentionally unsupported in `spcli`.
 
 Manage company users (admin only, scoped to companies you administer). On create the server generates a TOTP secret when `--secret-env` is omitted; the secret is never printed — read the new user's QR from the web app. Use `--input <file.json>` to send a full payload with multiple memberships:
 
@@ -108,6 +110,8 @@ cargo run --bin spcli -- finance recurring-plans list
 cargo run --bin spcli -- finance planned-entries list
 cargo run --bin spcli -- finance transactions list
 cargo run --bin spcli -- cfdi list
+# Start a SAT download for the active company (one job per month); poll with `cfdi jobs`.
+cargo run --bin spcli -- cfdi download --sat-config-id 64f000000000000000000000 --start 2024-01-01 --end 2024-12-31 --download-type both --auto-create-payments
 cargo run --bin spcli -- cfdi jobs list
 cargo run --bin spcli -- sat configs list
 cargo run --bin spcli -- admin users list

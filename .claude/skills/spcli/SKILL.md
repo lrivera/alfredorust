@@ -19,9 +19,13 @@ description: >-
 `spcli` is the first-party command-line client for the multi-tenant financial
 platform (Axum/MongoDB backend). It logs in once with a TOTP secret, stores an
 encrypted local session, transparently re-logs in when the session expires, and
-exposes ~109 commands with **stable JSON output and structured errors**. Always
+exposes ~115 commands with **stable JSON output and structured errors**. Always
 prefer `spcli` over calling the HTTP API directly — it handles auth, the tenant
 host, re-login, and validation for you.
+
+> Login identifier: the platform now calls it the **username** (a unique handle,
+> not a validated email). For backward compatibility the CLI flag is still
+> `--email` and the env var `SPCLI_EMAIL`; both just hold that username value.
 
 The full command reference lives in [`docs/spcli.md`](../../../docs/spcli.md).
 The machine-readable command catalog is `spcli --json manifest` — consult it to
