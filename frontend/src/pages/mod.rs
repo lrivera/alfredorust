@@ -168,3 +168,42 @@ pub(crate) fn load_concept_status_options(target: RwSignal<Options>) {
         }
     });
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wasm_bindgen_test::*;
+
+    #[wasm_bindgen_test]
+    fn date_to_rfc3339_appends_midnight_utc() {
+        assert_eq!(date_to_rfc3339("2026-01-02"), "2026-01-02T00:00:00Z");
+        // Already a datetime or empty -> untouched.
+        assert_eq!(date_to_rfc3339("2026-01-02T10:00:00Z"), "2026-01-02T10:00:00Z");
+        assert_eq!(date_to_rfc3339("  "), "");
+    }
+
+    #[wasm_bindgen_test]
+    fn rfc3339_to_date_takes_date_prefix() {
+        assert_eq!(rfc3339_to_date("2026-01-02T10:30:00Z"), "2026-01-02");
+        assert_eq!(rfc3339_to_date("2026-01-02"), "2026-01-02");
+    }
+
+    #[wasm_bindgen_test]
+    fn local_dt_roundtrip() {
+        // datetime-local (no zone) -> RFC3339.
+        assert_eq!(local_dt_to_rfc3339("2026-01-02T10:30"), "2026-01-02T10:30:00Z");
+        assert_eq!(local_dt_to_rfc3339("2026-01-02T10:30:00Z"), "2026-01-02T10:30:00Z");
+        assert_eq!(local_dt_to_rfc3339(""), "");
+        // RFC3339 -> datetime-local input value.
+        assert_eq!(rfc3339_to_local_dt("2026-01-02T10:30:00Z"), "2026-01-02T10:30");
+    }
+
+    #[wasm_bindgen_test]
+    fn flow_label_and_money() {
+        assert_eq!(flow_label("income"), "Ingreso");
+        assert_eq!(flow_label("expense"), "Egreso");
+        assert_eq!(flow_label("weird"), "weird");
+        assert_eq!(money(1234.5), "1234.50");
+        assert_eq!(money(0.0), "0.00");
+    }
+}

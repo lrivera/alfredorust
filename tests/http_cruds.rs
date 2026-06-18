@@ -459,7 +459,7 @@ fn build_app(state: Arc<AppState>) -> Router {
         )
         .route(
             "/api/admin/resource_usages/grid",
-            post(routes::api_resource_usages_grid_save),
+            get(routes::api_resource_usages_grid_view).post(routes::api_resource_usages_grid_save),
         )
         .route(
             "/api/admin/resource_usages/{id}",
@@ -4923,6 +4923,36 @@ async fn resource_usages_grid_json_saves_and_enforces_today_window() {
         .await
         .unwrap();
     assert!(allocations.iter().any(|a| a.concept_id == concept_id));
+
+    // The JSON grid VIEW reflects the saved selection (concept row, hour-8 cell,
+    // the allowed resource marked selected). This is what the SPA renders.
+    let (status, body) = get_with_cookie(
+        build_app(shared.clone()),
+        host,
+        &format!("/api/admin/resource_usages/grid?date={today}&status_id=all"),
+        &admin_token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let grid: serde_json::Value = serde_json::from_str(&body).expect("valid grid JSON");
+    let rows = grid["rows"].as_array().expect("rows array");
+    let row = rows
+        .iter()
+        .find(|r| r["concept_id"] == concept_id.to_hex())
+        .expect("a row for the seeded concept");
+    let cell = row["cells"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["hour"] == 8)
+        .expect("hour-8 cell");
+    let resource = cell["resources"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["resource_id"] == resource_id.to_hex())
+        .expect("the allowed resource appears in the cell");
+    assert_eq!(resource["selected"], true, "saved selection must be marked selected");
 
     // staff without the today permission cannot save
     let (status, _) = post_json_with_cookie(
