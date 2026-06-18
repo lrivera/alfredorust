@@ -9,9 +9,9 @@ use leptos_router::path;
 use crate::api::{self, ApiError, Me};
 use crate::components::{Button, ButtonVariant, Card, CardContent, CardHeader, CardTitle, Input};
 use crate::pages::{
-    AccountsPage, CategoriesPage, CfdiPage, ContactsPage, Dashboard, ForecastsPage, OrdersPage,
-    PlannedEntriesPage, ProjectsPage, RecurringPlansPage, ResourceLogsPage, ResourcesPage,
-    TiempoPage, TransactionsPage,
+    AccountsPage, CategoriesPage, CfdiPage, ConceptStatusesPage, ContactsPage, Dashboard,
+    ForecastsPage, OrdersPage, PlannedEntriesPage, ProjectDetailPage, ProjectsPage,
+    RecurringPlansPage, ResourceLogsPage, ResourcesPage, TiempoPage, TransactionsPage,
 };
 
 #[derive(Clone)]
@@ -179,6 +179,8 @@ fn AuthedApp(me: Me, auth: RwSignal<Auth>) -> impl IntoView {
                             <Route path=path!("/forecasts") view=ForecastsPage />
                             <Route path=path!("/orders") view=OrdersPage />
                             <Route path=path!("/projects") view=ProjectsPage />
+                            <Route path=path!("/projects/:id") view=ProjectDetailPage />
+                            <Route path=path!("/concept-statuses") view=ConceptStatusesPage />
                             <Route path=path!("/resources") view=ResourcesPage />
                             <Route path=path!("/resource-logs") view=ResourceLogsPage />
                             <Route path=path!("/tiempo") view=TiempoPage />
@@ -246,6 +248,9 @@ fn Sidebar() -> impl IntoView {
                             </A>
                             <A href="/v2/projects" attr:class=link>
                                 "Proyectos"
+                            </A>
+                            <A href="/v2/concept-statuses" attr:class=link>
+                                "Estados de concepto"
                             </A>
                             <A href="/v2/resources" attr:class=link>
                                 "Recursos"

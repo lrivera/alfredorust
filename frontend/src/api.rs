@@ -752,3 +752,61 @@ pub struct CfdiList {
     #[serde(default)]
     pub items: Vec<Cfdi>,
 }
+
+// --- concept statuses (CRUD) ---------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct ConceptStatusFull {
+    pub id: String,
+    pub name: String,
+    pub position: i32,
+    #[serde(default)]
+    pub color: Option<String>,
+    pub is_initial: bool,
+    pub is_terminal: bool,
+    pub is_cancelled: bool,
+    pub is_active: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ConceptStatusPayload {
+    pub name: String,
+    pub position: i32,
+    pub color: Option<String>,
+    pub is_initial: bool,
+    pub is_terminal: bool,
+    pub is_cancelled: bool,
+    pub is_active: bool,
+}
+
+// --- project concepts -----------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct ProjectConcept {
+    pub id: String,
+    pub status_id: String,
+    pub name: String,
+    pub quantity: f64,
+    #[serde(default)]
+    pub unit: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub estimated_hours: Option<f64>,
+    #[serde(default)]
+    pub estimated_cost: Option<f64>,
+    pub position: i32,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ProjectConceptPayload {
+    pub status_id: Option<String>,
+    pub name: String,
+    pub quantity: f64,
+    pub unit: Option<String>,
+    pub description: Option<String>,
+    pub estimated_hours: Option<f64>,
+    pub estimated_cost: Option<f64>,
+    pub notes: Option<String>,
+    pub position: i32,
+}

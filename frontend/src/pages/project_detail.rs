@@ -1,83 +1,84 @@
 use leptos::prelude::*;
 use leptos::task::spawn_local;
+use leptos_router::hooks::use_params_map;
 
-use super::{date_to_rfc3339, load_category_options, load_contact_options, money, rfc3339_to_date, Options};
-use crate::api::{self, ApiError, Me, ProjectPayload, ProjectRow};
+use super::{load_concept_status_options, money, Options};
+use crate::api::{self, ApiError, Me, ProjectConcept, ProjectConceptPayload};
 use crate::components::{Button, ButtonVariant, Card, CardContent, CardHeader, CardTitle, Input, Select};
 
-const PRIORITIES: &[(&str, &str)] = &[
-    ("low", "Baja"),
-    ("medium", "Media"),
-    ("high", "Alta"),
-    ("urgent", "Urgente"),
-];
-
-fn opt_num(s: &str) -> Option<f64> {
-    let t = s.trim();
-    (!t.is_empty()).then(|| t.parse::<f64>().ok()).flatten()
-}
-
 #[component]
-pub fn ProjectsPage() -> impl IntoView {
+pub fn ProjectDetailPage() -> impl IntoView {
     let me = use_context::<Me>().expect("Me context");
     let is_admin = me.role == "admin";
 
-    let items = RwSignal::new(None::<Result<Vec<ProjectRow>, ApiError>>);
+    let params = use_params_map();
+    let pid = move || params.read().get("id").unwrap_or_default();
+
+    let title = RwSignal::new(String::new());
+    let concepts = RwSignal::new(None::<Result<Vec<ProjectConcept>, ApiError>>);
+    let statuses = RwSignal::new(Options::new());
+    load_concept_status_options(statuses);
+
     let reload = move || {
-        items.set(None);
+        let id = pid();
+        concepts.set(None);
         spawn_local(async move {
-            items.set(Some(api::get_json::<Vec<ProjectRow>>("/api/admin/projects").await));
+            if let Ok(p) = api::get_json::<api::ProjectDetail>(&format!("/api/admin/projects/{id}")).await {
+                title.set(p.title);
+            }
+            concepts.set(Some(
+                api::get_json::<Vec<ProjectConcept>>(&format!("/api/admin/projects/{id}/concepts")).await,
+            ));
         });
     };
     reload();
 
-    let categories = RwSignal::new(Options::new());
-    let contacts = RwSignal::new(Options::new());
-    load_category_options(categories);
-    load_contact_options(contacts);
-
+    // --- add/edit concept form -------------------------------------------
     let editing = RwSignal::new(None::<String>);
-    let title = RwSignal::new(String::new());
+    let status = RwSignal::new(String::new());
+    let name = RwSignal::new(String::new());
+    let quantity = RwSignal::new("1".to_string());
+    let unit = RwSignal::new(String::new());
     let description = RwSignal::new(String::new());
-    let contact = RwSignal::new(String::new());
-    let category = RwSignal::new(String::new());
-    let priority = RwSignal::new("medium".to_string());
-    let budget = RwSignal::new(String::new());
-    let scheduled = RwSignal::new(String::new());
-    let notes = RwSignal::new(String::new());
+    let est_hours = RwSignal::new(String::new());
+    let est_cost = RwSignal::new(String::new());
+    let position = RwSignal::new("0".to_string());
     let form_error = RwSignal::new(None::<String>);
 
     let reset_form = move || {
         editing.set(None);
-        title.set(String::new());
+        status.set(String::new());
+        name.set(String::new());
+        quantity.set("1".to_string());
+        unit.set(String::new());
         description.set(String::new());
-        contact.set(String::new());
-        category.set(String::new());
-        priority.set("medium".to_string());
-        budget.set(String::new());
-        scheduled.set(String::new());
-        notes.set(String::new());
+        est_hours.set(String::new());
+        est_cost.set(String::new());
+        position.set("0".to_string());
         form_error.set(None);
     };
 
     let save = Action::new_local(move |_: &()| {
         let opt = |s: String| (!s.trim().is_empty()).then_some(s);
-        let sched = scheduled.get_untracked();
-        let payload = ProjectPayload {
-            title: title.get_untracked().trim().to_string(),
-            contact_id: opt(contact.get_untracked()),
-            category_id: opt(category.get_untracked()),
+        let num = |s: String| s.trim().parse::<f64>().ok();
+        let id = pid();
+        let status_val = status.get_untracked();
+        let payload = ProjectConceptPayload {
+            status_id: (!status_val.is_empty()).then_some(status_val),
+            name: name.get_untracked().trim().to_string(),
+            quantity: quantity.get_untracked().trim().parse().unwrap_or(0.0),
+            unit: opt(unit.get_untracked()),
             description: opt(description.get_untracked()),
-            priority: priority.get_untracked(),
-            total_budget: opt_num(&budget.get_untracked()),
-            scheduled_at: (!sched.trim().is_empty()).then(|| date_to_rfc3339(&sched)),
-            notes: opt(notes.get_untracked()),
+            estimated_hours: num(est_hours.get_untracked()),
+            estimated_cost: num(est_cost.get_untracked()),
+            notes: None,
+            position: position.get_untracked().trim().parse().unwrap_or(0),
         };
         let editing = editing.get_untracked();
         async move {
             match editing {
-                Some(id) => api::post_json(&format!("/api/admin/projects/{id}/update"), &payload).await,
-                None => api::post_json("/api/admin/projects", &payload).await,
+                Some(cid) => api::post_json(&format!("/api/admin/project_concepts/{cid}/update"), &payload).await,
+                None => api::post_json(&format!("/api/admin/projects/{id}/concepts"), &payload).await,
             }
         }
     });
@@ -90,7 +91,7 @@ pub fn ProjectsPage() -> impl IntoView {
                     reload();
                 }
                 Err(ApiError::Forbidden) => form_error.set(Some("No tienes permiso".into())),
-                Err(_) => form_error.set(Some("No se pudo guardar el proyecto".into())),
+                Err(_) => form_error.set(Some("No se pudo guardar el concepto".into())),
             }
         }
     });
@@ -98,49 +99,48 @@ pub fn ProjectsPage() -> impl IntoView {
     let pending = save.pending();
     let submit = move |ev: web_sys::SubmitEvent| {
         ev.prevent_default();
-        if title.get().trim().is_empty() {
-            form_error.set(Some("El título es obligatorio".into()));
+        if name.get().trim().is_empty() {
+            form_error.set(Some("El nombre es obligatorio".into()));
             return;
         }
         form_error.set(None);
         save.dispatch(());
     };
-    let begin_edit = move |id: String| {
-        spawn_local(async move {
-            if let Ok(d) =
-                api::get_json::<api::ProjectDetail>(&format!("/api/admin/projects/{id}")).await
-            {
-                title.set(d.title);
-                description.set(d.description.unwrap_or_default());
-                contact.set(d.contact_id.unwrap_or_default());
-                category.set(d.category_id.unwrap_or_default());
-                priority.set(d.priority);
-                budget.set(d.total_budget.map(|v| v.to_string()).unwrap_or_default());
-                scheduled.set(d.scheduled_at.as_deref().map(rfc3339_to_date).unwrap_or_default());
-                notes.set(d.notes.unwrap_or_default());
-                editing.set(Some(id));
-                form_error.set(None);
-            }
-        });
+    let begin_edit = move |c: ProjectConcept| {
+        status.set(c.status_id);
+        name.set(c.name);
+        quantity.set(c.quantity.to_string());
+        unit.set(c.unit.unwrap_or_default());
+        description.set(c.description.unwrap_or_default());
+        est_hours.set(c.estimated_hours.map(|v| v.to_string()).unwrap_or_default());
+        est_cost.set(c.estimated_cost.map(|v| v.to_string()).unwrap_or_default());
+        position.set(c.position.to_string());
+        editing.set(Some(c.id));
+        form_error.set(None);
     };
-    let delete_one = move |id: String| {
+    let advance = move |cid: String| {
         spawn_local(async move {
-            if api::post_empty(&format!("/api/admin/projects/{id}/delete")).await.is_ok() {
+            if api::post_empty(&format!("/api/admin/project_concepts/{cid}/advance")).await.is_ok() {
                 reload();
             }
         });
     };
-    let advance = move |id: String| {
+    let delete_one = move |cid: String| {
         spawn_local(async move {
-            if api::post_empty(&format!("/api/admin/projects/{id}/advance")).await.is_ok() {
+            if api::post_empty(&format!("/api/admin/project_concepts/{cid}/delete")).await.is_ok() {
                 reload();
             }
         });
     };
 
+    let status_name = move |sid: &str| {
+        statuses.get().into_iter().find(|(id, _)| id == sid).map(|(_, n)| n).unwrap_or_default()
+    };
+
     view! {
         <div class="space-y-6">
-            <h1 class="text-xl font-semibold">"Proyectos"</h1>
+            <a href="/v2/projects" class="text-sm text-slate-500 hover:underline">"← Proyectos"</a>
+            <h1 class="text-xl font-semibold">{move || title.get()}</h1>
 
             {move || {
                 if is_admin {
@@ -149,39 +149,26 @@ pub fn ProjectsPage() -> impl IntoView {
                             <CardHeader>
                                 <CardTitle>
                                     {move || {
-                                        if editing.get().is_some() { "Editar proyecto" } else { "Nuevo proyecto" }
+                                        if editing.get().is_some() { "Editar concepto" } else { "Agregar concepto" }
                                     }}
                                 </CardTitle>
                             </CardHeader>
                             <CardContent>
                                 <form on:submit=submit class="grid gap-3 sm:grid-cols-3">
                                     <div class="space-y-1 sm:col-span-2">
-                                        <label class="block text-sm font-medium text-slate-700">"Título"</label>
+                                        <label class="block text-sm font-medium text-slate-700">"Concepto"</label>
                                         <Input
-                                            value=title
-                                            on_input=Callback::new(move |v| title.set(v))
+                                            value=name
+                                            on_input=Callback::new(move |v| name.set(v))
                                             required=true
                                         />
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
-                                            "Prioridad"
-                                        </label>
-                                        <Select value=priority>
-                                            {PRIORITIES
-                                                .iter()
-                                                .map(|(v, l)| view! { <option value=*v>{*l}</option> })
-                                                .collect::<Vec<_>>()}
-                                        </Select>
-                                    </div>
-                                    <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
-                                            "Cliente (opcional)"
-                                        </label>
-                                        <Select value=contact>
-                                            <option value="">"— Ninguno —"</option>
+                                        <label class="block text-sm font-medium text-slate-700">"Estado"</label>
+                                        <Select value=status>
+                                            <option value="">"— Inicial —"</option>
                                             {move || {
-                                                contacts
+                                                statuses
                                                     .get()
                                                     .into_iter()
                                                     .map(|(id, label)| view! { <option value=id>{label}</option> })
@@ -190,52 +177,53 @@ pub fn ProjectsPage() -> impl IntoView {
                                         </Select>
                                     </div>
                                     <div class="space-y-1">
-                                        <label class="block text-sm font-medium text-slate-700">
-                                            "Categoría (opcional)"
-                                        </label>
-                                        <Select value=category>
-                                            <option value="">"— Ninguna —"</option>
-                                            {move || {
-                                                categories
-                                                    .get()
-                                                    .into_iter()
-                                                    .map(|(id, label)| view! { <option value=id>{label}</option> })
-                                                    .collect::<Vec<_>>()
-                                            }}
-                                        </Select>
+                                        <label class="block text-sm font-medium text-slate-700">"Cantidad"</label>
+                                        <Input
+                                            value=quantity
+                                            on_input=Callback::new(move |v| quantity.set(v))
+                                            inputmode="decimal"
+                                        />
+                                    </div>
+                                    <div class="space-y-1">
+                                        <label class="block text-sm font-medium text-slate-700">"Unidad"</label>
+                                        <Input value=unit on_input=Callback::new(move |v| unit.set(v)) />
+                                    </div>
+                                    <div class="space-y-1">
+                                        <label class="block text-sm font-medium text-slate-700">"Orden"</label>
+                                        <Input
+                                            value=position
+                                            on_input=Callback::new(move |v| position.set(v))
+                                            inputmode="numeric"
+                                        />
                                     </div>
                                     <div class="space-y-1">
                                         <label class="block text-sm font-medium text-slate-700">
-                                            "Presupuesto (opcional)"
+                                            "Horas estimadas"
                                         </label>
                                         <Input
-                                            value=budget
-                                            on_input=Callback::new(move |v| budget.set(v))
+                                            value=est_hours
+                                            on_input=Callback::new(move |v| est_hours.set(v))
                                             inputmode="decimal"
                                         />
                                     </div>
                                     <div class="space-y-1">
                                         <label class="block text-sm font-medium text-slate-700">
-                                            "Fecha límite (opcional)"
+                                            "Costo estimado"
                                         </label>
                                         <Input
-                                            value=scheduled
-                                            on_input=Callback::new(move |v| scheduled.set(v))
-                                            r#type="date"
+                                            value=est_cost
+                                            on_input=Callback::new(move |v| est_cost.set(v))
+                                            inputmode="decimal"
                                         />
                                     </div>
                                     <div class="space-y-1 sm:col-span-3">
                                         <label class="block text-sm font-medium text-slate-700">
-                                            "Descripción (opcional)"
+                                            "Descripción"
                                         </label>
                                         <Input
                                             value=description
                                             on_input=Callback::new(move |v| description.set(v))
                                         />
-                                    </div>
-                                    <div class="space-y-1 sm:col-span-2">
-                                        <label class="block text-sm font-medium text-slate-700">"Notas"</label>
-                                        <Input value=notes on_input=Callback::new(move |v| notes.set(v)) />
                                     </div>
                                     <div class="flex items-end gap-2">
                                         <Button r#type="submit" disabled=pending>
@@ -245,7 +233,7 @@ pub fn ProjectsPage() -> impl IntoView {
                                                 } else if editing.get().is_some() {
                                                     "Guardar cambios"
                                                 } else {
-                                                    "Crear proyecto"
+                                                    "Agregar concepto"
                                                 }
                                             }}
                                         </Button>
@@ -280,13 +268,13 @@ pub fn ProjectsPage() -> impl IntoView {
                 }
             }}
 
-            {move || match items.get() {
+            {move || match concepts.get() {
                 None => view! { <p class="text-slate-500">"Cargando…"</p> }.into_any(),
                 Some(Err(_)) => {
-                    view! { <p class="text-red-600">"No se pudieron cargar los proyectos."</p> }.into_any()
+                    view! { <p class="text-red-600">"No se pudieron cargar los conceptos."</p> }.into_any()
                 }
                 Some(Ok(list)) if list.is_empty() => {
-                    view! { <p class="text-slate-500">"Sin proyectos todavía."</p> }.into_any()
+                    view! { <p class="text-slate-500">"Sin conceptos todavía."</p> }.into_any()
                 }
                 Some(Ok(list)) => {
                     view! {
@@ -294,55 +282,41 @@ pub fn ProjectsPage() -> impl IntoView {
                             <table class="w-full text-left text-sm">
                                 <thead class="bg-slate-50 text-slate-600">
                                     <tr>
-                                        <th class="px-4 py-2 font-medium">"Título"</th>
+                                        <th class="px-4 py-2 font-medium">"Orden"</th>
+                                        <th class="px-4 py-2 font-medium">"Concepto"</th>
+                                        <th class="px-4 py-2 font-medium">"Cantidad"</th>
                                         <th class="px-4 py-2 font-medium">"Estado"</th>
-                                        <th class="px-4 py-2 font-medium">"Prioridad"</th>
-                                        <th class="px-4 py-2 font-medium">"Presupuesto"</th>
-                                        <th class="px-4 py-2 font-medium">"Fecha límite"</th>
+                                        <th class="px-4 py-2 font-medium">"Estimado (h)"</th>
                                         <th class="px-4 py-2"></th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {list
                                         .into_iter()
-                                        .map(|p| {
-                                            let id = p.id.clone();
-                                            let status = if p.status_label.is_empty() {
-                                                p.status.clone()
-                                            } else {
-                                                p.status_label.clone()
-                                            };
-                                            let prio = if p.priority_label.is_empty() {
-                                                p.priority.clone()
-                                            } else {
-                                                p.priority_label.clone()
-                                            };
-                                            let budget = p.total_budget.map(money).unwrap_or_default();
-                                            let sched = p.scheduled_at.as_deref().map(rfc3339_to_date).unwrap_or_default();
+                                        .map(|c| {
+                                            let row = c.clone();
+                                            let aid = c.id.clone();
+                                            let did = c.id.clone();
+                                            let sid = c.status_id.clone();
+                                            let qty = format!(
+                                                "{} {}",
+                                                money(c.quantity),
+                                                c.unit.clone().unwrap_or_default(),
+                                            );
+                                            let hrs = c.estimated_hours.map(|h| format!("{h:.1}")).unwrap_or_default();
                                             view! {
                                                 <tr class="border-t border-slate-100">
-                                                    <td class="px-4 py-2">{p.title}</td>
-                                                    <td class="px-4 py-2">{status}</td>
-                                                    <td class="px-4 py-2">{prio}</td>
-                                                    <td class="px-4 py-2">{budget}</td>
-                                                    <td class="px-4 py-2 text-slate-500">{sched}</td>
+                                                    <td class="px-4 py-2 text-slate-500">{c.position}</td>
+                                                    <td class="px-4 py-2">{c.name}</td>
+                                                    <td class="px-4 py-2">{qty}</td>
+                                                    <td class="px-4 py-2">{move || status_name(&sid)}</td>
+                                                    <td class="px-4 py-2">{hrs}</td>
                                                     <td class="px-4 py-2 text-right">
-                                                        {
-                                                            let vid = id.clone();
-                                                            view! {
-                                                                <a
-                                                                    href=format!("/v2/projects/{vid}")
-                                                                    class="mr-1 inline-flex items-center rounded-md px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
-                                                                >
-                                                                    "Ver"
-                                                                </a>
-                                                            }
-                                                        }
                                                         {move || {
                                                             if is_admin {
-                                                                let aid = id.clone();
-                                                                let eid = id.clone();
-                                                                let did = id.clone();
+                                                                let row = row.clone();
+                                                                let aid = aid.clone();
+                                                                let did = did.clone();
                                                                 view! {
                                                                     <Button
                                                                         variant=ButtonVariant::Ghost
@@ -353,7 +327,7 @@ pub fn ProjectsPage() -> impl IntoView {
                                                                     </Button>
                                                                     <Button
                                                                         variant=ButtonVariant::Ghost
-                                                                        on:click=move |_| begin_edit(eid.clone())
+                                                                        on:click=move |_| begin_edit(row.clone())
                                                                     >
                                                                         "Editar"
                                                                     </Button>
