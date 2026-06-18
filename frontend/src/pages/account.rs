@@ -16,13 +16,13 @@ pub fn AccountPage() -> impl IntoView {
 
     spawn_local(async move {
         if let Ok(d) = api::get_json::<ProfileData>("/api/account").await {
-            email.set(d.email);
+            email.set(d.username);
         }
     });
 
     let save = Action::new_local(move |_: &()| {
         let payload = ProfilePayload {
-            email: email.get_untracked().trim().to_string(),
+            username: email.get_untracked().trim().to_string(),
             secret: secret.get_untracked().trim().to_string(),
         };
         async move { api::post_json("/api/account", &payload).await }
@@ -46,7 +46,7 @@ pub fn AccountPage() -> impl IntoView {
         ev.prevent_default();
         message.set(None);
         if email.get().trim().is_empty() {
-            form_error.set(Some("El email es obligatorio".into()));
+            form_error.set(Some("El nombre de usuario es obligatorio".into()));
             return;
         }
         form_error.set(None);

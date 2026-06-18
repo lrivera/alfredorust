@@ -50,8 +50,8 @@ async fn resource_json_endpoints_scope_to_active_tenant_and_admins() {
     .unwrap();
     let admin = get_user_by_id(&state, &admin_id).await.unwrap().unwrap();
     let staff = get_user_by_id(&state, &staff_id).await.unwrap().unwrap();
-    let admin_token = create_session(&state, &admin.email).await.unwrap();
-    let staff_token = create_session(&state, &staff.email).await.unwrap();
+    let admin_token = create_session(&state, &admin.username).await.unwrap();
+    let staff_token = create_session(&state, &staff.username).await.unwrap();
     let host_a = "resource-json-a.miapp.local";
 
     let resource_a = create_resource(
@@ -159,8 +159,8 @@ async fn resource_json_mutations_scope_and_validate_allowed_statuses() {
     .unwrap();
     let admin = get_user_by_id(&state, &admin_id).await.unwrap().unwrap();
     let staff = get_user_by_id(&state, &staff_id).await.unwrap().unwrap();
-    let admin_token = create_session(&state, &admin.email).await.unwrap();
-    let staff_token = create_session(&state, &staff.email).await.unwrap();
+    let admin_token = create_session(&state, &admin.username).await.unwrap();
+    let staff_token = create_session(&state, &staff.username).await.unwrap();
     let host_a = "resource-mutation-a.miapp.local";
 
     let status_a = create_concept_status(
@@ -310,8 +310,8 @@ async fn resource_log_json_endpoints_scope_to_active_tenant_and_admins() {
     .unwrap();
     let admin = get_user_by_id(&state, &admin_id).await.unwrap().unwrap();
     let staff = get_user_by_id(&state, &staff_id).await.unwrap().unwrap();
-    let admin_token = create_session(&state, &admin.email).await.unwrap();
-    let staff_token = create_session(&state, &staff.email).await.unwrap();
+    let admin_token = create_session(&state, &admin.username).await.unwrap();
+    let staff_token = create_session(&state, &staff.username).await.unwrap();
     let host_a = "resource-log-json-a.miapp.local";
 
     let log_a = create_resource_log(
@@ -419,7 +419,7 @@ async fn resource_log_json_mutations_scope_and_compute_duration() {
     .await
     .unwrap();
     let admin = get_user_by_id(&state, &admin_id).await.unwrap().unwrap();
-    let token = create_session(&state, &admin.email).await.unwrap();
+    let token = create_session(&state, &admin.username).await.unwrap();
     let host_a = "resource-log-mutation-a.miapp.local";
 
     let project_a = create_project(
@@ -594,8 +594,8 @@ async fn resource_usage_json_get_scopes_to_active_tenant_and_admins() {
     .unwrap();
     let admin = get_user_by_id(&state, &admin_id).await.unwrap().unwrap();
     let staff = get_user_by_id(&state, &staff_id).await.unwrap().unwrap();
-    let admin_token = create_session(&state, &admin.email).await.unwrap();
-    let staff_token = create_session(&state, &staff.email).await.unwrap();
+    let admin_token = create_session(&state, &admin.username).await.unwrap();
+    let staff_token = create_session(&state, &staff.username).await.unwrap();
     let host_a = "resource-usage-json-a.miapp.local";
 
     let resource_a = create_resource(
@@ -718,7 +718,7 @@ async fn resource_usage_json_mutations_manage_allocations_and_delete() {
     .await
     .unwrap();
     let admin = get_user_by_id(&state, &admin_id).await.unwrap().unwrap();
-    let token = create_session(&state, &admin.email).await.unwrap();
+    let token = create_session(&state, &admin.username).await.unwrap();
     let host = "resource-usage-mutation.miapp.local";
 
     let resource_id = create_resource(

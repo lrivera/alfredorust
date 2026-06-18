@@ -63,9 +63,9 @@ async fn project_json_endpoints_scope_and_redact_money() {
     let admin = get_user_by_id(&state, &admin_id).await.unwrap().unwrap();
     let staff = get_user_by_id(&state, &staff_id).await.unwrap().unwrap();
     let blocked = get_user_by_id(&state, &blocked_id).await.unwrap().unwrap();
-    let admin_token = create_session(&state, &admin.email).await.unwrap();
-    let staff_token = create_session(&state, &staff.email).await.unwrap();
-    let blocked_token = create_session(&state, &blocked.email).await.unwrap();
+    let admin_token = create_session(&state, &admin.username).await.unwrap();
+    let staff_token = create_session(&state, &staff.username).await.unwrap();
+    let blocked_token = create_session(&state, &blocked.username).await.unwrap();
     let host_a = "project-json-a.miapp.local";
 
     let project_a = create_project(
@@ -207,8 +207,8 @@ async fn project_json_mutations_scope_and_advance_base_project() {
     .unwrap();
     let admin = get_user_by_id(&state, &admin_id).await.unwrap().unwrap();
     let staff = get_user_by_id(&state, &staff_id).await.unwrap().unwrap();
-    let admin_token = create_session(&state, &admin.email).await.unwrap();
-    let staff_token = create_session(&state, &staff.email).await.unwrap();
+    let admin_token = create_session(&state, &admin.username).await.unwrap();
+    let staff_token = create_session(&state, &staff.username).await.unwrap();
     let host_a = "project-mutation-a.miapp.local";
 
     let category_a = create_category(
@@ -373,8 +373,8 @@ async fn project_workflow_json_mutations_manage_statuses_and_concepts() {
     .unwrap();
     let admin = get_user_by_id(&state, &admin_id).await.unwrap().unwrap();
     let staff = get_user_by_id(&state, &staff_id).await.unwrap().unwrap();
-    let admin_token = create_session(&state, &admin.email).await.unwrap();
-    let staff_token = create_session(&state, &staff.email).await.unwrap();
+    let admin_token = create_session(&state, &admin.username).await.unwrap();
+    let staff_token = create_session(&state, &staff.username).await.unwrap();
     let host = "project-workflow-json.miapp.local";
 
     let project_id = create_project(

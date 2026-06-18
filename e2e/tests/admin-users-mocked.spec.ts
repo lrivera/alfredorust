@@ -7,7 +7,7 @@ import { test, expect } from "@playwright/test";
  */
 
 const ADMIN_ME = {
-  email: "admin@example.com",
+  username: "admin@example.com",
   company: "Acme",
   company_slug: "acme",
   role: "admin",
@@ -15,7 +15,7 @@ const ADMIN_ME = {
   companies: [{ id: "c1", name: "Acme", slug: "acme", active: true }],
 };
 
-const STAFF_ME = { ...ADMIN_ME, email: "staff@example.com", role: "staff" };
+const STAFF_ME = { ...ADMIN_ME, username: "staff@example.com", role: "staff" };
 
 const COMPANIES = [
   {
@@ -34,7 +34,7 @@ test.describe("admin / users (mocked API)", () => {
     const users = [
       {
         id: "u1",
-        email: "admin@example.com",
+        username: "admin@example.com",
         role: "admin",
         companies: ["Acme"],
         memberships: [
@@ -43,7 +43,7 @@ test.describe("admin / users (mocked API)", () => {
       },
       {
         id: "u2",
-        email: "worker@example.com",
+        username: "worker@example.com",
         role: "staff",
         companies: ["Acme"],
         memberships: [
@@ -81,7 +81,7 @@ test.describe("admin / users (mocked API)", () => {
         lastPost = JSON.parse(req.postData() || "{}");
         users.push({
           id: "u9",
-          email: lastPost.email,
+          username: lastPost.username,
           role: "staff",
           companies: ["Acme"],
           memberships: lastPost.memberships,
@@ -98,7 +98,7 @@ test.describe("admin / users (mocked API)", () => {
     await page.getByRole("button", { name: /Crear usuario|Guardando/ }).click();
 
     await expect(page.getByRole("cell", { name: "new@example.com" })).toBeVisible();
-    expect(lastPost.email).toBe("new@example.com");
+    expect(lastPost.username).toBe("new@example.com");
     expect(lastPost.memberships).toHaveLength(1);
     expect(lastPost.memberships[0].company_id).toBe("c1");
   });
@@ -107,7 +107,7 @@ test.describe("admin / users (mocked API)", () => {
     const users = [
       {
         id: "u2",
-        email: "worker@example.com",
+        username: "worker@example.com",
         role: "staff",
         companies: ["Acme"],
         memberships: [

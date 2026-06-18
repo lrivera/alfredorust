@@ -7,7 +7,7 @@ import { test, expect } from "@playwright/test";
  */
 
 const STAFF_ME = {
-  email: "staff@example.com",
+  username: "staff@example.com",
   company: "Acme",
   company_slug: "acme",
   role: "staff",
@@ -26,7 +26,7 @@ test.describe("account (mocked API)", () => {
         saved = JSON.parse(req.postData() || "{}");
         return route.fulfill({ json: { ok: true } });
       }
-      return route.fulfill({ json: { id: "u1", email: "staff@example.com" } });
+      return route.fulfill({ json: { id: "u1", username: "staff@example.com" } });
     });
 
     await page.goto("/v2/");
@@ -40,7 +40,7 @@ test.describe("account (mocked API)", () => {
     await page.getByRole("button", { name: /Guardar cambios|Guardando/ }).click();
 
     await expect(page.getByText("Tu información se guardó correctamente")).toBeVisible();
-    expect(saved.email).toBe("staff2@example.com");
+    expect(saved.username).toBe("staff2@example.com");
     // Secret left blank -> backend keeps the existing one (never exposed here).
     expect(saved.secret).toBe("");
   });
@@ -53,7 +53,7 @@ test.describe("account (mocked API)", () => {
         posted = true;
         return route.fulfill({ json: { ok: true } });
       }
-      return route.fulfill({ json: { id: "u1", email: "staff@example.com" } });
+      return route.fulfill({ json: { id: "u1", username: "staff@example.com" } });
     });
 
     await page.goto("/v2/account");

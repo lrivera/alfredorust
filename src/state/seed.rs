@@ -232,10 +232,10 @@ pub(super) async fn seed_default_users(
         // Upsert user
         let res = users_coll
             .update_one(
-                doc! { "email": &user.email },
+                doc! { "username": &user.username },
                 doc! {
                     "$set": {
-                        "email": &user.email,
+                        "username": &user.username,
                         "secret": &user.secret,
                         "company": &primary_company_id,
                         "companies": &companies_final,
@@ -248,7 +248,7 @@ pub(super) async fn seed_default_users(
             let inserted = users_coll
                 .insert_one(User {
                     id: None,
-                    email: user.email.clone(),
+                    username: user.username.clone(),
                     secret: user.secret.clone(),
                     company_id: Some(primary_company_id.clone()),
                     company_ids: companies_final.clone(),
@@ -260,7 +260,7 @@ pub(super) async fn seed_default_users(
                 .context("missing user id after insert")?
         } else {
             users_coll
-                .find_one(doc! { "email": &user.email })
+                .find_one(doc! { "username": &user.username })
                 .await?
                 .and_then(|u| u.id)
                 .context("missing user id after update")?

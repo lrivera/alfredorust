@@ -6,7 +6,7 @@ import { test, expect } from "@playwright/test";
  */
 
 const ADMIN_ME = {
-  email: "admin@example.com",
+  username: "admin@example.com",
   company: "Acme",
   company_slug: "acme",
   role: "admin",
@@ -14,7 +14,7 @@ const ADMIN_ME = {
   companies: [{ id: "c1", name: "Acme", slug: "acme", active: true }],
 };
 
-const STAFF_ME = { ...ADMIN_ME, email: "staff@example.com", role: "staff" };
+const STAFF_ME = { ...ADMIN_ME, username: "staff@example.com", role: "staff" };
 
 test.describe("cfdi download (mocked API)", () => {
   test("admin starts a download and sees the job appear", async ({ page }) => {

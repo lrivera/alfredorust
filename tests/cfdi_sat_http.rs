@@ -30,7 +30,7 @@ async fn cfdi_json_endpoints_scope_to_active_tenant() {
     .await
     .unwrap();
     let user = get_user_by_id(&state, &user_id).await.unwrap().unwrap();
-    let token = create_session(&state, &user.email).await.unwrap();
+    let token = create_session(&state, &user.username).await.unwrap();
     let host_a = "cfdi-json-a.miapp.local";
     let uuid_a = "11111111-1111-1111-1111-111111111111";
     let uuid_b = "22222222-2222-2222-2222-222222222222";
@@ -124,7 +124,7 @@ async fn cfdi_json_endpoints_scope_to_active_tenant() {
     .await
     .unwrap();
     let staff = get_user_by_id(&state, &staff_id).await.unwrap().unwrap();
-    let staff_token = create_session(&state, &staff.email).await.unwrap();
+    let staff_token = create_session(&state, &staff.username).await.unwrap();
     let app = build_app(shared);
     let (status, _body) = get_with_cookie(app, host_a, "/api/admin/cfdis/data", &staff_token).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
@@ -169,8 +169,8 @@ async fn cfdi_job_endpoints_scope_to_company_and_admin() {
     .unwrap();
     let admin = get_user_by_id(&state, &admin_id).await.unwrap().unwrap();
     let staff = get_user_by_id(&state, &staff_id).await.unwrap().unwrap();
-    let admin_token = create_session(&state, &admin.email).await.unwrap();
-    let staff_token = create_session(&state, &staff.email).await.unwrap();
+    let admin_token = create_session(&state, &admin.username).await.unwrap();
+    let staff_token = create_session(&state, &staff.username).await.unwrap();
     let host_a = "cfdi-jobs-a.miapp.local";
 
     {
@@ -280,8 +280,8 @@ async fn sat_config_json_endpoints_scope_and_redact_sensitive_fields() {
     .unwrap();
     let admin = get_user_by_id(&state, &admin_id).await.unwrap().unwrap();
     let staff = get_user_by_id(&state, &staff_id).await.unwrap().unwrap();
-    let admin_token = create_session(&state, &admin.email).await.unwrap();
-    let staff_token = create_session(&state, &staff.email).await.unwrap();
+    let admin_token = create_session(&state, &admin.username).await.unwrap();
+    let staff_token = create_session(&state, &staff.username).await.unwrap();
     let host_a = "sat-json-a.miapp.local";
 
     let config_a = bson::oid::ObjectId::new();

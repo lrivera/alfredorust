@@ -13,7 +13,7 @@ use super::{AppState, SESSION_TTL_SECONDS};
 #[derive(Clone)]
 pub struct UserWithCompany {
     pub id: ObjectId,
-    pub email: String,
+    pub username: String,
     pub secret: String,
     pub company_id: ObjectId,
     pub company_slug: String,
@@ -27,18 +27,20 @@ pub struct UserWithCompany {
     pub permissions: Vec<UserPermission>,
 }
 
-pub async fn find_user(state: &AppState, email: &str) -> Result<Option<UserWithCompany>> {
-    if let Some(user) = state.users.find_one(doc! { "email": email }).await? {
+pub async fn find_user(state: &AppState, username: &str) -> Result<Option<UserWithCompany>> {
+    if let Some(user) = state.users.find_one(doc! { "username": username }).await? {
         build_user_with_company(state, user).await.map(Some)
     } else {
         Ok(None)
     }
 }
 
-pub async fn create_session(state: &AppState, email: &str) -> Result<String> {
+pub async fn create_session(state: &AppState, username: &str) -> Result<String> {
     let _ = state
         .sessions
-        .delete_many(doc! { "user_email": email.to_string() })
+        // `user_email` is the internal session→user link field; it carries the
+        // username value (kept named as-is to avoid a sessions migration).
+        .delete_many(doc! { "user_email": username.to_string() })
         .await;
 
     let mut token_bytes = [0u8; 32];
@@ -53,7 +55,7 @@ pub async fn create_session(state: &AppState, email: &str) -> Result<String> {
         .insert_one(Session {
             id: None,
             token: token.clone(),
-            user_email: email.to_string(),
+            user_email: username.to_string(),
             expires_at,
         })
         .await?;
@@ -97,7 +99,7 @@ pub async fn get_user_by_id(state: &AppState, id: &ObjectId) -> Result<Option<Us
 
 pub async fn create_user(
     state: &AppState,
-    email: &str,
+    username: &str,
     secret: &str,
     company_roles: &[(ObjectId, UserRole)],
 ) -> Result<ObjectId> {
@@ -105,18 +107,18 @@ pub async fn create_user(
         .iter()
         .map(|(id, role)| (id.clone(), role.clone(), Vec::new()))
         .collect::<Vec<_>>();
-    create_user_with_permissions(state, email, secret, &company_roles_permissions).await
+    create_user_with_permissions(state, username, secret, &company_roles_permissions).await
 }
 
-/// Whether a user already exists with this username (stored in the `email`
-/// field). `exclude` skips a given user so an update can keep its own name.
+/// Whether a user already exists with this username. `exclude` skips a given
+/// user so an update can keep its own name.
 /// Usernames are the login identifier and must be unique.
 pub async fn username_taken(
     state: &AppState,
     username: &str,
     exclude: Option<&ObjectId>,
 ) -> Result<bool> {
-    let existing = state.users.find_one(doc! { "email": username }).await?;
+    let existing = state.users.find_one(doc! { "username": username }).await?;
     Ok(match existing {
         Some(user) => user.id.as_ref() != exclude,
         None => false,
@@ -125,13 +127,13 @@ pub async fn username_taken(
 
 pub async fn create_user_with_permissions(
     state: &AppState,
-    email: &str,
+    username: &str,
     secret: &str,
     company_roles_permissions: &[(ObjectId, UserRole, Vec<UserPermission>)],
 ) -> Result<ObjectId> {
     // Usernames are unique — refuse to create a duplicate from any caller.
-    if username_taken(state, email, None).await? {
-        anyhow::bail!("username '{email}' already exists");
+    if username_taken(state, username, None).await? {
+        anyhow::bail!("username '{username}' already exists");
     }
     let (primary, _) = company_roles_permissions
         .first()
@@ -145,7 +147,7 @@ pub async fn create_user_with_permissions(
         .users
         .insert_one(User {
             id: None,
-            email: email.to_string(),
+            username: username.to_string(),
             secret: secret.to_string(),
             company_id: Some(primary),
             company_ids: company_ids.clone(),
@@ -179,7 +181,7 @@ pub async fn create_user_with_permissions(
 pub async fn update_user(
     state: &AppState,
     id: &ObjectId,
-    email: &str,
+    username: &str,
     secret: &str,
     company_roles: &[(ObjectId, UserRole)],
 ) -> Result<()> {
@@ -187,13 +189,13 @@ pub async fn update_user(
         .iter()
         .map(|(id, role)| (id.clone(), role.clone(), Vec::new()))
         .collect::<Vec<_>>();
-    update_user_with_permissions(state, id, email, secret, &company_roles_permissions).await
+    update_user_with_permissions(state, id, username, secret, &company_roles_permissions).await
 }
 
 pub async fn update_user_with_permissions(
     state: &AppState,
     id: &ObjectId,
-    email: &str,
+    username: &str,
     secret: &str,
     company_roles_permissions: &[(ObjectId, UserRole, Vec<UserPermission>)],
 ) -> Result<()> {
@@ -209,7 +211,7 @@ pub async fn update_user_with_permissions(
         .users
         .update_one(
             doc! { "_id": id },
-            doc! { "$set": {"email": email, "secret": secret, "company": primary, "companies": company_ids} },
+            doc! { "$set": {"username": username, "secret": secret, "company": primary, "companies": company_ids} },
         )
         .await?;
 
@@ -380,7 +382,7 @@ async fn build_user_with_company(state: &AppState, user: User) -> Result<UserWit
     let effective_permissions = company_permissions.first().cloned().unwrap_or_default();
     Ok(UserWithCompany {
         id,
-        email: user.email,
+        username: user.username,
         secret: user.secret,
         company_id: primary_company_id,
         company_slug: primary_slug,

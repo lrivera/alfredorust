@@ -53,7 +53,7 @@ test.describe("staff permissions (live · test tenant · self-cleaning)", () => 
       permissions: ["view_projects", "view_timeline"],
     };
     const create = await request.post(`${test2Host}/api/admin/users`, {
-      data: { email: STAFF_EMAIL, secret: STAFF_SECRET, memberships: [membership] },
+      data: { username: STAFF_EMAIL, secret: STAFF_SECRET, memberships: [membership] },
     });
     expect(create.status(), await create.text()).toBe(201);
     const userId: string = (await create.json()).id;

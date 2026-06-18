@@ -30,13 +30,13 @@ pub async fn setup(session: SessionUser) -> Response {
         .map(|permission| permission.as_str())
         .collect::<Vec<_>>();
 
-    match build_totp(&current.company_name, &current.email, &current.secret) {
+    match build_totp(&current.company_name, &current.username, &current.secret) {
         Ok(totp) => {
             let url = totp.get_url(); // v5: no args, already contains issuer/account
             (
                 StatusCode::OK,
                 Json(serde_json::json!({
-                    "email": current.email,
+                    "username": current.username,
                     "company": current.company_name,
                     "role": current.role.as_str(),
                     "permissions": permissions,

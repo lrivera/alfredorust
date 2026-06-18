@@ -3,7 +3,7 @@ import { test, expect, type Page } from "@playwright/test";
 /** Hermetic tests for the resources and resource-logs screens (API mocked). */
 
 const ADMIN_ME = {
-  email: "admin@example.com",
+  username: "admin@example.com",
   company: "Acme",
   company_slug: "acme",
   role: "admin",

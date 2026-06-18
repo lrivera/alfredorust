@@ -356,7 +356,7 @@ fn Topbar() -> impl IntoView {
     view! {
         <header class="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-3">
             <div>
-                <p class="text-sm text-slate-500">{me.email.clone()}</p>
+                <p class="text-sm text-slate-500">{me.username.clone()}</p>
                 <p class="font-semibold">
                     {me.company.clone()} " · " <span class="text-slate-500">{me.role.clone()}</span>
                 </p>

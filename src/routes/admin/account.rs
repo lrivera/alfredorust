@@ -43,15 +43,15 @@ pub(crate) struct AccountFormData {
 #[derive(Serialize)]
 pub struct AccountData {
     id: String,
-    email: String,
+    username: String,
 }
 
 #[derive(Deserialize, utoipa::ToSchema)]
 pub struct AccountPayload {
-    email: String,
+    username: String,
     /// New TOTP secret. The endpoint never returns the current secret, so a
     /// blank value here means "keep the existing one" — letting a client save
-    /// an email-only change without knowing or rotating the authenticator.
+    /// a username-only change without knowing or rotating the authenticator.
     secret: String,
 }
 
@@ -71,7 +71,7 @@ pub async fn account_edit(
     };
 
     let form = AccountFormView {
-        email: session.user.email.clone(),
+        email: session.user.username.clone(),
         secret: session.user.secret.clone(),
     };
 
@@ -96,7 +96,7 @@ pub async fn account_edit(
 pub async fn account_profile_data_api(SessionUser(session): SessionUser) -> Json<AccountData> {
     Json(AccountData {
         id: session.user.id.to_hex(),
-        email: session.user.email,
+        username: session.user.username,
     })
 }
 
@@ -118,8 +118,8 @@ pub async fn account_profile_update_api(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<AccountPayload>,
 ) -> impl IntoResponse {
-    let email = payload.email.trim().to_string();
-    if email.is_empty() {
+    let username = payload.username.trim().to_string();
+    if username.is_empty() {
         return StatusCode::BAD_REQUEST.into_response();
     }
     let user = session_user.user();
@@ -145,7 +145,7 @@ pub async fn account_profile_update_api(
     match update_user(
         &state,
         session_user.user_id(),
-        &email,
+        &username,
         &secret,
         &company_roles,
     )

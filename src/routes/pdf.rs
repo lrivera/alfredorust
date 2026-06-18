@@ -41,7 +41,7 @@ pub struct PdfPreviewResponse {
 
 pub async fn pdf_editor(SessionUser(session): SessionUser) -> Result<Html<String>, StatusCode> {
     render(PdfEditorTemplate {
-        session_email: session.user.email,
+        session_email: session.user.username,
     })
 }
 

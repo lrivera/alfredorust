@@ -157,7 +157,7 @@ pub(super) async fn user_options(
             .filter(|u| u.company_ids.contains(company_id))
             .map(|u| SimpleOption {
                 value: u.id.to_hex(),
-                label: u.email,
+                label: u.username,
                 selected: selected.map(|s| s == &u.id).unwrap_or(false),
             }),
     );

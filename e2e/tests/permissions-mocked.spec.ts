@@ -8,7 +8,7 @@ import { test, expect, type Page } from "@playwright/test";
 
 function meWith(role: string, permissions: string[]) {
   return {
-    email: role === "admin" ? "admin@example.com" : "staff@example.com",
+    username: role === "admin" ? "admin@example.com" : "staff@example.com",
     company: "Acme",
     company_slug: "acme",
     role,

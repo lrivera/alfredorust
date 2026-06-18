@@ -36,7 +36,7 @@ async fn users_crud_and_memberships_work() {
     .unwrap();
 
     let created = get_user_by_id(&state, &user_id).await.unwrap().unwrap();
-    assert_eq!(created.email, "tester@example.com");
+    assert_eq!(created.username, "tester@example.com");
     assert_eq!(created.role, UserRole::Admin);
     assert!(created.company_ids.contains(&extra_company));
     assert_eq!(created.company_roles.len(), 2);
@@ -52,7 +52,7 @@ async fn users_crud_and_memberships_work() {
     .await
     .unwrap();
     let updated = get_user_by_id(&state, &user_id).await.unwrap().unwrap();
-    assert_eq!(updated.email, "tester+updated@example.com");
+    assert_eq!(updated.username, "tester+updated@example.com");
     assert_eq!(updated.company_roles.len(), 1);
     assert_eq!(updated.role, UserRole::Staff);
 
@@ -185,11 +185,11 @@ async fn sessions_resolve_user() {
     let state = ctx.state.clone();
 
     let user = list_users(&state).await.unwrap().remove(0);
-    let token = create_session(&state, &user.email).await.unwrap();
+    let token = create_session(&state, &user.username).await.unwrap();
     let fetched = find_user_by_session(&state, &token).await.unwrap();
     assert!(fetched.is_some());
     let fetched = fetched.unwrap();
-    assert_eq!(fetched.email, user.email);
+    assert_eq!(fetched.username, user.username);
 
     delete_session(&state, &token).await.unwrap();
     assert!(

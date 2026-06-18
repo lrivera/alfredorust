@@ -62,7 +62,8 @@ impl Default for UserRole {
 /// Seed user definition as stored in users.json (company referenced by name).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SeedUser {
-    pub email: String,
+    #[serde(alias = "email")]
+    pub username: String,
     pub secret: String,
     /// Primary company by name (backwards compatibility).
     pub company: String,
@@ -122,7 +123,8 @@ fn default_mxn() -> String {
 pub struct User {
     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
     pub id: Option<ObjectId>,
-    pub email: String,
+    /// Login identifier — a unique handle, not a validated email address.
+    pub username: String,
     pub secret: String,
 
     /// Primary tenant the user belongs to (for compatibility).

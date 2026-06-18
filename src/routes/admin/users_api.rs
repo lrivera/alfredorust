@@ -45,7 +45,7 @@ pub struct UserMembershipData {
 #[derive(Serialize)]
 pub struct UserRowData {
     pub id: String,
-    pub email: String,
+    pub username: String,
     pub role: String,
     pub companies: Vec<String>,
     pub memberships: Vec<UserMembershipData>,
@@ -62,7 +62,7 @@ pub struct UserMembershipPayload {
 
 #[derive(Deserialize, utoipa::ToSchema)]
 pub struct UserCreatePayload {
-    pub email: String,
+    pub username: String,
     #[serde(default)]
     pub secret: Option<String>,
     #[serde(default)]
@@ -71,7 +71,7 @@ pub struct UserCreatePayload {
 
 #[derive(Deserialize, utoipa::ToSchema)]
 pub struct UserUpdatePayload {
-    pub email: String,
+    pub username: String,
     #[serde(default)]
     pub secret: Option<String>,
     #[serde(default)]
@@ -123,7 +123,7 @@ fn user_row_data(user: UserWithCompany) -> UserRowData {
 
     UserRowData {
         id: user.id.to_hex(),
-        email: user.email,
+        username: user.username,
         role: user.role.as_str().to_string(),
         companies: user.company_names.clone(),
         memberships,
@@ -245,13 +245,13 @@ pub async fn api_users_create(
         return StatusCode::FORBIDDEN.into_response();
     }
 
-    let email = payload.email.trim().to_string();
-    if email.is_empty() {
+    let username = payload.username.trim().to_string();
+    if username.is_empty() {
         return json_error(StatusCode::UNPROCESSABLE_ENTITY, "El nombre de usuario es obligatorio");
     }
 
     // Usernames are unique (they're the login identifier).
-    match username_taken(&state, &email, None).await {
+    match username_taken(&state, &username, None).await {
         Ok(true) => return json_error(StatusCode::CONFLICT, "El nombre de usuario ya existe"),
         Ok(false) => {}
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
@@ -277,7 +277,7 @@ pub async fn api_users_create(
         .map(|value| value.to_string())
         .unwrap_or_else(|| generate_base32_secret_n(DEFAULT_SECRET_BYTES));
 
-    match create_user_with_permissions(&state, &email, &secret, &company_roles).await {
+    match create_user_with_permissions(&state, &username, &secret, &company_roles).await {
         Ok(id) => (
             StatusCode::CREATED,
             Json(serde_json::json!({ "id": id.to_hex() })),
@@ -285,7 +285,7 @@ pub async fn api_users_create(
             .into_response(),
         Err(_) => json_error(
             StatusCode::BAD_REQUEST,
-            "could not create user (duplicate email?)",
+            "could not create user (duplicate username?)",
         ),
     }
 }
@@ -332,13 +332,13 @@ pub async fn api_users_update(
         return StatusCode::FORBIDDEN.into_response();
     }
 
-    let email = payload.email.trim().to_string();
-    if email.is_empty() {
+    let username = payload.username.trim().to_string();
+    if username.is_empty() {
         return json_error(StatusCode::UNPROCESSABLE_ENTITY, "El nombre de usuario es obligatorio");
     }
 
     // Renaming to a username another user already holds is rejected.
-    match username_taken(&state, &email, Some(&object_id)).await {
+    match username_taken(&state, &username, Some(&object_id)).await {
         Ok(true) => return json_error(StatusCode::CONFLICT, "El nombre de usuario ya existe"),
         Ok(false) => {}
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
@@ -361,7 +361,7 @@ pub async fn api_users_update(
         .map(|value| value.to_string())
         .unwrap_or_else(|| target.secret.clone());
 
-    match update_user_with_permissions(&state, &object_id, &email, &secret, &company_roles).await {
+    match update_user_with_permissions(&state, &object_id, &username, &secret, &company_roles).await {
         Ok(_) => Json(serde_json::json!({ "ok": true })).into_response(),
         Err(_) => json_error(StatusCode::BAD_REQUEST, "could not update user"),
     }

@@ -55,7 +55,7 @@ fn opt(value: String) -> Option<String> {
 #[component]
 pub fn UsersPage() -> impl IntoView {
     let me = use_context::<Me>().expect("Me context");
-    let my_email = me.email.clone();
+    let my_username = me.username.clone();
 
     let items = RwSignal::new(None::<Result<Vec<UserRowData>, ApiError>>);
     let reload = move || {
@@ -113,7 +113,7 @@ pub fn UsersPage() -> impl IntoView {
             })
             .collect();
         let payload = UserPayload {
-            email: email.get_untracked().trim().to_string(),
+            username: email.get_untracked().trim().to_string(),
             secret: opt(secret.get_untracked()),
             memberships,
         };
@@ -160,7 +160,7 @@ pub fn UsersPage() -> impl IntoView {
     let begin_edit = move |id: String| {
         spawn_local(async move {
             if let Ok(d) = api::get_json::<UserRowData>(&format!("/api/admin/users/{id}")).await {
-                email.set(d.email);
+                email.set(d.username);
                 secret.set(String::new());
                 memberships.update(|rows| {
                     for r in rows.iter_mut() {
@@ -316,7 +316,7 @@ pub fn UsersPage() -> impl IntoView {
             </Card>
 
             {move || {
-                let my_email = my_email.clone();
+                let my_username = my_username.clone();
                 match items.get() {
                     None => view! { <p class="text-slate-500">"Cargando…"</p> }.into_any(),
                     Some(Err(_)) => {
@@ -344,10 +344,10 @@ pub fn UsersPage() -> impl IntoView {
                                             .map(|u| {
                                                 let eid = u.id.clone();
                                                 let did = u.id.clone();
-                                                let is_self = u.email == my_email;
+                                                let is_self = u.username == my_username;
                                                 view! {
                                                     <tr class="border-t border-slate-100">
-                                                        <td class="px-4 py-2">{u.email}</td>
+                                                        <td class="px-4 py-2">{u.username}</td>
                                                         <td class="px-4 py-2 text-slate-500">
                                                             {u.companies.join(", ")}
                                                         </td>

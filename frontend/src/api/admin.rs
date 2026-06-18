@@ -55,7 +55,7 @@ pub struct UserMembershipData {
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct UserRowData {
     pub id: String,
-    pub email: String,
+    pub username: String,
     pub role: String,
     #[serde(default)]
     pub companies: Vec<String>,
@@ -75,7 +75,7 @@ pub struct UserMembershipPayload {
 /// `secret` is generated on create and kept unchanged on update.
 #[derive(Clone, Debug, Serialize)]
 pub struct UserPayload {
-    pub email: String,
+    pub username: String,
     pub secret: Option<String>,
     pub memberships: Vec<UserMembershipPayload>,
 }
@@ -189,13 +189,13 @@ pub struct CfdiJob {
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct ProfileData {
     pub id: String,
-    pub email: String,
+    pub username: String,
 }
 
 /// Update payload for the own-account form. Mirrors the backend `AccountPayload`.
 /// A blank `secret` tells the backend to keep the existing one.
 #[derive(Clone, Debug, Serialize)]
 pub struct ProfilePayload {
-    pub email: String,
+    pub username: String,
     pub secret: String,
 }

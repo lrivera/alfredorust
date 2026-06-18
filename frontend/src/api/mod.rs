@@ -40,7 +40,7 @@ pub struct Company {
 /// Bootstrap payload from `GET /api/me`. Mirrors the backend `MeResponse`.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct Me {
-    pub email: String,
+    pub username: String,
     pub company: String,
     pub company_slug: String,
     pub role: String,
@@ -79,7 +79,7 @@ pub enum ApiError {
 
 #[derive(Serialize)]
 struct LoginBody<'a> {
-    email: &'a str,
+    username: &'a str,
     code: &'a str,
 }
 
@@ -108,9 +108,9 @@ pub async fn get_me() -> Result<Me, ApiError> {
 }
 
 /// Passwordless TOTP login. The server sets the session cookie on success.
-pub async fn login(email: &str, code: &str) -> Result<LoginOk, ApiError> {
+pub async fn login(username: &str, code: &str) -> Result<LoginOk, ApiError> {
     let resp = Request::post("/login")
-        .json(&LoginBody { email, code })
+        .json(&LoginBody { username, code })
         .map_err(|e| ApiError::Transport(e.to_string()))?
         .send()
         .await
@@ -184,7 +184,7 @@ mod tests {
 
     fn me_with(perms: &[&str]) -> Me {
         Me {
-            email: "u@example.com".into(),
+            username: "u@example.com".into(),
             company: "Acme".into(),
             company_slug: "acme".into(),
             role: "admin".into(),

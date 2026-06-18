@@ -39,7 +39,7 @@ async fn account_json_profile_redacts_secret_and_updates_from_payload() {
         get_with_cookie(build_app(shared.clone()), host, "/api/account", &token).await;
     assert_eq!(status, StatusCode::OK);
     let profile: serde_json::Value = serde_json::from_str(&body).unwrap();
-    assert_eq!(profile["email"], "account-json@example.com");
+    assert_eq!(profile["username"], "account-json@example.com");
     assert!(profile.get("secret").is_none());
     assert!(profile.get("otpauth_url").is_none());
 
@@ -49,14 +49,14 @@ async fn account_json_profile_redacts_secret_and_updates_from_payload() {
         "/api/account",
         &token,
         serde_json::json!({
-            "email": "account-json-updated@example.com",
+            "username": "account-json-updated@example.com",
             "secret": "NEWSECRET"
         }),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let updated = get_user_by_id(&state, &user_id).await.unwrap().unwrap();
-    assert_eq!(updated.email, "account-json-updated@example.com");
+    assert_eq!(updated.username, "account-json-updated@example.com");
     assert_eq!(updated.secret, "NEWSECRET");
 
     common::teardown(Some(ctx)).await;
@@ -95,14 +95,14 @@ async fn account_json_blank_secret_keeps_existing() {
         "/api/account",
         &token,
         serde_json::json!({
-            "email": "account-keep-renamed@example.com",
+            "username": "account-keep-renamed@example.com",
             "secret": ""
         }),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let updated = get_user_by_id(&state, &user_id).await.unwrap().unwrap();
-    assert_eq!(updated.email, "account-keep-renamed@example.com");
+    assert_eq!(updated.username, "account-keep-renamed@example.com");
     assert_eq!(updated.secret, "KEEPME", "blank secret must keep the old one");
 
     common::teardown(Some(ctx)).await;
@@ -273,7 +273,7 @@ async fn finance_endpoints_render_seeded_data() {
     // Use the first seeded user/session and its active company for host/subdomain.
     let user = list_users(&state).await.unwrap().remove(0);
     let host = format!("{}.miapp.local", user.company_slug);
-    let token = create_session(&state, &user.email).await.unwrap();
+    let token = create_session(&state, &user.username).await.unwrap();
 
     // Collect expected strings from the database to assert they appear in responses.
     let companies = list_companies(&state).await.unwrap();
@@ -366,7 +366,7 @@ async fn finance_json_endpoints_scope_to_active_tenant() {
     .await
     .unwrap();
     let user = get_user_by_id(&state, &user_id).await.unwrap().unwrap();
-    let token = create_session(&state, &user.email).await.unwrap();
+    let token = create_session(&state, &user.username).await.unwrap();
     let host_a = "finance-json-a.miapp.local";
 
     let category_a = create_category(
@@ -702,7 +702,7 @@ async fn finance_json_endpoints_scope_to_active_tenant() {
     .await
     .unwrap();
     let staff = get_user_by_id(&state, &staff_id).await.unwrap().unwrap();
-    let staff_token = create_session(&state, &staff.email).await.unwrap();
+    let staff_token = create_session(&state, &staff.username).await.unwrap();
     let app = build_app(shared);
     let (status, _) = get_with_cookie(app, host_a, "/api/admin/accounts", &staff_token).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
@@ -749,7 +749,7 @@ async fn recurring_plan_json_mutations_scope_and_report_generation_side_effects(
     .await
     .unwrap();
     let admin = get_user_by_id(&state, &admin_id).await.unwrap().unwrap();
-    let token = create_session(&state, &admin.email).await.unwrap();
+    let token = create_session(&state, &admin.username).await.unwrap();
     let host_a = "recurring-plan-mutation-a.miapp.local";
 
     let category_a = create_category(
@@ -930,7 +930,7 @@ async fn order_json_mutations_scope_and_report_planned_entry_side_effects() {
     .await
     .unwrap();
     let admin = get_user_by_id(&state, &admin_id).await.unwrap().unwrap();
-    let token = create_session(&state, &admin.email).await.unwrap();
+    let token = create_session(&state, &admin.username).await.unwrap();
     let host_a = "order-mutation-a.miapp.local";
 
     let category_a = create_category(
@@ -1110,7 +1110,7 @@ async fn planned_entry_json_mutations_scope_and_create_payment_side_effects() {
     .await
     .unwrap();
     let admin = get_user_by_id(&state, &admin_id).await.unwrap().unwrap();
-    let token = create_session(&state, &admin.email).await.unwrap();
+    let token = create_session(&state, &admin.username).await.unwrap();
     let host_a = "planned-entry-mutation-a.miapp.local";
 
     let category_a = create_category(
@@ -1362,7 +1362,7 @@ async fn transaction_json_mutations_scope_and_report_side_effects() {
     .await
     .unwrap();
     let admin = get_user_by_id(&state, &admin_id).await.unwrap().unwrap();
-    let token = create_session(&state, &admin.email).await.unwrap();
+    let token = create_session(&state, &admin.username).await.unwrap();
     let host_a = "transaction-mutation-a.miapp.local";
 
     let category_a = create_category(
@@ -1547,7 +1547,7 @@ async fn planned_entry_pay_endpoint_creates_transaction() {
 
     let user = list_users(&state).await.unwrap().remove(0);
     let host = format!("{}.miapp.local", user.company_slug);
-    let token = create_session(&state, &user.email).await.unwrap();
+    let token = create_session(&state, &user.username).await.unwrap();
     let company_id = user.company_id.clone();
     let project_id = create_project(
         &state,
@@ -1635,7 +1635,7 @@ async fn planned_entry_pay_validation_rerenders_form_instead_of_blank_page() {
 
     let user = list_users(&state).await.unwrap().remove(0);
     let host = format!("{}.miapp.local", user.company_slug);
-    let token = create_session(&state, &user.email).await.unwrap();
+    let token = create_session(&state, &user.username).await.unwrap();
     let company_id = user.company_id.clone();
 
     let entry = list_planned_entries(&state)
@@ -1683,7 +1683,7 @@ async fn planned_entries_bulk_pay_creates_transactions() {
 
     let user = list_users(&state).await.unwrap().remove(0);
     let host = format!("{}.miapp.local", user.company_slug);
-    let token = create_session(&state, &user.email).await.unwrap();
+    let token = create_session(&state, &user.username).await.unwrap();
     let company_id = user.company_id.clone();
 
     let account = list_accounts(&state)

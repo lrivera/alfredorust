@@ -14,7 +14,7 @@ async fn users_update_can_add_allowed_company_membership() {
 
     let admin = list_users(&state).await.unwrap().remove(0);
     let host = format!("{}.miapp.local", admin.company_slug);
-    let token = create_session(&state, &admin.email).await.unwrap();
+    let token = create_session(&state, &admin.username).await.unwrap();
     let primary_company_id = admin.company_id.clone();
     let extra_company_id = create_company(
         &state,
@@ -152,9 +152,9 @@ async fn staff_permissions_gate_project_resource_usage_and_timeline_routes() {
         .unwrap()
         .unwrap();
     let timeline = get_user_by_id(&state, &timeline_id).await.unwrap().unwrap();
-    let restricted_token = create_session(&state, &restricted.email).await.unwrap();
-    let permitted_token = create_session(&state, &permitted.email).await.unwrap();
-    let timeline_token = create_session(&state, &timeline.email).await.unwrap();
+    let restricted_token = create_session(&state, &restricted.username).await.unwrap();
+    let permitted_token = create_session(&state, &permitted.username).await.unwrap();
+    let timeline_token = create_session(&state, &timeline.username).await.unwrap();
     let today_date = chrono::Utc::now().date_naive();
     let today = today_date.format("%Y-%m-%d").to_string();
     let four_days_ago = (today_date - chrono::Duration::days(4))
@@ -250,7 +250,7 @@ async fn project_resource_endpoints_render_and_submit() {
 
     let user = list_users(&state).await.unwrap().remove(0);
     let host = format!("{}.miapp.local", user.company_slug);
-    let token = create_session(&state, &user.email).await.unwrap();
+    let token = create_session(&state, &user.username).await.unwrap();
     let company_id = user.company_id.clone();
 
     let project_id = create_project(
@@ -486,9 +486,9 @@ async fn users_json_api_crud_scopes_and_enforces_admin() {
         get_with_cookie(build_app(shared.clone()), host, "/api/admin/users", &admin_token).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let users: Vec<serde_json::Value> = serde_json::from_str(&body).unwrap();
-    assert!(users.iter().any(|u| u["email"] == "users-json-admin@example.com"));
-    assert!(users.iter().any(|u| u["email"] == "users-json-staff@example.com"));
-    assert!(!users.iter().any(|u| u["email"] == "users-json-bonly@example.com"));
+    assert!(users.iter().any(|u| u["username"] == "users-json-admin@example.com"));
+    assert!(users.iter().any(|u| u["username"] == "users-json-staff@example.com"));
+    assert!(!users.iter().any(|u| u["username"] == "users-json-bonly@example.com"));
     assert!(users.iter().all(|u| u.get("secret").is_none()));
 
     let (status, _) =
@@ -501,7 +501,7 @@ async fn users_json_api_crud_scopes_and_enforces_admin() {
         "/api/admin/users",
         &admin_token,
         serde_json::json!({
-            "email": "users-json-new@example.com",
+            "username": "users-json-new@example.com",
             "memberships": [
                 { "company_id": company_a.to_hex(), "role": "staff", "permissions": ["view_projects"] }
             ]
@@ -520,7 +520,7 @@ async fn users_json_api_crud_scopes_and_enforces_admin() {
         "/api/admin/users",
         &admin_token,
         serde_json::json!({
-            "email": "users-json-bad@example.com",
+            "username": "users-json-bad@example.com",
             "memberships": [ { "company_id": company_b.to_hex(), "role": "admin" } ]
         }),
     )
@@ -536,7 +536,7 @@ async fn users_json_api_crud_scopes_and_enforces_admin() {
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let detail: serde_json::Value = serde_json::from_str(&body).unwrap();
-    assert_eq!(detail["email"], "users-json-new@example.com");
+    assert_eq!(detail["username"], "users-json-new@example.com");
     assert_eq!(detail["memberships"][0]["company_id"], company_a.to_hex());
     assert_eq!(detail["memberships"][0]["role"], "staff");
 
@@ -556,7 +556,7 @@ async fn users_json_api_crud_scopes_and_enforces_admin() {
         &format!("/api/admin/users/{new_id}/update"),
         &admin_token,
         serde_json::json!({
-            "email": "users-json-updated@example.com",
+            "username": "users-json-updated@example.com",
             "memberships": [ { "company_id": company_a.to_hex(), "role": "admin" } ]
         }),
     )
@@ -564,7 +564,7 @@ async fn users_json_api_crud_scopes_and_enforces_admin() {
     assert_eq!(status, StatusCode::OK, "{body}");
     let new_oid = bson::oid::ObjectId::parse_str(&new_id).unwrap();
     let updated = get_user_by_id(&state, &new_oid).await.unwrap().unwrap();
-    assert_eq!(updated.email, "users-json-updated@example.com");
+    assert_eq!(updated.username, "users-json-updated@example.com");
     assert_eq!(updated.role, UserRole::Admin);
 
     // cannot delete yourself
@@ -922,7 +922,7 @@ async fn cross_tenant_user_mutations_are_denied() {
         &token,
         &format!("/api/admin/users/{}/update", b_user.to_hex()),
         serde_json::json!({
-            "email": "hijacked@example.com",
+            "username": "hijacked@example.com",
             "memberships": [ { "company_id": company_a.to_hex(), "role": "admin" } ]
         }),
     )
@@ -947,7 +947,7 @@ async fn cross_tenant_user_mutations_are_denied() {
 
     // Victim is intact: still exists, email and secret unchanged.
     let victim = get_user_by_id(&state, &b_user).await.unwrap().unwrap();
-    assert_eq!(victim.email, "victim-tenant-b@example.com");
+    assert_eq!(victim.username, "victim-tenant-b@example.com");
     assert_eq!(victim.secret, "VICTIMSECRET");
 
     common::teardown(Some(ctx)).await;
@@ -1103,7 +1103,7 @@ async fn me_endpoint_bootstraps_active_tenant_profile_and_companies() {
     .await
     .unwrap();
     let user = get_user_by_id(&state, &user_id).await.unwrap().unwrap();
-    let token = create_session(&state, &user.email).await.unwrap();
+    let token = create_session(&state, &user.username).await.unwrap();
 
     // Bootstrap on tenant A's subdomain.
     let (status, body) = get_with_cookie(
@@ -1116,7 +1116,7 @@ async fn me_endpoint_bootstraps_active_tenant_profile_and_companies() {
     assert_eq!(status, StatusCode::OK, "authenticated /api/me must succeed");
 
     let json: serde_json::Value = serde_json::from_str(&body).expect("valid JSON");
-    assert_eq!(json["email"], "me-boot@example.com");
+    assert_eq!(json["username"], "me-boot@example.com");
     assert_eq!(json["company"], "Me Bootstrap A");
     assert_eq!(json["company_slug"], "me-boot-a");
     assert_eq!(json["role"], "admin");

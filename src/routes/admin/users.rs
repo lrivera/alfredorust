@@ -177,7 +177,7 @@ pub async fn users_index(
             };
             UserRow {
                 id: user.id.to_hex(),
-                email: user.email,
+                email: user.username,
                 company: company_label,
                 role: user.role.as_str().to_string(),
                 is_self: current_id == user.id,
@@ -293,7 +293,7 @@ pub async fn users_edit(
     )
     .await?;
     let form = UserFormView {
-        email: user.email.clone(),
+        email: user.username.clone(),
         secret: user.secret.clone(),
     };
 
@@ -442,7 +442,7 @@ pub async fn users_qrcode(
         }
     }
 
-    let totp = match build_totp(&user.company_name, &user.email, &user.secret) {
+    let totp = match build_totp(&user.company_name, &user.username, &user.secret) {
         Ok(totp) => totp,
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };

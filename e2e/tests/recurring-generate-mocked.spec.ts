@@ -6,7 +6,7 @@ import { test, expect } from "@playwright/test";
  */
 
 const ADMIN_ME = {
-  email: "admin@example.com",
+  username: "admin@example.com",
   company: "Acme",
   company_slug: "acme",
   role: "admin",

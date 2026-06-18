@@ -16,7 +16,7 @@ use std::io::Cursor;
 pub async fn qrcode(session: SessionUser) -> Response {
     let current = session.user();
 
-    match build_totp(&current.company_name, &current.email, &current.secret) {
+    match build_totp(&current.company_name, &current.username, &current.secret) {
         Ok(totp) => {
             let url = totp.get_url();
             if let Ok(code) = QrCode::new(url.as_bytes()) {

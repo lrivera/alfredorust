@@ -108,6 +108,17 @@ pub async fn init_state_with_db_name(uri: &str, db_name: &str) -> Result<AppStat
 
     seed::ensure_collections(&db).await?;
 
+    // One-time migration: the user login identifier moved from `email` to
+    // `username` (it was never a validated address, just a unique handle).
+    // Idempotent — only touches docs that still carry the old field.
+    let _ = db
+        .collection::<Document>("users")
+        .update_many(
+            mongodb::bson::doc! { "email": { "$exists": true } },
+            mongodb::bson::doc! { "$rename": { "email": "username" } },
+        )
+        .await;
+
     // Only seed when the database is effectively empty (no users).
     if seed::is_database_empty(&db).await? {
         let default_users = seed::load_default_users()?;

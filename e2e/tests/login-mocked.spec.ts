@@ -8,7 +8,7 @@ import { test, expect } from "@playwright/test";
  */
 
 const ME = {
-  email: "demo@example.com",
+  username: "demo@example.com",
   company: "Acme",
   company_slug: "acme",
   role: "admin",

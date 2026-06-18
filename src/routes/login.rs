@@ -15,7 +15,10 @@ use crate::totp::build_totp;
 
 #[derive(Deserialize, utoipa::ToSchema)]
 pub struct LoginRequest {
-    pub email: String,
+    /// Login identifier. `email` is accepted as an alias during the rename
+    /// transition (older cached clients may still send it).
+    #[serde(alias = "email")]
+    pub username: String,
     pub code: String,
 }
 
@@ -37,12 +40,12 @@ pub async fn login(
     headers: HeaderMap,
     Json(body): Json<LoginRequest>,
 ) -> Response {
-    match find_user(&st, &body.email).await {
-        Ok(Some(user)) => match build_totp(&user.company_name, &user.email, &user.secret) {
+    match find_user(&st, &body.username).await {
+        Ok(Some(user)) => match build_totp(&user.company_name, &user.username, &user.secret) {
             Ok(totp) => {
                 let ok = totp.check_current(&body.code).unwrap_or(false);
                 if ok {
-                    match create_session(&st, &user.email).await {
+                    match create_session(&st, &user.username).await {
                         Ok(token) => {
                             let redirect_url = compute_redirect_url(
                                 headers
