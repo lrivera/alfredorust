@@ -615,3 +615,97 @@ pub struct ProjectDetail {
     pub scheduled_at: Option<String>,
     pub notes: Option<String>,
 }
+
+// --- resources ------------------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct Resource {
+    pub id: String,
+    pub name: String,
+    pub resource_type: String,
+    #[serde(default)]
+    pub resource_type_label: String,
+    pub is_active: bool,
+    pub hourly_cost: f64,
+    pub currency: String,
+    #[serde(default)]
+    pub allowed_status_ids: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ResourcePayload {
+    pub name: String,
+    pub resource_type: String,
+    pub is_active: bool,
+    pub hourly_cost: f64,
+    pub currency: Option<String>,
+    pub allowed_status_ids: Vec<String>,
+    pub notes: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct ResourceDetail {
+    pub name: String,
+    pub resource_type: String,
+    pub is_active: bool,
+    pub hourly_cost: f64,
+    pub currency: String,
+    #[serde(default)]
+    pub allowed_status_ids: Vec<String>,
+    pub notes: Option<String>,
+}
+
+// --- resource logs --------------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct ResourceLog {
+    pub id: String,
+    #[serde(default)]
+    pub project_id: Option<String>,
+    #[serde(default)]
+    pub phase: Option<String>,
+    #[serde(default)]
+    pub resource_name: Option<String>,
+    pub started_at: String,
+    #[serde(default)]
+    pub ended_at: Option<String>,
+    #[serde(default)]
+    pub duration_hours: Option<f64>,
+    #[serde(default)]
+    pub operator_name: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ResourceLogPayload {
+    pub project_id: Option<String>,
+    pub phase: Option<String>,
+    pub resource_id: Option<String>,
+    pub started_at: String,
+    pub ended_at: Option<String>,
+    pub operator_name: Option<String>,
+    pub notes: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ResourceLogEndPayload {
+    pub ended_at: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct ResourceLogDetail {
+    pub project_id: Option<String>,
+    pub phase: Option<String>,
+    pub resource_id: Option<String>,
+    pub started_at: String,
+    pub ended_at: Option<String>,
+    pub operator_name: Option<String>,
+    pub notes: Option<String>,
+}
+
+// --- concept statuses (option source for resources) -----------------------
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct ConceptStatus {
+    pub id: String,
+    pub name: String,
+}

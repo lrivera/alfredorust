@@ -10,6 +10,8 @@ mod orders;
 mod planned_entries;
 mod projects;
 mod recurring_plans;
+mod resource_logs;
+mod resources;
 mod transactions;
 
 pub use accounts::AccountsPage;
@@ -21,6 +23,8 @@ pub use orders::OrdersPage;
 pub use planned_entries::PlannedEntriesPage;
 pub use projects::ProjectsPage;
 pub use recurring_plans::RecurringPlansPage;
+pub use resource_logs::ResourceLogsPage;
+pub use resources::ResourcesPage;
 pub use transactions::TransactionsPage;
 
 use leptos::prelude::*;
@@ -116,4 +120,41 @@ pub(crate) fn date_to_rfc3339(date: &str) -> String {
 /// so it fits an `<input type="date">`.
 pub(crate) fn rfc3339_to_date(value: &str) -> String {
     value.get(..10).unwrap_or(value).to_string()
+}
+
+/// `<input type="datetime-local">` yields `YYYY-MM-DDTHH:MM` (no zone). Make it
+/// RFC3339 (treat as UTC) for the backend.
+pub(crate) fn local_dt_to_rfc3339(value: &str) -> String {
+    let v = value.trim();
+    if v.is_empty() || v.ends_with('Z') {
+        v.to_string()
+    } else if v.len() == 16 {
+        format!("{v}:00Z")
+    } else {
+        format!("{v}Z")
+    }
+}
+
+/// Inverse: RFC3339 -> `YYYY-MM-DDTHH:MM` for a datetime-local input.
+pub(crate) fn rfc3339_to_local_dt(value: &str) -> String {
+    value.get(..16).unwrap_or(value).to_string()
+}
+
+/// Load resource options (id → name) into `target` on mount.
+pub(crate) fn load_resource_options(target: RwSignal<Options>) {
+    spawn_local(async move {
+        if let Ok(v) = api::get_json::<Vec<api::Resource>>("/api/admin/resources").await {
+            target.set(v.into_iter().map(|r| (r.id, r.name)).collect());
+        }
+    });
+}
+
+/// Load concept-status options (id → name) into `target` on mount.
+pub(crate) fn load_concept_status_options(target: RwSignal<Options>) {
+    spawn_local(async move {
+        if let Ok(v) = api::get_json::<Vec<api::ConceptStatus>>("/api/admin/concept_statuses").await
+        {
+            target.set(v.into_iter().map(|s| (s.id, s.name)).collect());
+        }
+    });
 }

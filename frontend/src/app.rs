@@ -10,7 +10,8 @@ use crate::api::{self, ApiError, Me};
 use crate::components::{Button, ButtonVariant, Card, CardContent, CardHeader, CardTitle, Input};
 use crate::pages::{
     AccountsPage, CategoriesPage, ContactsPage, Dashboard, ForecastsPage, OrdersPage,
-    PlannedEntriesPage, ProjectsPage, RecurringPlansPage, TransactionsPage,
+    PlannedEntriesPage, ProjectsPage, RecurringPlansPage, ResourceLogsPage, ResourcesPage,
+    TransactionsPage,
 };
 
 #[derive(Clone)]
@@ -178,6 +179,8 @@ fn AuthedApp(me: Me, auth: RwSignal<Auth>) -> impl IntoView {
                             <Route path=path!("/forecasts") view=ForecastsPage />
                             <Route path=path!("/orders") view=OrdersPage />
                             <Route path=path!("/projects") view=ProjectsPage />
+                            <Route path=path!("/resources") view=ResourcesPage />
+                            <Route path=path!("/resource-logs") view=ResourceLogsPage />
                         </Routes>
                     </main>
                 </div>
@@ -238,6 +241,12 @@ fn Sidebar() -> impl IntoView {
                             </A>
                             <A href="/v2/projects" attr:class=link>
                                 "Proyectos"
+                            </A>
+                            <A href="/v2/resources" attr:class=link>
+                                "Recursos"
+                            </A>
+                            <A href="/v2/resource-logs" attr:class=link>
+                                "Registros de recursos"
                             </A>
                         }
                             .into_any()
