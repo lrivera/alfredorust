@@ -1,3 +1,4 @@
+pub mod harness;
 use std::env;
 
 use mongodb::Client;
