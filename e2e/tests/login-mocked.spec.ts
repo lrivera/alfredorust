@@ -41,8 +41,10 @@ test.describe("login flow (mocked API)", () => {
     // The dashboard company-switcher heading (a nav link of the same name now
     // also exists, so target the heading specifically).
     await expect(page.getByRole("heading", { name: "Compañías" })).toBeVisible();
-    // Both memberships render; the inactive one is a good unique assertion.
-    await expect(page.getByText("Globex")).toBeVisible();
+    // Both memberships render on the dashboard; the inactive one is a good
+    // unique assertion. Target the dashboard link specifically, since the
+    // topbar company switcher now also lists "Globex" as an <option>.
+    await expect(page.getByRole("link", { name: "Globex" })).toBeVisible();
   });
 
   test("invalid credentials show a generic error", async ({ page }) => {

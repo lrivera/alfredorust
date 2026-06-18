@@ -9,7 +9,9 @@ use leptos_router::path;
 use crate::api::{self, ApiError, Me};
 use crate::components::{
     Badge, BadgeTone, Button, ButtonVariant, Card, CardContent, CardHeader, CardTitle, Input,
+    Select,
 };
+use crate::pages::switch_company_href;
 use crate::pages::{
     AccountPage, AccountsPage, CategoriesPage, CfdiPage, CompaniesPage, ConceptStatusesPage,
     ContactsPage, Dashboard, ForecastsPage, OrdersPage, PlannedEntriesPage, ProjectDetailPage,
@@ -368,6 +370,41 @@ fn Sidebar() -> impl IntoView {
     }
 }
 
+/// Tenant switcher: a dropdown of the companies the user belongs to. Picking a
+/// different one is a full navigation to that tenant's subdomain (the session
+/// cookie is shared across subdomains). Hidden when there's only one company.
+#[component]
+fn CompanySwitcher() -> impl IntoView {
+    let me = use_context::<Me>().expect("Me context");
+    if me.companies.len() <= 1 {
+        return ().into_any();
+    }
+    let current = me.company_slug.clone();
+    let selected = RwSignal::new(current.clone());
+    let companies = me.companies.clone();
+
+    // Navigate when the choice changes; the initial value equals the current
+    // tenant so mount doesn't trigger a reload.
+    Effect::new(move |_| {
+        let slug = selected.get();
+        if slug != current {
+            let _ = window().location().set_href(&switch_company_href(&slug));
+        }
+    });
+
+    view! {
+        <div class="w-44">
+            <Select value=selected class="py-1.5 text-sm" attr:aria-label="Cambiar de compañía">
+                {companies
+                    .into_iter()
+                    .map(|c| view! { <option value=c.slug>{c.name}</option> })
+                    .collect::<Vec<_>>()}
+            </Select>
+        </div>
+    }
+    .into_any()
+}
+
 #[component]
 fn Topbar() -> impl IntoView {
     let me = use_context::<Me>().expect("Me context");
@@ -413,6 +450,7 @@ fn Topbar() -> impl IntoView {
                         crate::theme::Theme::Light => "☀️",
                     }}
                 </Button>
+                <CompanySwitcher />
                 <Button variant=ButtonVariant::Outline on:click=do_logout>
                     "Salir"
                 </Button>
