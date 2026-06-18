@@ -11,7 +11,8 @@ use crate::components::{Button, ButtonVariant, Card, CardContent, CardHeader, Ca
 use crate::pages::{
     AccountsPage, CategoriesPage, CfdiPage, ConceptStatusesPage, ContactsPage, Dashboard,
     ForecastsPage, OrdersPage, PlannedEntriesPage, ProjectDetailPage, ProjectsPage,
-    RecurringPlansPage, ResourceLogsPage, ResourcesPage, TiempoPage, TransactionsPage,
+    RecurringPlansPage, ResourceLogsPage, ResourceUsagesPage, ResourcesPage, TiempoPage,
+    TransactionsPage,
 };
 
 #[derive(Clone)]
@@ -183,6 +184,7 @@ fn AuthedApp(me: Me, auth: RwSignal<Auth>) -> impl IntoView {
                             <Route path=path!("/concept-statuses") view=ConceptStatusesPage />
                             <Route path=path!("/resources") view=ResourcesPage />
                             <Route path=path!("/resource-logs") view=ResourceLogsPage />
+                            <Route path=path!("/resource-usages") view=ResourceUsagesPage />
                             <Route path=path!("/tiempo") view=TiempoPage />
                             <Route path=path!("/cfdi") view=CfdiPage />
                         </Routes>
@@ -257,6 +259,9 @@ fn Sidebar() -> impl IntoView {
                             </A>
                             <A href="/v2/resource-logs" attr:class=link>
                                 "Registros de recursos"
+                            </A>
+                            <A href="/v2/resource-usages" attr:class=link>
+                                "Uso de recursos (grid)"
                             </A>
                             <p class="px-3 pt-3 pb-1 text-xs font-semibold uppercase text-slate-400">
                                 "Fiscal"

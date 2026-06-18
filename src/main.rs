@@ -620,7 +620,7 @@ async fn main() {
         )
         .route(
             "/api/admin/resource_usages/grid",
-            post(routes::api_resource_usages_grid_save),
+            get(routes::api_resource_usages_grid_view).post(routes::api_resource_usages_grid_save),
         )
         .route(
             "/api/admin/resource_usages/{id}",

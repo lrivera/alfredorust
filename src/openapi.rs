@@ -129,6 +129,7 @@ impl Modify for SecurityAddon {
         crate::routes::admin::project_backend::api_resource_usages_index,
         crate::routes::admin::project_backend::api_resource_usages_create,
         crate::routes::admin::project_backend::api_resource_usages_grid_save,
+        crate::routes::admin::project_backend::api_resource_usages_grid_view,
         crate::routes::admin::project_backend::api_resource_usage_detail,
         crate::routes::admin::project_backend::api_resource_usages_update,
         crate::routes::admin::project_backend::api_resource_usages_delete,

@@ -2043,6 +2043,238 @@ pub async fn api_resource_usages_grid_save(
     }
 }
 
+// --- JSON twin of the hourly grid VIEW (for the SPA) ----------------------
+
+#[derive(Serialize)]
+pub struct GridStatusJson {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Serialize)]
+pub struct GridResourceJson {
+    pub resource_id: String,
+    pub label: String,
+    pub selected: bool,
+}
+
+#[derive(Serialize)]
+pub struct GridCellJson {
+    pub hour: i32,
+    pub is_work_hour: bool,
+    pub resources: Vec<GridResourceJson>,
+}
+
+#[derive(Serialize)]
+pub struct GridRowJson {
+    pub concept_id: String,
+    pub project_id: String,
+    pub project_title: String,
+    pub status_name: String,
+    pub concept_name: String,
+    pub quantity: f64,
+    pub unit: String,
+    pub cells: Vec<GridCellJson>,
+}
+
+#[derive(Serialize)]
+pub struct GridViewJson {
+    pub date: String,
+    pub can_edit: bool,
+    pub statuses: Vec<GridStatusJson>,
+    pub rows: Vec<GridRowJson>,
+}
+
+/// JSON twin of `resource_usages_index`: returns the hourly grid structure
+/// (concepts × hours, allowed resources per cell, current selections) so the
+/// SPA can render and edit it. `POST /api/admin/resource_usages/grid` saves the
+/// selections back.
+#[utoipa::path(
+    get,
+    path = "/api/admin/resource_usages/grid",
+    tag = "operations",
+    responses(
+        (status = 200, description = "Hourly resource-usage grid"),
+        (status = 401, description = "Not authenticated"),
+        (status = 403, description = "Forbidden")
+    ),
+    security(("session" = []))
+)]
+pub async fn api_resource_usages_grid_view(
+    session_user: SessionUser,
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<Json<GridViewJson>, StatusCode> {
+    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    let date = params.get("date").cloned().unwrap_or_else(|| today.clone());
+    let can_view = session_user.is_admin()
+        || session_user.has_permission(UserPermission::ViewResourceUsageHistory)
+        || can_save_resource_usage_date(
+            session_user.active_role(),
+            &session_user.user().permissions,
+            &date,
+            &today,
+        );
+    if !can_view {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    let company_id = require_active_company(&session_user);
+    let statuses_raw = list_concept_statuses(&state, &company_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let selected_status_id = params.get("status_id").and_then(|id| {
+        if id == "all" {
+            None
+        } else {
+            ObjectId::parse_str(id).ok()
+        }
+    });
+    let can_edit = can_save_resource_usage_date(
+        session_user.active_role(),
+        &session_user.user().permissions,
+        &date,
+        &today,
+    );
+    let date_start = parse_html_date(&date).ok_or(StatusCode::BAD_REQUEST)?;
+    let hours: Vec<HourHeader> = (0..24)
+        .map(|hour| HourHeader {
+            hour,
+            is_work_hour: (7..=22).contains(&hour),
+        })
+        .collect();
+    let resources = list_resources(&state, &company_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .into_iter()
+        .filter(|resource| resource.is_active)
+        .collect::<Vec<_>>();
+    let concepts = if let Some(selected_status_id) = &selected_status_id {
+        list_active_project_concepts_for_status(&state, &company_id, selected_status_id).await
+    } else {
+        list_active_project_concepts(&state, &company_id).await
+    }
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let status_names = statuses_raw
+        .iter()
+        .filter_map(|status| Some((status.id.clone()?, status.name.clone())))
+        .collect::<HashMap<_, _>>();
+
+    let mut selected_cells: HashMap<(String, i32, String), String> = HashMap::new();
+    for hour in &hours {
+        let started_at =
+            add_hours_for_route(date_start, hour.hour).ok_or(StatusCode::BAD_REQUEST)?;
+        let ended_at =
+            add_hours_for_route(date_start, hour.hour + 1).ok_or(StatusCode::BAD_REQUEST)?;
+        for usage in list_resource_usages_for_slot(&state, &company_id, started_at, ended_at)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        {
+            let Some(usage_id) = usage.id.clone() else {
+                continue;
+            };
+            for allocation in list_resource_usage_allocations(&state, &company_id, &usage_id)
+                .await
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+            {
+                selected_cells.insert(
+                    (
+                        allocation.concept_id.to_hex(),
+                        hour.hour,
+                        usage.resource_id.to_hex(),
+                    ),
+                    usage.resource_name_snapshot.clone(),
+                );
+            }
+        }
+    }
+
+    let mut row_inputs = Vec::new();
+    for concept in concepts {
+        if concept.id.is_none() {
+            continue;
+        }
+        let project_title = get_project_by_id_for_company(&state, &concept.project_id, &company_id)
+            .await
+            .ok()
+            .flatten()
+            .map(|project| project.title)
+            .unwrap_or_default();
+        row_inputs.push((project_title, concept));
+    }
+    row_inputs.sort_by(|(title_a, a), (title_b, b)| {
+        title_a
+            .cmp(title_b)
+            .then_with(|| a.position.cmp(&b.position))
+            .then_with(|| a.name.cmp(&b.name))
+    });
+
+    let mut rows = Vec::new();
+    for (project_title, concept) in row_inputs {
+        let Some(concept_id) = concept.id.clone() else {
+            continue;
+        };
+        let cid_hex = concept_id.to_hex();
+        let mut cells = Vec::new();
+        for hour in &hours {
+            let previous_resource_ids = selected_cells
+                .keys()
+                .filter_map(|(c, h, r)| (c == &cid_hex && *h == hour.hour - 1).then(|| r.clone()))
+                .collect::<HashSet<_>>();
+            let mut ordered = resources
+                .iter()
+                .filter_map(|resource| {
+                    let rid = resource.id.clone()?;
+                    if !resource.allowed_status_ids.contains(&concept.status_id) {
+                        return None;
+                    }
+                    let prio = if previous_resource_ids.contains(&rid.to_hex()) { 0 } else { 1 };
+                    Some((prio, resource.name.clone(), rid))
+                })
+                .collect::<Vec<_>>();
+            ordered.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+            let cell_resources = ordered
+                .into_iter()
+                .map(|(_, label, rid)| GridResourceJson {
+                    selected: selected_cells
+                        .contains_key(&(cid_hex.clone(), hour.hour, rid.to_hex())),
+                    resource_id: rid.to_hex(),
+                    label,
+                })
+                .collect();
+            cells.push(GridCellJson {
+                hour: hour.hour,
+                is_work_hour: hour.is_work_hour,
+                resources: cell_resources,
+            });
+        }
+        rows.push(GridRowJson {
+            concept_id: cid_hex,
+            project_id: concept.project_id.to_hex(),
+            status_name: status_names
+                .get(&concept.status_id)
+                .cloned()
+                .unwrap_or_else(|| "Estado".to_string()),
+            project_title,
+            concept_name: concept.name,
+            quantity: concept.quantity,
+            unit: concept.unit.unwrap_or_else(|| "pzas".to_string()),
+            cells,
+        });
+    }
+
+    let statuses = statuses_raw
+        .into_iter()
+        .filter_map(|s| {
+            Some(GridStatusJson {
+                id: s.id?.to_hex(),
+                name: s.name,
+            })
+        })
+        .collect();
+
+    Ok(Json(GridViewJson { date, can_edit, statuses, rows }))
+}
+
 pub async fn resource_usages_new(
     session_user: SessionUser,
     State(state): State<Arc<AppState>>,

@@ -810,3 +810,62 @@ pub struct ProjectConceptPayload {
     pub notes: Option<String>,
     pub position: i32,
 }
+
+// --- resource usages hourly grid ------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct GridResource {
+    pub resource_id: String,
+    pub label: String,
+    pub selected: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct GridCell {
+    pub hour: i32,
+    pub is_work_hour: bool,
+    pub resources: Vec<GridResource>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct GridRow {
+    pub concept_id: String,
+    #[serde(default)]
+    pub project_title: String,
+    #[serde(default)]
+    pub status_name: String,
+    pub concept_name: String,
+    pub quantity: f64,
+    #[serde(default)]
+    pub unit: String,
+    pub cells: Vec<GridCell>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct GridStatus {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct GridView {
+    pub date: String,
+    pub can_edit: bool,
+    #[serde(default)]
+    pub statuses: Vec<GridStatus>,
+    pub rows: Vec<GridRow>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct GridSelection {
+    pub concept_id: String,
+    pub hour: i32,
+    pub resource_id: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct GridSavePayload {
+    pub date: String,
+    pub status_id: Option<String>,
+    pub selections: Vec<GridSelection>,
+}
