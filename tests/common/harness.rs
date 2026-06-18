@@ -29,6 +29,7 @@ pub use alfredodev::{
         create_resource, create_resource_log, create_resource_usage, create_sat_config,
         create_session, create_transaction, create_user, create_user_with_permissions,
         get_user_by_id, list_accounts, list_categories, list_companies, list_contacts,
+        update_user_with_permissions,
         list_forecasts, list_planned_entries, list_projects, list_recurring_plans,
         list_resource_logs, list_resource_usage_allocations, list_resource_usages, list_resources,
         list_transactions, list_users, update_resource_allowed_statuses,

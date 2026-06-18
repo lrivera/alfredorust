@@ -1866,3 +1866,40 @@ async fn company_danger_zone_delete_all_endpoints() {
 
     common::teardown(Some(ctx)).await;
 }
+/// Regression: updating a user must persist a new TOTP secret (not silently
+/// keep the old one).
+#[tokio::test]
+async fn user_update_persists_new_secret() {
+    let ctx = match common::setup_state().await {
+        Some(c) => c,
+        None => return,
+    };
+    let state = ctx.state.clone();
+
+    let company = create_company(&state, "Secret Co", "secret-co", "MXN", true, None)
+        .await
+        .unwrap();
+    let id = create_user_with_permissions(
+        &state,
+        "secret-update@example.com",
+        "OLDSECRETAAAAAAAAAAAA",
+        &[(company.clone(), UserRole::Staff, vec![])],
+    )
+    .await
+    .unwrap();
+
+    update_user_with_permissions(
+        &state,
+        &id,
+        "secret-update@example.com",
+        "NEWSECRETBBBBBBBBBBBB",
+        &[(company.clone(), UserRole::Staff, vec![])],
+    )
+    .await
+    .unwrap();
+
+    let user = get_user_by_id(&state, &id).await.unwrap().unwrap();
+    assert_eq!(user.secret, "NEWSECRETBBBBBBBBBBBB");
+
+    common::teardown(Some(ctx)).await;
+}
