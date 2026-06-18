@@ -4,12 +4,14 @@
 //! Each component takes an optional `class` that is appended after the base
 //! classes, so callers can extend/override styling at the call site.
 
+mod badge;
 mod button;
 mod card;
 mod checkbox;
 mod input;
 mod select;
 
+pub use badge::{Badge, BadgeTone};
 pub use button::{Button, ButtonVariant};
 pub use card::{Card, CardContent, CardHeader, CardTitle};
 pub use checkbox::Checkbox;

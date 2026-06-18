@@ -12,7 +12,9 @@ use leptos::task::spawn_local;
 use super::charts::{donut, line_area_chart};
 use super::{money, rfc3339_to_date};
 use crate::api::{self, ApiError, Cfdi, CfdiDownloadPayload, CfdiJob, CfdiList, Me, SatConfigData};
-use crate::components::{Button, Card, CardContent, CardHeader, CardTitle, Checkbox, Input, Select};
+use crate::components::{
+    Badge, BadgeTone, Button, Card, CardContent, CardHeader, CardTitle, Checkbox, Input, Select,
+};
 
 fn today_str() -> String {
     js_sys::Date::new_0()
@@ -412,7 +414,15 @@ pub fn CfdiPage() -> impl IntoView {
                                                         {format!("{} {}", money(c.total), c.moneda)}
                                                     </td>
                                                     <td class="px-4 py-2">
-                                                        {if c.es_emitido { "Emitido" } else { "Recibido" }}
+                                                        {if c.es_emitido {
+                                                            view! {
+                                                                <Badge tone=BadgeTone::Success>"Emitido"</Badge>
+                                                            }
+                                                        } else {
+                                                            view! {
+                                                                <Badge tone=BadgeTone::Info>"Recibido"</Badge>
+                                                            }
+                                                        }}
                                                     </td>
                                                 </tr>
                                             }

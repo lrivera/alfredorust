@@ -7,7 +7,9 @@ use leptos_router::components::{Route, Router, Routes, A};
 use leptos_router::path;
 
 use crate::api::{self, ApiError, Me};
-use crate::components::{Button, ButtonVariant, Card, CardContent, CardHeader, CardTitle, Input};
+use crate::components::{
+    Badge, BadgeTone, Button, ButtonVariant, Card, CardContent, CardHeader, CardTitle, Input,
+};
 use crate::pages::{
     AccountPage, AccountsPage, CategoriesPage, CfdiPage, CompaniesPage, ConceptStatusesPage,
     ContactsPage, Dashboard, ForecastsPage, OrdersPage, PlannedEntriesPage, ProjectDetailPage,
@@ -200,6 +202,33 @@ fn AuthedApp(me: Me, auth: RwSignal<Auth>) -> impl IntoView {
     }
 }
 
+/// Collapsible sidebar category. Uses the native `<details>`/`<summary>`
+/// element so it's accessible and needs no JS; the chevron rotates when open
+/// and the links are indented under a guide rail so they read as belonging to
+/// the group. Open by default.
+#[component]
+fn NavGroup(#[prop(into)] title: String, children: Children) -> impl IntoView {
+    view! {
+        <details open class="group">
+            <summary class="mt-3 flex cursor-pointer list-none select-none items-center justify-between rounded-md px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground transition-colors hover:bg-muted hover:text-foreground [&::-webkit-details-marker]:hidden">
+                <span>{title}</span>
+                <svg
+                    class="h-3.5 w-3.5 shrink-0 transition-transform duration-200 group-[[open]]:rotate-90"
+                    viewBox="0 0 20 20"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                >
+                    <path d="M7 5l6 5-6 5" />
+                </svg>
+            </summary>
+            <div class="ml-4 mt-1 space-y-0.5 border-l border-border pl-2">{children()}</div>
+        </details>
+    }
+}
+
 #[component]
 fn Sidebar() -> impl IntoView {
     let me = use_context::<Me>().expect("Me context");
@@ -242,25 +271,24 @@ fn Sidebar() -> impl IntoView {
                 {move || {
                     if !is_admin && (can_projects || can_resource_usage) {
                         view! {
-                            <p class="px-3 pt-3 pb-1 text-xs font-semibold uppercase text-muted-foreground">
-                                "Operaciones"
-                            </p>
-                            {can_projects
-                                .then(|| {
-                                    view! {
-                                        <A href="/v2/projects" attr:class=link>
-                                            "Proyectos"
-                                        </A>
-                                    }
-                                })}
-                            {can_resource_usage
-                                .then(|| {
-                                    view! {
-                                        <A href="/v2/resource-usages" attr:class=link>
-                                            "Uso de recursos (grid)"
-                                        </A>
-                                    }
-                                })}
+                            <NavGroup title="Operaciones">
+                                {can_projects
+                                    .then(|| {
+                                        view! {
+                                            <A href="/v2/projects" attr:class=link>
+                                                "Proyectos"
+                                            </A>
+                                        }
+                                    })}
+                                {can_resource_usage
+                                    .then(|| {
+                                        view! {
+                                            <A href="/v2/resource-usages" attr:class=link>
+                                                "Uso de recursos (grid)"
+                                            </A>
+                                        }
+                                    })}
+                            </NavGroup>
                         }
                             .into_any()
                     } else {
@@ -270,69 +298,65 @@ fn Sidebar() -> impl IntoView {
                 {move || {
                     if is_admin {
                         view! {
-                            <p class="px-3 pt-3 pb-1 text-xs font-semibold uppercase text-muted-foreground">
-                                "Finanzas"
-                            </p>
-                            <A href="/v2/accounts" attr:class=link>
-                                "Cuentas"
-                            </A>
-                            <A href="/v2/categories" attr:class=link>
-                                "Categorías"
-                            </A>
-                            <A href="/v2/contacts" attr:class=link>
-                                "Contactos"
-                            </A>
-                            <A href="/v2/transactions" attr:class=link>
-                                "Movimientos"
-                            </A>
-                            <A href="/v2/recurring-plans" attr:class=link>
-                                "Planes recurrentes"
-                            </A>
-                            <A href="/v2/planned-entries" attr:class=link>
-                                "Entradas planificadas"
-                            </A>
-                            <A href="/v2/forecasts" attr:class=link>
-                                "Pronósticos"
-                            </A>
-                            <p class="px-3 pt-3 pb-1 text-xs font-semibold uppercase text-muted-foreground">
-                                "Operaciones"
-                            </p>
-                            <A href="/v2/orders" attr:class=link>
-                                "Órdenes"
-                            </A>
-                            <A href="/v2/projects" attr:class=link>
-                                "Proyectos"
-                            </A>
-                            <A href="/v2/concept-statuses" attr:class=link>
-                                "Estados de concepto"
-                            </A>
-                            <A href="/v2/resources" attr:class=link>
-                                "Recursos"
-                            </A>
-                            <A href="/v2/resource-logs" attr:class=link>
-                                "Registros de recursos"
-                            </A>
-                            <A href="/v2/resource-usages" attr:class=link>
-                                "Uso de recursos (grid)"
-                            </A>
-                            <p class="px-3 pt-3 pb-1 text-xs font-semibold uppercase text-muted-foreground">
-                                "Fiscal"
-                            </p>
-                            <A href="/v2/cfdi" attr:class=link>
-                                "CFDIs"
-                            </A>
-                            <A href="/v2/sat-configs" attr:class=link>
-                                "Config. SAT"
-                            </A>
-                            <p class="px-3 pt-3 pb-1 text-xs font-semibold uppercase text-muted-foreground">
-                                "Administración"
-                            </p>
-                            <A href="/v2/companies" attr:class=link>
-                                "Compañías"
-                            </A>
-                            <A href="/v2/users" attr:class=link>
-                                "Usuarios"
-                            </A>
+                            <NavGroup title="Finanzas">
+                                <A href="/v2/accounts" attr:class=link>
+                                    "Cuentas"
+                                </A>
+                                <A href="/v2/categories" attr:class=link>
+                                    "Categorías"
+                                </A>
+                                <A href="/v2/contacts" attr:class=link>
+                                    "Contactos"
+                                </A>
+                                <A href="/v2/transactions" attr:class=link>
+                                    "Movimientos"
+                                </A>
+                                <A href="/v2/recurring-plans" attr:class=link>
+                                    "Planes recurrentes"
+                                </A>
+                                <A href="/v2/planned-entries" attr:class=link>
+                                    "Entradas planificadas"
+                                </A>
+                                <A href="/v2/forecasts" attr:class=link>
+                                    "Pronósticos"
+                                </A>
+                            </NavGroup>
+                            <NavGroup title="Operaciones">
+                                <A href="/v2/orders" attr:class=link>
+                                    "Órdenes"
+                                </A>
+                                <A href="/v2/projects" attr:class=link>
+                                    "Proyectos"
+                                </A>
+                                <A href="/v2/concept-statuses" attr:class=link>
+                                    "Estados de concepto"
+                                </A>
+                                <A href="/v2/resources" attr:class=link>
+                                    "Recursos"
+                                </A>
+                                <A href="/v2/resource-logs" attr:class=link>
+                                    "Registros de recursos"
+                                </A>
+                                <A href="/v2/resource-usages" attr:class=link>
+                                    "Uso de recursos (grid)"
+                                </A>
+                            </NavGroup>
+                            <NavGroup title="Fiscal">
+                                <A href="/v2/cfdi" attr:class=link>
+                                    "CFDIs"
+                                </A>
+                                <A href="/v2/sat-configs" attr:class=link>
+                                    "Config. SAT"
+                                </A>
+                            </NavGroup>
+                            <NavGroup title="Administración">
+                                <A href="/v2/companies" attr:class=link>
+                                    "Compañías"
+                                </A>
+                                <A href="/v2/users" attr:class=link>
+                                    "Usuarios"
+                                </A>
+                            </NavGroup>
                         }
                             .into_any()
                     } else {
@@ -366,12 +390,16 @@ fn Topbar() -> impl IntoView {
 
     view! {
         <header class="flex items-center justify-between border-b border-border bg-card px-6 py-3">
-            <div>
-                <p class="text-sm text-muted-foreground">{me.username.clone()}</p>
-                <p class="font-semibold">
-                    {me.company.clone()} " · "
-                    <span class="text-muted-foreground">{me.role.clone()}</span>
-                </p>
+            <div class="flex items-center gap-3">
+                <div>
+                    <p class="text-sm text-muted-foreground">{me.username.clone()}</p>
+                    <p class="font-semibold">{me.company.clone()}</p>
+                </div>
+                {
+                    let role = me.role.clone();
+                    let tone = if role == "admin" { BadgeTone::Info } else { BadgeTone::Neutral };
+                    view! { <Badge tone=tone>{role}</Badge> }
+                }
             </div>
             <div class="flex items-center gap-2">
                 <Button
